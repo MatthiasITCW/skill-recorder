@@ -54,6 +54,8 @@ export class RecorderController {
   private activeCollectors: readonly Collector[] = [];
   private video: SessionMediaRecorder | null = null;
   private processing: Promise<void> | null = null;
+  private lastCompleted: { id: string; dir: string } | null = null;
+  private lastProcessed = false;
 
   constructor(private readonly deps: RecorderDeps) {
     this.host = new CollectorHost(this.bus);
@@ -65,12 +67,20 @@ export class RecorderController {
     return this.store ? "recording" : "idle";
   }
 
+  /** The last completed session's directory, if any (for analysis). */
+  lastSessionDir(): string | null {
+    return this.lastCompleted?.dir ?? null;
+  }
+
   status(): RecorderStatus {
     return {
       state: this.state,
       sessionId: this.store?.meta.id ?? null,
       startedAt: this.store?.meta.startedAt ?? null,
       eventCount: this.store?.eventCount ?? 0,
+      lastSession: this.lastCompleted
+        ? { id: this.lastCompleted.id, processed: this.lastProcessed }
+        : null,
     };
   }
 
@@ -146,6 +156,8 @@ export class RecorderController {
     this.bus.detach();
     this.store = null;
     store.finalize(Date.now());
+    this.lastCompleted = { id: store.meta.id, dir: store.dir };
+    this.lastProcessed = false;
     log.info("Recording stopped:", store.meta.id, `(${store.eventCount} events)`);
     this.emit();
     // Frames + correlation run in the background so the UI returns promptly.
@@ -159,13 +171,18 @@ export class RecorderController {
   }
 
   private async runPostProcess(dir: string, closed: Promise<void>): Promise<void> {
-    if (!this.deps.postProcess) return;
+    if (!this.deps.postProcess) {
+      if (this.lastCompleted?.dir === dir) this.lastProcessed = true;
+      this.emit();
+      return;
+    }
     try {
       await closed; // ensure events.jsonl is fully flushed before reading it
       await this.deps.postProcess(dir);
     } catch (err) {
       log.warn("post-processing failed:", err instanceof Error ? err.message : err);
     } finally {
+      if (this.lastCompleted?.dir === dir) this.lastProcessed = true;
       this.emit();
     }
   }

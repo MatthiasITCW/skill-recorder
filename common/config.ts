@@ -6,9 +6,9 @@
  *
  * Cost tiers (per source):
  *   0 — no prompt, no setup   (works out of the box)
- *   1 — one-time OS grant     (macOS Accessibility / Screen Recording)
+ *   1 — one-time OS grant     (accessibility / screen-capture permission)
  *   2 — manual setup          (install a shell hook)
- *   3 — heaviest OS grant     (Screen Recording for video)
+ *   3 — heaviest OS grant     (screen-capture permission for video)
  */
 
 export type CaptureLevel = "basic" | "standard" | "full" | "custom";
@@ -18,13 +18,13 @@ export interface CaptureConfig {
   appActivity: boolean;
   /** Clipboard copies (formats, length, hash, short preview). Tier 0 — no prompt. */
   clipboard: boolean;
-  /** Window titles. Tier 1 — needs macOS Accessibility + Screen Recording. */
+  /** Window titles. Tier 1 — needs an accessibility / screen-capture grant. */
   windowTitles: boolean;
   /** Active browser tab URLs. Tier 1 — needs the same grant as titles. */
   browserUrls: boolean;
   /** Terminal commands. Tier 2 — needs the opt-in shell hook installed. */
   terminal: boolean;
-  /** Low-fps screen video + extracted keyframes. Tier 3 — needs Screen Recording. */
+  /** Low-fps screen video + extracted keyframes. Tier 3 — needs screen-capture. */
   video: boolean;
 }
 
@@ -79,16 +79,16 @@ export const CAPTURE_SOURCES: readonly CaptureSourceInfo[] = [
     key: "windowTitles",
     label: "Window titles",
     tier: 1,
-    cost: "macOS: Accessibility + Screen Recording (one-time)",
+    cost: "One-time OS permission",
   },
   {
     key: "browserUrls",
     label: "Browser URLs",
     tier: 1,
-    cost: "macOS: Accessibility + Screen Recording (one-time)",
+    cost: "One-time OS permission",
   },
   { key: "terminal", label: "Terminal commands", tier: 2, cost: "Install a shell hook (one-time)" },
-  { key: "video", label: "Screen video + keyframes", tier: 3, cost: "Screen Recording permission" },
+  { key: "video", label: "Screen video + keyframes", tier: 3, cost: "Screen-capture permission" },
 ];
 
 export function configForLevel(level: Exclude<CaptureLevel, "custom">): CaptureConfig {
@@ -112,7 +112,7 @@ export const CAPTURE_LEVEL_INFO: readonly CaptureLevelInfo[] = [
   {
     level: "standard",
     label: "Standard",
-    blurb: "Adds window titles + browser URLs. One-time macOS grant.",
+    blurb: "Adds window titles + browser URLs. One-time OS permission.",
   },
   {
     level: "full",

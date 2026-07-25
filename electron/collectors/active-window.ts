@@ -107,7 +107,7 @@ export class ActiveWindowCollector implements Collector {
       if (this.mode === "full") {
         this.mode = "degraded";
         this.ctx?.log.warn(
-          "Reduced capture: window titles/URLs need Accessibility + Screen Recording permission.",
+          "Reduced capture: window titles/URLs need a screen-capture / accessibility permission.",
         );
         return activeWindow(DEGRADED);
       }

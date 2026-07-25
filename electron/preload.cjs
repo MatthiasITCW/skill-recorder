@@ -21,6 +21,12 @@ const IPC = {
   analyzeProgress: "analyze:progress",
   listSessions: "sessions:list",
   deleteSession: "sessions:delete",
+  buildSkill: "skill:build",
+  createSkill: "skill:create",
+  getSkill: "skill:get",
+  cancelSkill: "skill:cancel",
+  revealSkill: "skill:reveal",
+  skillProgress: "skill:progress",
   openLibrary: "ui:open-library",
   closeLibrary: "ui:close-library",
 };
@@ -52,6 +58,16 @@ contextBridge.exposeInMainWorld("skillRecorder", {
   },
   listSessions: () => ipcRenderer.invoke(IPC.listSessions),
   deleteSession: (sessionId) => ipcRenderer.invoke(IPC.deleteSession, sessionId),
+  buildSkill: (input) => ipcRenderer.invoke(IPC.buildSkill, input),
+  createSkill: (sessionId) => ipcRenderer.invoke(IPC.createSkill, sessionId),
+  getSkill: (sessionId) => ipcRenderer.invoke(IPC.getSkill, sessionId),
+  cancelSkill: (sessionId) => ipcRenderer.invoke(IPC.cancelSkill, sessionId),
+  revealSkill: (path) => ipcRenderer.invoke(IPC.revealSkill, path),
+  onSkillProgress: (cb) => {
+    const listener = (_event, progress) => cb(progress);
+    ipcRenderer.on(IPC.skillProgress, listener);
+    return () => ipcRenderer.removeListener(IPC.skillProgress, listener);
+  },
   openLibrary: () => ipcRenderer.invoke(IPC.openLibrary),
   closeLibrary: () => ipcRenderer.invoke(IPC.closeLibrary),
 });

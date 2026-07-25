@@ -1,5 +1,6 @@
 import type { Analysis, AnalysisFeedback, Confidence } from "./analysis";
 import type { CaptureConfig, CaptureLevel } from "./config";
+import type { BuiltSkill, SkillArchitecture, SkillPlan } from "./skill";
 import type { RecorderState } from "./types";
 
 /** The last completed session — the one that can be analyzed. */
@@ -64,6 +65,40 @@ export interface AnalysisEditInput {
   title?: string;
   /** New one-sentence goal; blank/whitespace is ignored (intent can't be emptied). */
   intent?: string;
+}
+
+/* --- Skill Builder -------------------------------------------------------- */
+
+/** Streamed to the renderer while the skill-builder agent works. */
+export interface SkillBuildProgress {
+  sessionId: string;
+  phase: "start" | "working" | "drafting" | "done" | "error";
+  message: string;
+}
+
+/** Start a build (or refine one) for a session's approved analysis. */
+export interface SkillBuildInput {
+  sessionId: string;
+  /** Target architecture (only "scout" is enabled today). */
+  architecture: SkillArchitecture;
+  /** Natural-language refinement for the current plan; omit for the first pass. */
+  feedback?: string;
+}
+
+/** Result of a propose/refine round: the plan to show the user. */
+export interface SkillPlanResult {
+  ok: boolean;
+  plan?: SkillPlan;
+  error?: string;
+}
+
+/** Result of finalizing + exporting a skill. */
+export interface SkillCreateResult {
+  ok: boolean;
+  skill?: BuiltSkill;
+  /** Absolute path of the exported SKILL.md. */
+  path?: string;
+  error?: string;
 }
 
 export interface StartResult {
@@ -135,6 +170,12 @@ export const IPC = {
   analyzeProgress: "analyze:progress",
   listSessions: "sessions:list",
   deleteSession: "sessions:delete",
+  buildSkill: "skill:build",
+  createSkill: "skill:create",
+  getSkill: "skill:get",
+  cancelSkill: "skill:cancel",
+  revealSkill: "skill:reveal",
+  skillProgress: "skill:progress",
   openLibrary: "ui:open-library",
   closeLibrary: "ui:close-library",
 } as const;
@@ -167,6 +208,20 @@ export interface SkillRecorderApi {
   listSessions(): Promise<SessionSummary[]>;
   /** Permanently delete a saved recording and all its artifacts from disk. */
   deleteSession(sessionId: string): Promise<DeleteSessionResult>;
+  /**
+   * Propose (or refine) a skill from an approved analysis. Pass `feedback` to
+   * revise the current plan in the same multi-turn conversation.
+   */
+  buildSkill(input: SkillBuildInput): Promise<SkillPlanResult>;
+  /** Finalize the proposed skill and export its SKILL.md into the target agent. */
+  createSkill(sessionId: string): Promise<SkillCreateResult>;
+  /** Load a previously built skill for a session, if any. */
+  getSkill(sessionId: string): Promise<BuiltSkill | null>;
+  /** Abort an in-flight build. */
+  cancelSkill(sessionId: string): Promise<{ ok: boolean }>;
+  /** Reveal an exported SKILL.md in the OS file manager. */
+  revealSkill(path: string): Promise<{ ok: boolean }>;
+  onSkillProgress(cb: (progress: SkillBuildProgress) => void): () => void;
   /** Open (and focus) the Sessions library window, docked to the recorder. */
   openLibrary(): Promise<void>;
   /** Close the Sessions library window from within it. */

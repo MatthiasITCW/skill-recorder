@@ -14,10 +14,12 @@ export function Recorder() {
   const [capture, setCapture] = useState<CaptureState | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [sessionCount, setSessionCount] = useState(0);
+  const [pendingCount, setPendingCount] = useState(0);
 
   const refreshCount = useCallback(async () => {
     const list = await window.skillRecorder.listSessions();
     setSessionCount(list.length);
+    setPendingCount(list.filter((s) => !s.analysis).length);
   }, []);
 
   useEffect(() => {
@@ -26,6 +28,14 @@ export function Recorder() {
     void window.skillRecorder.getCapture().then(setCapture);
     void refreshCount();
     return window.skillRecorder.onStatusChanged(setStatus);
+  }, [refreshCount]);
+
+  // The analyze step happens in the library window, so re-check how many
+  // recordings still need analysis whenever the recorder regains focus.
+  useEffect(() => {
+    const onFocus = () => void refreshCount();
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
   }, [refreshCount]);
 
   const recording = status?.state === "recording";
@@ -95,7 +105,7 @@ export function Recorder() {
           {recording
             ? `${status?.eventCount ?? 0} events captured`
             : justSaved
-              ? "Capture saved. Open Sessions to review"
+              ? "Capture saved. Open Sessions to analyze"
               : "Ready to capture"}
         </div>
       </div>
@@ -109,12 +119,14 @@ export function Recorder() {
       )}
 
       <button
-        className="sessions-open"
+        className={`sessions-open ${pendingCount > 0 ? "has-new" : ""}`}
         onClick={openLibrary}
         aria-label={
-          sessionCount === 0
-            ? "Review sessions, nothing recorded yet"
-            : `Review sessions, ${sessionCount} recorded`
+          pendingCount > 0
+            ? `Review sessions, ${pendingCount} ready to analyze`
+            : sessionCount === 0
+              ? "Review sessions, nothing recorded yet"
+              : `Review sessions, ${sessionCount} recorded`
         }
       >
         <span className="sessions-open-icon" aria-hidden>
@@ -142,11 +154,16 @@ export function Recorder() {
           </svg>
         </span>
         <span className="sessions-open-text">
-          <span className="sessions-open-label">Review sessions</span>
-          <span className="sessions-open-sub">
-            {sessionCount === 0
-              ? "No recordings yet"
-              : `${sessionCount} recording${sessionCount === 1 ? "" : "s"}`}
+          <span className="sessions-open-label">
+            Review sessions
+            {pendingCount > 0 && <span className="sessions-open-flag">New</span>}
+          </span>
+          <span className={`sessions-open-sub ${pendingCount > 0 ? "is-new" : ""}`}>
+            {pendingCount > 0
+              ? `${pendingCount} ready to analyze`
+              : sessionCount === 0
+                ? "No recordings yet"
+                : `${sessionCount} recording${sessionCount === 1 ? "" : "s"}`}
           </span>
         </span>
         <span className="sessions-open-chevron" aria-hidden>

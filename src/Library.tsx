@@ -144,7 +144,9 @@ function SessionsList({
                     <span className="tag an">analyzed</span>
                   ) : !s.processed ? (
                     <span className="tag warn">processing</span>
-                  ) : null}
+                  ) : (
+                    <span className="tag new">new</span>
+                  )}
                 </div>
                 <div className="sess-intent">
                   {s.analysis
@@ -208,7 +210,9 @@ function AnalysisWorkspace({
   const [editing, setEditing] = useState(false);
   const [draftTitle, setDraftTitle] = useState("");
   const [draftIntent, setDraftIntent] = useState("");
-  const [building, setBuilding] = useState(false);
+  // A recording that's already a skill opens straight to the skill; otherwise
+  // it opens to the analysis, where "Create skill" starts the builder.
+  const [building, setBuilding] = useState(summary.hasSkill);
   // Set while the user is deliberately canceling, so the aborted run's rejection
   // doesn't surface as an error toast.
   const canceled = useRef(false);
@@ -307,11 +311,12 @@ function AnalysisWorkspace({
     setNotes((prev) => ({ ...prev, [stepId]: note }));
   }, []);
 
-  if (building && analysis) {
+  if (building) {
     return (
       <SkillBuilderView
         sessionId={sessionId}
         startedAt={summary.startedAt}
+        hasSkill={summary.hasSkill}
         onClose={() => {
           setBuilding(false);
           void onChanged();
@@ -484,7 +489,7 @@ function AnalysisWorkspace({
 
 /* --- Skill builder ------------------------------------------------------- */
 
-type BuildPhase = "arch" | "planning" | "plan" | "creating" | "done";
+type BuildPhase = "loading" | "arch" | "planning" | "plan" | "creating" | "done";
 
 const SOURCE_LABEL: Record<SkillPlan["inputs"][number]["source"], string> = {
   ask: "You provide it",
@@ -495,13 +500,17 @@ const SOURCE_LABEL: Record<SkillPlan["inputs"][number]["source"], string> = {
 function SkillBuilderView({
   sessionId,
   startedAt,
+  hasSkill,
   onClose,
 }: {
   sessionId: string;
   startedAt: number | null;
+  hasSkill: boolean;
   onClose: () => void;
 }) {
-  const [phase, setPhase] = useState<BuildPhase>("arch");
+  // If this recording is already a skill, hold on a spinner until we've loaded
+  // it, so we never flash the architecture picker before jumping to the skill.
+  const [phase, setPhase] = useState<BuildPhase>(hasSkill ? "loading" : "arch");
   const [architecture, setArchitecture] = useState<SkillArchitecture>("scout");
   const [plan, setPlan] = useState<SkillPlan | null>(null);
   const [statusLine, setStatusLine] = useState("");
@@ -524,18 +533,22 @@ function SkillBuilderView({
   useEffect(() => {
     let live = true;
     void window.skillRecorder.getSkill(sessionId).then((s: BuiltSkill | null) => {
-      if (live && s?.exportedPath) {
+      if (!live) return;
+      if (s?.exportedPath) {
         setBuiltName(s.name);
         setExportedPath(s.exportedPath);
         setArchitecture(s.architecture);
         if (s.plan) setPlan(s.plan);
         setPhase("done");
+      } else if (hasSkill) {
+        // We expected a skill but couldn't load it; fall back to the picker.
+        setPhase("arch");
       }
     });
     return () => {
       live = false;
     };
-  }, [sessionId]);
+  }, [sessionId, hasSkill]);
 
   useEffect(() => {
     return window.skillRecorder.onSkillProgress((p: SkillBuildProgress) => {
@@ -596,16 +609,28 @@ function SkillBuilderView({
     <section className="ws">
       <div className="ws-head">
         <div className="ws-titles">
-          <span className="eyebrow">Create skill</span>
+          <span className="eyebrow">{phase === "done" ? "Skill" : "Create skill"}</span>
           <span className="ws-when">{formatWhen(startedAt)}</span>
         </div>
-        <button className="ghost" onClick={onClose} disabled={busy} title="Back to the analysis">
-          Close
+        <button
+          className="ghost"
+          onClick={onClose}
+          disabled={busy}
+          title={phase === "done" ? "View this recording's analysis" : "Back to the analysis"}
+        >
+          {phase === "done" ? "Analysis" : "Close"}
         </button>
       </div>
 
       <div className="ws-body">
         {error && <div className="analysis-error">{error}</div>}
+
+        {phase === "loading" && (
+          <div className="status-line">
+            <span className="spinner" />
+            <span className="status-text">Opening the skill…</span>
+          </div>
+        )}
 
         {phase === "arch" && (
           <div className="sb-arch">
@@ -722,9 +747,9 @@ function SkillBuilderView({
             <div className="sb-check" aria-hidden>
               ✓
             </div>
-            <h2 className="sb-title">Skill exported</h2>
+            <h2 className="sb-title">Skill ready</h2>
             <p>
-              <code className="sb-slug">{builtName}</code> is ready for {archLabel(architecture)}.
+              <code className="sb-slug">{builtName}</code> is built for {archLabel(architecture)}.
             </p>
             {exportedPath && <p className="sb-path">{exportedPath}</p>}
           </div>
@@ -756,16 +781,13 @@ function SkillBuilderView({
 
       {phase === "done" && (
         <div className="ws-foot">
-          <span className="foot-status">Saved</span>
+          <span className="foot-status">Skill created</span>
           <div className="ws-foot-actions">
             {exportedPath && (
-              <button className="secondary" onClick={() => void window.skillRecorder.revealSkill(sessionId)}>
+              <button className="record-cta" onClick={() => void window.skillRecorder.revealSkill(sessionId)}>
                 Reveal file
               </button>
             )}
-            <button className="record-cta" onClick={onClose}>
-              Done
-            </button>
           </div>
         </div>
       )}

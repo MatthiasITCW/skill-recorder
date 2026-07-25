@@ -393,7 +393,7 @@ function AnalysisWorkspace({
                 disabled={hasFeedback}
                 title={hasFeedback ? "Send or clear your feedback first" : "Save as correct"}
               >
-                Looks good — save
+                Looks good, save
               </button>
             )}
           </div>
@@ -429,7 +429,7 @@ function StepCard({
         <p className="sstep-detail">{step.detail}</p>
 
         {step.confidence === "low" && (
-          <div className="sstep-flag">We&apos;re not fully sure about this one — worth a check.</div>
+          <div className="sstep-flag">We&apos;re not fully sure about this one. Worth a check.</div>
         )}
 
         <div className="sstep-tools">

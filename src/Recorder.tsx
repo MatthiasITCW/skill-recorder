@@ -53,7 +53,7 @@ export function Recorder() {
   }, [recording]);
 
   const addMarker = useCallback(async () => {
-    const note = window.prompt("Marker — what are you doing right now?");
+    const note = window.prompt("Marker: what are you doing right now?");
     if (note) await window.skillRecorder.marker(note);
   }, []);
 
@@ -95,7 +95,7 @@ export function Recorder() {
           {recording
             ? `${status?.eventCount ?? 0} events captured`
             : justSaved
-              ? "Capture saved — open Sessions to review"
+              ? "Capture saved. Open Sessions to review"
               : "Ready to capture"}
         </div>
       </div>

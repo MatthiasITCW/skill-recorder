@@ -31,7 +31,7 @@ export function createRecorderWindow(): BrowserWindow {
     maximizable: false,
     fullscreenable: false,
     title: "Skill Recorder",
-    backgroundColor: "#111318",
+    backgroundColor: "#faf8f5",
     webPreferences: {
       preload: path.join(dirname, "preload.cjs"),
       contextIsolation: true,
@@ -90,8 +90,8 @@ export function createLibraryWindow(recorder: BrowserWindow): BrowserWindow {
     minWidth: LIBRARY.floorWidth,
     minHeight: 480,
     show: false,
-    title: "Skill Recorder — Sessions",
-    backgroundColor: "#111318",
+    title: "Skill Recorder: Sessions",
+    backgroundColor: "#faf8f5",
     webPreferences: {
       preload: path.join(dirname, "preload.cjs"),
       contextIsolation: true,

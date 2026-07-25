@@ -44,12 +44,12 @@ The skill-recorder **works on Windows** for core recording. Install, typecheck, 
 **Impact:** Frame extraction and visual correlation are skipped. The event-only pipeline still produces a valid bundle.  
 **Fix:** No code change needed — this is expected degradation. The `VideoRecorder.start()` already handles this gracefully (line 88-90: logs "no screen source available; skipping video").
 
-### 3. URL provider returns `null` on Windows (KNOWN LIMITATION)
+### 3. URL provider returns `null` on Windows — ✅ FIXED
 
 **Symptom:** No `browser.url` events emitted even when Edge is frontmost.  
-**Root cause:** `createUrlProvider()` at `electron/collectors/url-provider.ts:121` explicitly returns `null` for non-darwin platforms. Comment says: "Windows: UI Automation address-bar read is a later milestone."  
-**Impact:** Browser URL tracking is unavailable on Windows. App switches and titles still work.  
-**Fix needed:** Implement a Windows `UrlProvider` using UI Automation (or Accessibility APIs) to read the address bar of Chromium/Edge. This is a feature gap, not a bug.
+**Root cause:** `createUrlProvider()` returned `null` for non-darwin platforms.  
+**Fix:** Implemented `WindowsUrlProvider` using a persistent PowerShell sidecar with Windows UI Automation. Reads the address bar of Chromium browsers via `Chrome_WidgetWin_1` UIA tree traversal. ~70ms response time per query.  
+**Verified:** 4 browser.url events captured during a test recording (Bing searches + site navigation).
 
 ### 4. Window titles are empty strings at `basic` capture level
 
@@ -85,8 +85,8 @@ The skill-recorder **works on Windows** for core recording. Install, typecheck, 
 
 ## Recommendations
 
-1. **Install Copilot CLI** to unblock the describer — no code changes needed.
-2. **Test video capture** in a full interactive desktop session (not headless/remote).
-3. **Implement Windows URL provider** (UI Automation) as a future feature.
+1. ~~**Install Copilot CLI**~~ to unblock the describer — no code changes needed.
+2. ~~**Test video capture**~~ — ✅ works in full interactive desktop session.
+3. ~~**Implement Windows URL provider**~~ — ✅ Done (UI Automation sidecar).
 4. **Test `npm run dist`** (electron-builder) to verify native module packaging with `asarUnpack`.
 5. **Consider enabling long paths** in the app manifest or documenting the requirement for Windows users.

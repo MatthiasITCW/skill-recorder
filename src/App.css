@@ -726,13 +726,13 @@ button:focus-visible,
 
 .sess-confirm {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
   background: var(--surface);
   border: 1px solid var(--signal);
   border-radius: 10px;
-  padding: 9px 11px;
+  padding: 11px 12px;
 }
 
 .sess-confirm-text {
@@ -756,8 +756,8 @@ button:focus-visible,
 .sess-confirm-actions {
   display: flex;
   align-items: center;
-  gap: 4px;
-  flex: none;
+  justify-content: flex-end;
+  gap: 14px;
 }
 
 .danger {

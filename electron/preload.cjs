@@ -12,6 +12,16 @@ const IPC = {
   getCapture: "capture:get",
   setLevel: "capture:set-level",
   setConfig: "capture:set-config",
+  analyze: "analyze:start",
+  analyzeFeedback: "analyze:feedback",
+  getAnalysis: "analyze:get",
+  approveAnalysis: "analyze:approve",
+  updateAnalysis: "analyze:update",
+  cancelAnalysis: "analyze:cancel",
+  analyzeProgress: "analyze:progress",
+  listSessions: "sessions:list",
+  openLibrary: "ui:open-library",
+  closeLibrary: "ui:close-library",
 };
 
 contextBridge.exposeInMainWorld("skillRecorder", {
@@ -28,4 +38,18 @@ contextBridge.exposeInMainWorld("skillRecorder", {
     ipcRenderer.on(IPC.statusChanged, listener);
     return () => ipcRenderer.removeListener(IPC.statusChanged, listener);
   },
+  analyze: (sessionId) => ipcRenderer.invoke(IPC.analyze, sessionId),
+  analyzeFeedback: (input) => ipcRenderer.invoke(IPC.analyzeFeedback, input),
+  getAnalysis: (sessionId) => ipcRenderer.invoke(IPC.getAnalysis, sessionId),
+  approveAnalysis: (sessionId) => ipcRenderer.invoke(IPC.approveAnalysis, sessionId),
+  updateAnalysis: (input) => ipcRenderer.invoke(IPC.updateAnalysis, input),
+  cancelAnalysis: (sessionId) => ipcRenderer.invoke(IPC.cancelAnalysis, sessionId),
+  onAnalyzeProgress: (cb) => {
+    const listener = (_event, progress) => cb(progress);
+    ipcRenderer.on(IPC.analyzeProgress, listener);
+    return () => ipcRenderer.removeListener(IPC.analyzeProgress, listener);
+  },
+  listSessions: () => ipcRenderer.invoke(IPC.listSessions),
+  openLibrary: () => ipcRenderer.invoke(IPC.openLibrary),
+  closeLibrary: () => ipcRenderer.invoke(IPC.closeLibrary),
 });

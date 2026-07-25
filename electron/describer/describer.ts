@@ -1,0 +1,363 @@
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import path from "node:path";
+
+import { approveAll, CopilotClient, type CopilotSession } from "@github/copilot-sdk";
+
+import {
+  AnalysisSchema,
+  toAnalysis,
+  type Analysis,
+  type AnalysisFeedback,
+  type AnalysisSubmission,
+} from "../../common/analysis";
+import type { AnalyzeProgress } from "../../common/ipc";
+import type { SessionMeta } from "../../common/types";
+import { FrameExtractor } from "../frames/extractor";
+import { createLogger } from "../logger";
+import { sessionsRoot } from "../recorder/session-store";
+import { DESCRIBER_INSTRUCTIONS } from "./instructions";
+import { createDescriberTools } from "./tools";
+
+const log = createLogger("Describer");
+
+/** How long a single agent turn may run before we give up (multi-tool loop). */
+const TURN_TIMEOUT_MS = 180_000;
+
+const KICKOFF_PROMPT =
+  "Reconstruct what the user did in this recording. Start with get_timeline, then read events " +
+  "where anything is unclear, and look at frames only where the events are ambiguous. When " +
+  "confident, call submit_analysis with the overall intent and the ordered list of steps.";
+
+const NUDGE_PROMPT =
+  "Please call submit_analysis now with your best analysis of the overall intent and the ordered steps.";
+
+const msg = (err: unknown) => (err instanceof Error ? err.message : String(err));
+
+interface VideoMeta {
+  file: string;
+  startEpoch: number;
+  durationMs: number;
+}
+
+/** A live, resumable analysis session for one recording. */
+interface LiveSession {
+  sessionId: string;
+  sessionDir: string;
+  copilot: CopilotSession;
+  revision: number;
+  feedbackLog: Analysis["feedbackLog"];
+  /** Mutable capture slot the `submit_analysis` tool writes into. */
+  holder: { submission: AnalysisSubmission | undefined };
+}
+
+function readJson<T>(file: string): T | null {
+  if (!existsSync(file)) return null;
+  try {
+    return JSON.parse(readFileSync(file, "utf8")) as T;
+  } catch {
+    return null;
+  }
+}
+
+/** Load a persisted analysis from a session dir (validated), or null. */
+export function loadPersistedAnalysis(sessionId: string): Analysis | null {
+  const file = path.join(sessionsRoot(), sessionId, "analysis.json");
+  const raw = readJson<unknown>(file);
+  if (!raw) return null;
+  const parsed = AnalysisSchema.safeParse(raw);
+  return parsed.success ? parsed.data : null;
+}
+
+/**
+ * Drives the multi-turn GitHub Copilot CLI agent that turns a recording's captured
+ * signals into an intent + ordered steps, and revises them from NL feedback. Owns
+ * a single shared {@link CopilotClient}; keeps one live session per recording so the
+ * feedback loop stays in the same conversation. Streams progress out via a callback.
+ * The deterministic baseline `description.md` remains the fallback when Copilot is
+ * unavailable (callers surface the thrown error).
+ */
+export class Describer {
+  private client: CopilotClient | null = null;
+  private clientStart: Promise<CopilotClient> | null = null;
+  private model: string | undefined;
+  private readonly live = new Map<string, LiveSession>();
+  private readonly active = new Set<string>();
+
+  constructor(private readonly emitProgress: (p: AnalyzeProgress) => void) {}
+
+  /** First pass: reconstruct the session from scratch. */
+  async analyze(sessionId: string): Promise<Analysis> {
+    if (this.active.has(sessionId)) throw new Error("An analysis is already running for this session.");
+    this.active.add(sessionId);
+    try {
+      this.emit(sessionId, "start", "Starting analysis…");
+      await this.disposeLive(sessionId); // fresh conversation each explicit analyze
+      const live = await this.createLive(sessionId);
+      return await this.runTurn(live, KICKOFF_PROMPT);
+    } finally {
+      this.active.delete(sessionId);
+    }
+  }
+
+  /** Later pass: fold in NL feedback and revise holistically. */
+  async feedback(sessionId: string, fb: AnalysisFeedback): Promise<Analysis> {
+    if (this.active.has(sessionId)) throw new Error("An analysis is already running for this session.");
+    this.active.add(sessionId);
+    try {
+      this.emit(sessionId, "start", "Re-analyzing with your feedback…");
+      const live = this.live.get(sessionId) ?? (await this.createLive(sessionId));
+      const prior = loadPersistedAnalysis(sessionId);
+      live.feedbackLog = [
+        ...live.feedbackLog,
+        { revision: live.revision + 1, at: Date.now(), overall: fb.overall, steps: fb.steps },
+      ];
+      return await this.runTurn(live, renderFeedbackPrompt(fb, prior));
+    } finally {
+      this.active.delete(sessionId);
+    }
+  }
+
+  /** Accept an analysis as correct. Persists `approved` so a Skill can be built from it. */
+  async approve(sessionId: string): Promise<Analysis> {
+    const prior = loadPersistedAnalysis(sessionId);
+    if (!prior) throw new Error("There is no analysis to approve yet.");
+    const approved: Analysis = { ...prior, approved: true, approvedAt: Date.now() };
+    const dir = path.join(sessionsRoot(), sessionId);
+    this.persist(dir, approved, this.live.get(sessionId)?.copilot.sessionId);
+    return approved;
+  }
+
+  /**
+   * Apply a direct text edit to the title and/or intent — a user correction, NOT a
+   * re-analysis. Steps and evidence are untouched; the agent is not invoked. Blank
+   * intent is ignored (a session always keeps a goal); the title may be cleared.
+   */
+  async edit(sessionId: string, patch: { title?: string; intent?: string }): Promise<Analysis> {
+    const prior = loadPersistedAnalysis(sessionId);
+    if (!prior) throw new Error("There is no analysis to edit yet.");
+    const next: Analysis = { ...prior };
+    if (patch.title !== undefined) next.title = patch.title.trim();
+    if (patch.intent !== undefined && patch.intent.trim()) next.intent = patch.intent.trim();
+    const dir = path.join(sessionsRoot(), sessionId);
+    this.persist(dir, next, this.live.get(sessionId)?.copilot.sessionId);
+    return next;
+  }
+
+  /** Abort an in-flight run for a session. */
+  async cancel(sessionId: string): Promise<void> {
+    const live = this.live.get(sessionId);
+    if (live) await live.copilot.abort().catch(() => undefined);
+  }
+
+  /** Tear down the client + all live sessions (called on app quit). */
+  async dispose(): Promise<void> {
+    for (const [id] of this.live) await this.disposeLive(id);
+    if (this.client) await this.client.stop().catch(() => undefined);
+    this.client = null;
+    this.clientStart = null;
+  }
+
+  // --- internals -----------------------------------------------------------
+
+  private emit(sessionId: string, phase: AnalyzeProgress["phase"], message: string): void {
+    this.emitProgress({ sessionId, phase, message });
+  }
+
+  private async ensureClient(): Promise<CopilotClient> {
+    if (this.client) return this.client;
+    if (this.clientStart) return this.clientStart;
+    this.clientStart = (async () => {
+      const client = new CopilotClient();
+      await client.start();
+      const auth = await client.getAuthStatus();
+      if (!auth.isAuthenticated) {
+        await client.stop().catch(() => undefined);
+        throw new Error(
+          "GitHub Copilot CLI is not signed in. Open a terminal, run `copilot`, sign in, then try again.",
+        );
+      }
+      this.model = await this.pickVisionModel(client);
+      log.info("Copilot ready", auth.login ? `as ${auth.login}` : "", this.model ? `· model ${this.model}` : "");
+      this.client = client;
+      return client;
+    })();
+    try {
+      return await this.clientStart;
+    } catch (err) {
+      this.clientStart = null;
+      throw err;
+    }
+  }
+
+  /** Prefer a vision-capable, enabled model (frames need vision). */
+  private async pickVisionModel(client: CopilotClient): Promise<string | undefined> {
+    const override = process.env.SKILL_RECORDER_MODEL;
+    if (override) return override;
+    try {
+      const models = await client.listModels();
+      const vision = models.filter(
+        (m) => m.capabilities?.supports?.vision && m.policy?.state !== "disabled",
+      );
+      return vision[0]?.id;
+    } catch (err) {
+      log.warn("listModels failed; using CLI default model:", msg(err));
+      return undefined;
+    }
+  }
+
+  private async createLive(sessionId: string): Promise<LiveSession> {
+    const sessionDir = path.join(sessionsRoot(), sessionId);
+    const meta = readJson<SessionMeta>(path.join(sessionDir, "session.json"));
+    if (!meta) throw new Error(`Session ${sessionId} not found or has no session.json.`);
+
+    const extractor = buildExtractor(sessionDir);
+    const holder: LiveSession["holder"] = { submission: undefined };
+
+    const tools = createDescriberTools({
+      sessionDir,
+      startedAt: meta.startedAt,
+      extractor,
+      onProgress: (m) => this.emit(sessionId, "working", m),
+      onSubmit: (s) => {
+        holder.submission = s;
+      },
+    });
+
+    const client = await this.ensureClient();
+    const config = {
+      systemMessage: { mode: "append" as const, content: DESCRIBER_INSTRUCTIONS },
+      tools,
+      onPermissionRequest: approveAll,
+      workingDirectory: sessionDir,
+      enableHostGitOperations: false,
+      infiniteSessions: { enabled: false },
+      ...(this.model ? { model: this.model } : {}),
+    };
+    // Restrict to our custom tools where supported; fall back if the runtime
+    // rejects an allowlist of custom names.
+    let copilot: CopilotSession;
+    try {
+      copilot = await client.createSession({ ...config, availableTools: tools.map((t) => t.name) });
+    } catch (err) {
+      log.warn("createSession with tool allowlist failed; retrying without it:", msg(err));
+      copilot = await client.createSession(config);
+    }
+
+    const prior = loadPersistedAnalysis(sessionId);
+    const live: LiveSession = {
+      sessionId,
+      sessionDir,
+      copilot,
+      revision: prior?.revision ?? 0,
+      feedbackLog: prior?.feedbackLog ?? [],
+      holder,
+    };
+    this.live.set(sessionId, live);
+    return live;
+  }
+
+  private async disposeLive(sessionId: string): Promise<void> {
+    const live = this.live.get(sessionId);
+    if (!live) return;
+    this.live.delete(sessionId);
+    await live.copilot.disconnect().catch(() => undefined);
+  }
+
+  private async runTurn(live: LiveSession, prompt: string): Promise<Analysis> {
+    live.holder.submission = undefined;
+    this.emit(live.sessionId, "working", "Thinking…");
+    try {
+      await live.copilot.sendAndWait(prompt, TURN_TIMEOUT_MS);
+    } catch (err) {
+      throw new Error(`Analysis run failed: ${msg(err)}`);
+    }
+    if (!live.holder.submission) {
+      this.emit(live.sessionId, "working", "Asking the agent to finalize its analysis…");
+      await live.copilot.sendAndWait(NUDGE_PROMPT, TURN_TIMEOUT_MS).catch(() => undefined);
+    }
+    const submission = live.holder.submission;
+    if (!submission) throw new Error("The agent finished without submitting an analysis.");
+
+    live.revision += 1;
+    this.emit(live.sessionId, "drafting", "Finalizing analysis…");
+    const analysis = toAnalysis(live.sessionId, live.revision, submission, [...live.feedbackLog]);
+    this.persist(live.sessionDir, analysis, live.copilot.sessionId);
+    this.emit(live.sessionId, "done", `Analysis ready (revision ${analysis.revision}).`);
+    return analysis;
+  }
+
+  private persist(sessionDir: string, analysis: Analysis, copilotSessionId?: string): void {
+    try {
+      writeFileSync(path.join(sessionDir, "analysis.json"), JSON.stringify(analysis, null, 2));
+      writeFileSync(path.join(sessionDir, "analysis.md"), renderAnalysisMarkdown(analysis));
+      if (copilotSessionId) {
+        writeFileSync(
+          path.join(sessionDir, "describer.json"),
+          JSON.stringify({ copilotSessionId }, null, 2),
+        );
+      }
+    } catch (err) {
+      log.warn("failed to persist analysis:", msg(err));
+    }
+  }
+}
+
+function buildExtractor(sessionDir: string): FrameExtractor | null {
+  const video = readJson<VideoMeta>(path.join(sessionDir, "video.json"));
+  if (!video) return null;
+  const videoPath = path.join(sessionDir, video.file);
+  if (!existsSync(videoPath)) return null;
+  return new FrameExtractor({
+    videoPath,
+    framesDir: path.join(sessionDir, "frames"),
+    anchorEpochMs: video.startEpoch,
+    durationSec: video.durationMs > 0 ? video.durationMs / 1000 : undefined,
+  });
+}
+
+function renderFeedbackPrompt(fb: AnalysisFeedback, prior: Analysis | null): string {
+  const lines: string[] = [
+    "The user reviewed your analysis and left feedback. Revise the ENTIRE analysis accordingly and",
+    "call submit_analysis again. Re-examine signals (get_events / get_frames) where the feedback",
+    "points to a gap or error. Keep step ids stable for steps that don't change.",
+    "",
+  ];
+  if (prior) {
+    lines.push("Your current analysis:");
+    lines.push(`- intent (${prior.intentConfidence}): ${prior.intent}`);
+    for (const s of prior.steps) lines.push(`- ${s.id}: ${s.title} — ${s.detail}`);
+    lines.push("");
+  }
+  lines.push(`Overall-intent feedback: ${fb.overall?.trim() ? fb.overall.trim() : "(none)"}`);
+  if (fb.steps.length) {
+    lines.push("Per-step feedback:");
+    for (const s of fb.steps) {
+      const title = prior?.steps.find((p) => p.id === s.stepId)?.title ?? "";
+      lines.push(`- ${s.stepId}${title ? ` (${title})` : ""}: ${s.note}`);
+    }
+  }
+  return lines.join("\n");
+}
+
+/** Human-readable rendering of an analysis (persisted alongside analysis.json). */
+export function renderAnalysisMarkdown(a: Analysis): string {
+  const out: string[] = [];
+  out.push(`# ${a.title?.trim() || "Session analysis"}`);
+  out.push("");
+  out.push(`**Intent** (${a.intentConfidence}): ${a.intent}`);
+  if (a.intentRationale) out.push(`\n${a.intentRationale}`);
+  out.push("");
+  out.push(`## Steps`);
+  a.steps.forEach((s, i) => {
+    const span =
+      s.startMs != null ? ` _(${(s.startMs / 1000).toFixed(1)}s${s.endMs != null ? `–${(s.endMs / 1000).toFixed(1)}s` : ""})_` : "";
+    out.push(`\n### ${i + 1}. ${s.title}${span}`);
+    out.push(s.detail);
+    if (s.apps.length) out.push(`\n- apps: ${s.apps.join(", ")}`);
+    if (s.evidence.length) out.push(`- evidence: ${s.evidence.join("; ")}`);
+    out.push(`- confidence: ${s.confidence}`);
+  });
+  out.push("");
+  out.push(`_Revision ${a.revision} · generated ${new Date(a.createdAt).toISOString()}_`);
+  return out.join("\n") + "\n";
+}

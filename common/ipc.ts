@@ -1,11 +1,69 @@
+import type { Analysis, AnalysisFeedback, Confidence } from "./analysis";
 import type { CaptureConfig, CaptureLevel } from "./config";
 import type { RecorderState } from "./types";
+
+/** The last completed session — the one that can be analyzed. */
+export interface LastSession {
+  id: string;
+  /** True once post-processing (bundle/description/frames) has finished. */
+  processed: boolean;
+}
+
+/** A saved recording as shown in the sessions library. */
+export interface SessionSummary {
+  id: string;
+  startedAt: number | null;
+  stoppedAt: number | null;
+  durationMs: number | null;
+  /** True once post-processing produced a bundle. */
+  processed: boolean;
+  hasVideo: boolean;
+  /** Present once the describer has produced an analysis for this session. */
+  analysis: {
+    revision: number;
+    title: string;
+    intent: string;
+    intentConfidence: Confidence;
+    stepCount: number;
+    approved: boolean;
+  } | null;
+}
 
 export interface RecorderStatus {
   state: RecorderState;
   sessionId: string | null;
   startedAt: number | null;
   eventCount: number;
+  /** Set after a recording stops; drives the "Analyze" affordance. */
+  lastSession: LastSession | null;
+}
+
+/** Streamed to the renderer while the describer agent works. */
+export interface AnalyzeProgress {
+  sessionId: string;
+  phase: "start" | "working" | "drafting" | "done" | "error";
+  message: string;
+}
+
+/** Result of an analyze / feedback round. */
+export interface AnalyzeResult {
+  ok: boolean;
+  analysis?: Analysis;
+  error?: string;
+}
+
+/** Feedback payload sent from the renderer for a re-analysis round. */
+export interface AnalysisFeedbackInput extends AnalysisFeedback {
+  sessionId: string;
+}
+
+/** A direct text edit to the intent/title, applied without re-running the agent. */
+export interface AnalysisEditInput {
+  sessionId: string;
+  /** New short label; empty string clears it (list falls back to the intent). */
+  title?: string;
+  /** New one-sentence goal; blank/whitespace is ignored (intent can't be emptied). */
+  intent?: string;
 }
 
 export interface StartResult {
@@ -63,6 +121,16 @@ export const IPC = {
   getCapture: "capture:get",
   setLevel: "capture:set-level",
   setConfig: "capture:set-config",
+  analyze: "analyze:start",
+  analyzeFeedback: "analyze:feedback",
+  getAnalysis: "analyze:get",
+  approveAnalysis: "analyze:approve",
+  updateAnalysis: "analyze:update",
+  cancelAnalysis: "analyze:cancel",
+  analyzeProgress: "analyze:progress",
+  listSessions: "sessions:list",
+  openLibrary: "ui:open-library",
+  closeLibrary: "ui:close-library",
 } as const;
 
 /** Shape exposed on `window.skillRecorder` by the preload bridge. */
@@ -76,4 +144,23 @@ export interface SkillRecorderApi {
   setLevel(level: Exclude<CaptureLevel, "custom">): Promise<CaptureState>;
   setConfig(config: CaptureConfig): Promise<CaptureState>;
   onStatusChanged(cb: (status: RecorderStatus) => void): () => void;
+  /** Run the Copilot describer on a session (defaults to the last completed one). */
+  analyze(sessionId?: string): Promise<AnalyzeResult>;
+  /** Send NL feedback and re-analyze in the same multi-turn session. */
+  analyzeFeedback(input: AnalysisFeedbackInput): Promise<AnalyzeResult>;
+  /** Load the persisted analysis for a session, if any. */
+  getAnalysis(sessionId: string): Promise<Analysis | null>;
+  /** Mark an analysis as accepted/correct — the artifact a Skill is built from. */
+  approveAnalysis(sessionId: string): Promise<AnalyzeResult>;
+  /** Edit the title/intent text directly (no re-analysis). */
+  updateAnalysis(input: AnalysisEditInput): Promise<AnalyzeResult>;
+  /** Abort an in-flight analysis. */
+  cancelAnalysis(sessionId: string): Promise<{ ok: boolean }>;
+  onAnalyzeProgress(cb: (progress: AnalyzeProgress) => void): () => void;
+  /** All saved recordings, newest first, for the sessions library. */
+  listSessions(): Promise<SessionSummary[]>;
+  /** Open (and focus) the Sessions library window, docked to the recorder. */
+  openLibrary(): Promise<void>;
+  /** Close the Sessions library window from within it. */
+  closeLibrary(): Promise<void>;
 }

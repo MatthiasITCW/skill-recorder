@@ -74,8 +74,11 @@ All times are **\`atMs\` = milliseconds since the recording started**.
 
 ## Output schema (submit_analysis)
 - **title**: a SHORT 2–5 word label for the task, in Title Case with no trailing period,
-  e.g. "Research Habit Articles", "Extract Invoice Data", "Compare Pricing Plans". This is
-  the session's name in lists, so make it scannable — name the task, not the apps used.
+  under ~40 characters, e.g. "Research Habit Articles", "Extract Invoice Data", "Compare
+  Pricing Plans". This is the session's name in lists, so make it scannable — name the
+  task, not the apps used. It must be a **fresh short name, NOT the intent sentence
+  truncated**. (e.g. intent "Copy the last few messages of a Teams chat into a new Apple
+  Note" → title "Save Teams Chat To Notes".)
 - **intent**: one sentence naming the user's goal, e.g. "Research and compare
   articles on building better habits" or "Submit an expense report".
 - **intentConfidence**: "high" | "medium" | "low".

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { Analysis } from "../common/analysis";
 import type { AnalyzeProgress, SessionSummary } from "../common/ipc";
-import { formatDur, formatMs, formatWhen } from "./format";
+import { formatDur, formatMs, formatWhen, shortLabel } from "./format";
 
 export function Library() {
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
@@ -145,7 +145,9 @@ function SessionsList({
                   ) : null}
                 </div>
                 <div className="sess-intent">
-                  {s.analysis?.title?.trim() || s.analysis?.intent || "Not analyzed yet"}
+                  {s.analysis
+                    ? s.analysis.title?.trim() || shortLabel(s.analysis.intent)
+                    : "Not analyzed yet"}
                 </div>
                 <div className="sess-sub">
                   {s.durationMs != null && <span>{formatDur(s.durationMs)}</span>}
@@ -380,6 +382,7 @@ function AnalysisWorkspace({
                         } else if (e.key === "Escape") setEditing(false);
                       }}
                     />
+                    <span className="edit-hint">Appears in your sessions list</span>
                   </label>
                   <label className="edit-field">
                     <span className="edit-label">Goal</span>
@@ -404,10 +407,7 @@ function AnalysisWorkspace({
                 </div>
               ) : (
                 <>
-                  <h2 className="summary-text">{analysis.title?.trim() || analysis.intent}</h2>
-                  {analysis.title?.trim() && (
-                    <p className="summary-goal">{analysis.intent}</p>
-                  )}
+                  <h2 className="summary-text">{analysis.intent}</h2>
                   {analysis.intentRationale && (
                     <p className="summary-why">{analysis.intentRationale}</p>
                   )}

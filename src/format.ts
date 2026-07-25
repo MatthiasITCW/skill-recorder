@@ -13,6 +13,20 @@ export function formatDur(ms: number): string {
   return `${Math.floor(s / 60)}m ${s % 60}s`;
 }
 
+/**
+ * Compact one-line label derived from a full intent sentence. Used as the
+ * sessions-list name when an analysis has no short `title` (older analyses saved
+ * before the describer produced one). Trims to a word boundary near 44 chars so
+ * the list stays scannable instead of wrapping the whole goal sentence.
+ */
+export function shortLabel(intent: string): string {
+  const clean = intent.trim().replace(/\s+/g, " ").replace(/[.\s]+$/, "");
+  if (clean.length <= 44) return clean;
+  const cut = clean.slice(0, 44);
+  const sp = cut.lastIndexOf(" ");
+  return (sp > 24 ? cut.slice(0, sp) : cut).replace(/[,;:]+$/, "") + "…";
+}
+
 /** Human timestamp for a saved session, e.g. "Jul 25, 1:05 AM". */
 export function formatWhen(ms: number | null): string {
   if (ms == null) return "—";

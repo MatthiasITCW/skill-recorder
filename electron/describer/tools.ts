@@ -272,7 +272,7 @@ export function createDescriberTools(ctx: ToolContext): Tool[] {
         title: {
           type: "string",
           description:
-            'A short 2–5 word label for this task in Title Case, no trailing period, e.g. "Research habit articles" or "Extract invoice data". Used as the session name in lists.',
+            'A short 2–5 word label for this task in Title Case, under ~40 characters, no trailing period, e.g. "Research Habit Articles" or "Save Teams Chat To Notes". Used as the session name in lists. Write a fresh, scannable name — do NOT just truncate the intent sentence.',
         },
         intent: { type: "string", description: "One sentence naming the user's overall goal." },
         intentConfidence: { type: "string", enum: ["high", "medium", "low"] },

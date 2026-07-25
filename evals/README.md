@@ -84,6 +84,7 @@ Business, repeatable knowledge-work patterns (`evals/scenarios/`):
 | `expense-report` | Reconcile card charges against receipts and file an expense report (Chrome + Preview + Expensify) |
 | `release-notes` | Compile release notes from merged PRs, then version + deploy (Terminal + GitHub + editor) |
 | `lead-to-crm` | Qualify inbound leads and enter them into the CRM (Mail + LinkedIn + Salesforce) |
+| `windows-deploy` | Deploy a web app to Azure and log the live URL, on Windows (Edge + Windows Terminal/pwsh + Excel) |
 
 The last three are longer, multi-app **business processes** — they loop over several
 records, mix a native app with the browser and/or terminal, and end in a submit /

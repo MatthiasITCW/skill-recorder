@@ -47,6 +47,7 @@
   --signal-dim: rgba(var(--brand-rgb), 0.13);
   --go: hsl(158, 100%, 26%);       /* Scout success-loud (dark green) */
   --go-rgb: 0, 133, 84;
+  --warn: hsl(35, 92%, 42%);       /* amber for "needs setup" (not an error) */
 
   --sans: "Segoe Sans", Aptos, Calibri, -apple-system, BlinkMacSystemFont,
     "Segoe UI", Roboto, sans-serif;
@@ -630,6 +631,30 @@ button:focus-visible,
 
 .badge.bad {
   background: var(--rec);
+}
+
+.badge.warn {
+  background: var(--warn);
+}
+
+.row-action {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--brand-ink);
+  background: var(--signal-dim);
+  border: 1px solid rgba(var(--brand-rgb), 0.3);
+  border-radius: 5px;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+
+.row-action:hover:not(:disabled) {
+  background: rgba(var(--brand-rgb), 0.2);
+}
+
+.row-action:disabled {
+  opacity: 0.55;
+  cursor: default;
 }
 
 .hint {

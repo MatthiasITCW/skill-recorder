@@ -6,6 +6,7 @@ import { leadToCrm } from "./lead-to-crm";
 import { releaseNotes } from "./release-notes";
 import { researchCompile } from "./research-compile";
 import { webToSpreadsheet } from "./web-to-spreadsheet";
+import { windowsDeploy } from "./windows-deploy";
 
 /** All eval scenarios, in run order. */
 export const scenarios: Scenario[] = [
@@ -17,4 +18,6 @@ export const scenarios: Scenario[] = [
   expenseReport,
   releaseNotes,
   leadToCrm,
+  // Windows-shaped capture (win32 app names + browser.url + pwsh):
+  windowsDeploy,
 ];

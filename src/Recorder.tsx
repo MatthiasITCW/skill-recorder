@@ -15,6 +15,7 @@ export function Recorder() {
   const [elapsed, setElapsed] = useState(0);
   const [sessionCount, setSessionCount] = useState(0);
   const [pendingCount, setPendingCount] = useState(0);
+  const [installingHook, setInstallingHook] = useState(false);
 
   const refreshCount = useCallback(async () => {
     const list = await window.skillRecorder.listSessions();
@@ -75,6 +76,25 @@ export function Recorder() {
 
   const openLibrary = useCallback(() => {
     void window.skillRecorder.openLibrary();
+  }, []);
+
+  const installHook = useCallback(async () => {
+    setInstallingHook(true);
+    try {
+      const res = await window.skillRecorder.installShellHook();
+      if (!res.ok) {
+        window.alert(res.error ?? "Could not install the shell hook.");
+      } else if (res.alreadyInstalled) {
+        window.alert("The shell hook is already installed.");
+      } else {
+        window.alert(
+          `Installed the ${res.shell} hook. Open a new terminal to start capturing commands.`,
+        );
+      }
+      setDoctor(await window.skillRecorder.doctor());
+    } finally {
+      setInstallingHook(false);
+    }
   }, []);
 
   return (
@@ -182,11 +202,38 @@ export function Recorder() {
       {doctor && (
         <div className="doctor">
           <Row
+            label="window tracking"
+            ok={doctor.activeWindow.ok}
+            note={doctor.activeWindow.ok ? "native" : "addon missing"}
+          />
+          {doctor.activeSources.some((s) => s.key === "browserUrls") && (
+            <Row
+              label="browser URLs"
+              ok={doctor.browserUrl.supported}
+              note={doctor.browserUrl.supported ? doctor.browserUrl.kind : "not on this OS"}
+            />
+          )}
+          <Row
             label="ffmpeg"
             ok={doctor.ffmpeg.ok}
             note={doctor.ffmpeg.ok ? doctor.ffmpeg.source : "missing"}
           />
           <Row label="copilot CLI" ok={doctor.copilotCli.ok} note={doctor.copilotCli.ok ? "found" : "missing"} />
+          {doctor.activeSources.some((s) => s.key === "terminal") && (
+            <div className="row">
+              <span className={`badge ${doctor.shellHook.installed ? "good" : "warn"}`}>
+                {doctor.shellHook.installed ? "✓" : "!"}
+              </span>
+              <span className="row-label">terminal hook</span>
+              {doctor.shellHook.installed ? (
+                <span className="row-note">{doctor.shellHook.shell}</span>
+              ) : (
+                <button className="row-action" onClick={installHook} disabled={installingHook}>
+                  {installingHook ? "installing" : "install"}
+                </button>
+              )}
+            </div>
+          )}
         </div>
       )}
 

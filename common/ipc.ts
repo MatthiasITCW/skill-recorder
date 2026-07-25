@@ -136,13 +136,58 @@ export interface CopilotInfo {
   path: string | null;
 }
 
+/** Whether the native window-tracking addon (get-windows) loaded for this platform. */
+export interface ActiveWindowInfo {
+  ok: boolean;
+  /** The prebuilt binding path we resolved, for troubleshooting. */
+  bindingPath: string | null;
+  error?: string;
+}
+
+/** How, and whether, active-tab URLs can be read on this platform. */
+export interface BrowserUrlInfo {
+  kind: "applescript" | "uia" | "none";
+  supported: boolean;
+}
+
+/** Shell-hook install status for terminal capture. */
+export interface ShellHookInfo {
+  shell: "zsh" | "bash" | "pwsh" | null;
+  profilePath: string | null;
+  installed: boolean;
+}
+
+/** One capture source in the doctor report, annotated with platform support. */
+export interface DoctorSource {
+  key: string;
+  label: string;
+  tier: number;
+  cost: string;
+  /** False when this source can't work on the current platform. */
+  supported: boolean;
+  /** Short reason shown when unsupported, or a setup nudge. */
+  note?: string;
+}
+
 export interface DoctorReport {
   platform: NodeJS.Platform;
   ffmpeg: FfmpegInfo;
   copilotCli: CopilotInfo;
+  activeWindow: ActiveWindowInfo;
+  browserUrl: BrowserUrlInfo;
+  shellHook: ShellHookInfo;
   sessionsDir: string;
   captureLevel: CaptureLevel;
-  activeSources: { key: string; label: string; tier: number; cost: string }[];
+  activeSources: DoctorSource[];
+}
+
+/** Result of installing the terminal shell hook. */
+export interface ShellHookInstallResult {
+  ok: boolean;
+  shell: "zsh" | "bash" | "pwsh" | null;
+  profilePath: string | null;
+  alreadyInstalled: boolean;
+  error?: string;
 }
 
 /** Current capture configuration plus its resolved named level. */
@@ -158,6 +203,7 @@ export const IPC = {
   status: "recorder:status",
   marker: "recorder:marker",
   doctor: "doctor:check",
+  installShellHook: "doctor:install-shell-hook",
   statusChanged: "recorder:status-changed",
   getCapture: "capture:get",
   setLevel: "capture:set-level",
@@ -187,6 +233,8 @@ export interface SkillRecorderApi {
   status(): Promise<RecorderStatus>;
   marker(note: string): Promise<MarkerResult>;
   doctor(): Promise<DoctorReport>;
+  /** Install the terminal shell hook into the user's shell profile (idempotent). */
+  installShellHook(): Promise<ShellHookInstallResult>;
   getCapture(): Promise<CaptureState>;
   setLevel(level: Exclude<CaptureLevel, "custom">): Promise<CaptureState>;
   setConfig(config: CaptureConfig): Promise<CaptureState>;

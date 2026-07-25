@@ -15,6 +15,7 @@ import type {
 import { IPC } from "../common/ipc";
 import { Describer, loadPersistedAnalysis } from "./describer/describer";
 import { runDoctor } from "./doctor";
+import { installShellHook } from "./collectors/shell-hook";
 import { createLogger } from "./logger";
 import type { RecorderController } from "./recorder/controller";
 import { isValidSessionId } from "./recorder/session-store";
@@ -41,6 +42,7 @@ export function registerIpc(
   ipcMain.handle(IPC.status, () => recorder.status());
   ipcMain.handle(IPC.marker, (_event, note: string) => recorder.marker(note));
   ipcMain.handle(IPC.doctor, () => runDoctor(settings));
+  ipcMain.handle(IPC.installShellHook, () => installShellHook());
   ipcMain.handle(IPC.getCapture, () => captureState());
   ipcMain.handle(IPC.setLevel, (_event, level: Exclude<CaptureLevel, "custom">) => {
     settings.setLevel(level);

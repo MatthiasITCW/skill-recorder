@@ -1,5 +1,7 @@
 import { execFile } from "node:child_process";
 
+import { WindowsUrlProvider } from "./windows-url-provider";
+
 /**
  * Reads the *active tab URL* of the frontmost browser — the single richest
  * non-video signal we can't get from window titles alone. macOS exposes it only
@@ -21,6 +23,8 @@ export interface UrlProvider {
   supports(app: string): boolean;
   /** Best-effort active-tab URL; resolves null on any failure (never throws). */
   get(app: string): Promise<ActiveUrl | null>;
+  /** Release any long-lived resources (e.g. a helper process). Optional. */
+  dispose?(): void;
 }
 
 // Browsers whose scripting dictionary exposes `active tab of front window`.
@@ -119,6 +123,17 @@ export class MacUrlProvider implements UrlProvider {
 /** The URL provider for the current platform, or null where unsupported. */
 export function createUrlProvider(): UrlProvider | null {
   if (process.platform === "darwin") return new MacUrlProvider();
-  // Windows: UI Automation address-bar read is a later milestone.
+  if (process.platform === "win32") return new WindowsUrlProvider();
   return null;
+}
+
+/** How the active-tab URL is read on a given platform, for honest reporting. */
+export type BrowserUrlKind = "applescript" | "uia" | "none";
+
+export function browserUrlProviderKind(
+  platform: NodeJS.Platform = process.platform,
+): BrowserUrlKind {
+  if (platform === "darwin") return "applescript";
+  if (platform === "win32") return "uia";
+  return "none";
 }

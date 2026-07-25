@@ -83,6 +83,11 @@ export class ActiveWindowCollector implements Collector {
 
   start(ctx: CollectorContext): void {
     this.ctx = ctx;
+    if (this.captureUrls && !this.urlProvider) {
+      // Honest degradation: the level asks for URLs but this platform has no
+      // provider (e.g. Linux). Say so once instead of silently emitting nothing.
+      ctx.log.warn("Browser URL capture is on but unavailable on this platform; skipping URLs.");
+    }
     void this.poll();
   }
 
@@ -91,6 +96,7 @@ export class ActiveWindowCollector implements Collector {
       clearTimeout(this.timer);
       this.timer = null;
     }
+    this.urlProvider?.dispose?.();
     this.ctx = null;
   }
 

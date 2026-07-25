@@ -87,7 +87,7 @@ export function createLibraryWindow(recorder: BrowserWindow): BrowserWindow {
   const layout = computeDock(recorder);
   const win = new BrowserWindow({
     ...layout.library,
-    minWidth: 560,
+    minWidth: LIBRARY.floorWidth,
     minHeight: 480,
     show: false,
     title: "Skill Recorder — Sessions",

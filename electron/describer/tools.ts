@@ -28,6 +28,8 @@ export interface ToolContext {
 
 const MAX_IMAGES_PER_CALL = 6;
 const MAX_STR = 2000;
+/** Cap rows returned by get_events so an un-windowed call can't dump the whole log. */
+const MAX_EVENTS = 500;
 
 const truncate = (v: unknown): unknown =>
   typeof v === "string" && v.length > MAX_STR ? v.slice(0, MAX_STR) + "…[truncated]" : v;
@@ -121,7 +123,7 @@ export function createDescriberTools(ctx: ToolContext): Tool[] {
       } catch (err) {
         return `Could not read events: ${err instanceof Error ? err.message : String(err)}`;
       }
-      const rows = events
+      const all = events
         .filter((e) => (wanted ? wanted.has(e.type) : MEANINGFUL_EVENT_TYPES.has(e.type)))
         .map((e) => ({ e, atMs: rel(e.epoch) }))
         .filter(({ atMs }) => atMs >= from && atMs <= to)
@@ -130,7 +132,22 @@ export function createDescriberTools(ctx: ToolContext): Tool[] {
           for (const [k, v] of Object.entries(e.payload)) payload[k] = truncate(v);
           return { seq: e.seq, atMs, type: e.type, source: e.source, ...payload };
         });
-      return JSON.stringify({ count: rows.length, events: rows }, null, 2);
+      // Bound the payload so a long, un-windowed session can't return thousands
+      // of rows in one tool result. When truncated, tell the agent how to narrow.
+      const rows = all.slice(0, MAX_EVENTS);
+      const truncated = all.length > rows.length;
+      return JSON.stringify(
+        {
+          count: rows.length,
+          total: all.length,
+          ...(truncated
+            ? { truncated: true, note: `Showing the first ${MAX_EVENTS} of ${all.length} events. Narrow with fromMs/toMs or filter by types.` }
+            : {}),
+          events: rows,
+        },
+        null,
+        2,
+      );
     },
   };
 

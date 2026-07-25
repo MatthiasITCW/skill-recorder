@@ -121,6 +121,18 @@ button:focus-visible,
   color: var(--muted);
 }
 
+.status-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status-cancel {
+  margin-left: auto;
+  flex: none;
+}
+
 .spinner {
   width: 13px;
   height: 13px;

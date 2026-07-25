@@ -14,7 +14,7 @@ import type { AnalyzeProgress } from "../../common/ipc";
 import type { SessionMeta } from "../../common/types";
 import { FrameExtractor } from "../frames/extractor";
 import { createLogger } from "../logger";
-import { sessionsRoot } from "../recorder/session-store";
+import { sessionsRoot, sessionDir, isValidSessionId } from "../recorder/session-store";
 import { DESCRIBER_INSTRUCTIONS } from "./instructions";
 import { createDescriberTools } from "./tools";
 
@@ -22,6 +22,9 @@ const log = createLogger("Describer");
 
 /** How long a single agent turn may run before we give up (multi-tool loop). */
 const TURN_TIMEOUT_MS = 180_000;
+
+/** Cap on simultaneously-held live agent sessions; oldest idle ones are evicted. */
+const MAX_LIVE_SESSIONS = 4;
 
 const KICKOFF_PROMPT =
   "Reconstruct what the user did in this recording. Start with get_timeline, then read events " +
@@ -61,6 +64,7 @@ function readJson<T>(file: string): T | null {
 
 /** Load a persisted analysis from a session dir (validated), or null. */
 export function loadPersistedAnalysis(sessionId: string): Analysis | null {
+  if (!isValidSessionId(sessionId)) return null;
   const file = path.join(sessionsRoot(), sessionId, "analysis.json");
   const raw = readJson<unknown>(file);
   if (!raw) return null;
@@ -107,11 +111,9 @@ export class Describer {
       this.emit(sessionId, "start", "Re-analyzing with your feedback…");
       const live = this.live.get(sessionId) ?? (await this.createLive(sessionId));
       const prior = loadPersistedAnalysis(sessionId);
-      live.feedbackLog = [
-        ...live.feedbackLog,
-        { revision: live.revision + 1, at: Date.now(), overall: fb.overall, steps: fb.steps },
-      ];
-      return await this.runTurn(live, renderFeedbackPrompt(fb, prior));
+      // The feedback round is recorded in runTurn only after it produces a
+      // revision, so a failed turn never leaves a phantom log entry.
+      return await this.runTurn(live, renderFeedbackPrompt(fb, prior), fb);
     } finally {
       this.active.delete(sessionId);
     }
@@ -119,11 +121,11 @@ export class Describer {
 
   /** Accept an analysis as correct. Persists `approved` so a Skill can be built from it. */
   async approve(sessionId: string): Promise<Analysis> {
+    if (this.active.has(sessionId)) throw new Error("Wait for the current analysis to finish before saving.");
     const prior = loadPersistedAnalysis(sessionId);
     if (!prior) throw new Error("There is no analysis to approve yet.");
     const approved: Analysis = { ...prior, approved: true, approvedAt: Date.now() };
-    const dir = path.join(sessionsRoot(), sessionId);
-    this.persist(dir, approved, this.live.get(sessionId)?.copilot.sessionId);
+    this.persist(sessionDir(sessionId), approved);
     return approved;
   }
 
@@ -133,13 +135,13 @@ export class Describer {
    * intent is ignored (a session always keeps a goal); the title may be cleared.
    */
   async edit(sessionId: string, patch: { title?: string; intent?: string }): Promise<Analysis> {
+    if (this.active.has(sessionId)) throw new Error("Wait for the current analysis to finish before editing.");
     const prior = loadPersistedAnalysis(sessionId);
     if (!prior) throw new Error("There is no analysis to edit yet.");
     const next: Analysis = { ...prior };
     if (patch.title !== undefined) next.title = patch.title.trim();
     if (patch.intent !== undefined && patch.intent.trim()) next.intent = patch.intent.trim();
-    const dir = path.join(sessionsRoot(), sessionId);
-    this.persist(dir, next, this.live.get(sessionId)?.copilot.sessionId);
+    this.persist(sessionDir(sessionId), next);
     return next;
   }
 
@@ -147,6 +149,19 @@ export class Describer {
   async cancel(sessionId: string): Promise<void> {
     const live = this.live.get(sessionId);
     if (live) await live.copilot.abort().catch(() => undefined);
+  }
+
+  /**
+   * Disconnect live sessions that aren't currently running — called when the
+   * library window closes, so idle agent conversations don't linger. The active
+   * (in-flight) session, if any, is left alone.
+   */
+  async evictIdle(): Promise<void> {
+    for (const [id, live] of this.live) {
+      if (this.active.has(id)) continue;
+      this.live.delete(id);
+      await live.copilot.disconnect().catch(() => undefined);
+    }
   }
 
   /** Tear down the client + all live sessions (called on app quit). */
@@ -206,15 +221,15 @@ export class Describer {
   }
 
   private async createLive(sessionId: string): Promise<LiveSession> {
-    const sessionDir = path.join(sessionsRoot(), sessionId);
-    const meta = readJson<SessionMeta>(path.join(sessionDir, "session.json"));
+    const dir = sessionDir(sessionId);
+    const meta = readJson<SessionMeta>(path.join(dir, "session.json"));
     if (!meta) throw new Error(`Session ${sessionId} not found or has no session.json.`);
 
-    const extractor = buildExtractor(sessionDir);
+    const extractor = buildExtractor(dir);
     const holder: LiveSession["holder"] = { submission: undefined };
 
     const tools = createDescriberTools({
-      sessionDir,
+      sessionDir: dir,
       startedAt: meta.startedAt,
       extractor,
       onProgress: (m) => this.emit(sessionId, "working", m),
@@ -228,32 +243,42 @@ export class Describer {
       systemMessage: { mode: "append" as const, content: DESCRIBER_INSTRUCTIONS },
       tools,
       onPermissionRequest: approveAll,
-      workingDirectory: sessionDir,
+      workingDirectory: dir,
       enableHostGitOperations: false,
       infiniteSessions: { enabled: false },
       ...(this.model ? { model: this.model } : {}),
     };
-    // Restrict to our custom tools where supported; fall back if the runtime
-    // rejects an allowlist of custom names.
-    let copilot: CopilotSession;
-    try {
-      copilot = await client.createSession({ ...config, availableTools: tools.map((t) => t.name) });
-    } catch (err) {
-      log.warn("createSession with tool allowlist failed; retrying without it:", msg(err));
-      copilot = await client.createSession(config);
-    }
+    // Always constrain the agent to our sandboxed custom tools. If the runtime
+    // cannot honor the allowlist we fail the analysis rather than silently
+    // creating an unsandboxed session — which, combined with approveAll, would
+    // auto-run the SDK's full default toolset in the user's environment.
+    const copilot = await client.createSession({
+      ...config,
+      availableTools: tools.map((t) => t.name),
+    });
 
     const prior = loadPersistedAnalysis(sessionId);
     const live: LiveSession = {
       sessionId,
-      sessionDir,
+      sessionDir: dir,
       copilot,
       revision: prior?.revision ?? 0,
       feedbackLog: prior?.feedbackLog ?? [],
       holder,
     };
     this.live.set(sessionId, live);
+    this.evictOverflow(sessionId);
     return live;
+  }
+
+  /** Keep at most MAX_LIVE_SESSIONS live; disconnect the oldest idle ones. */
+  private evictOverflow(keep: string): void {
+    for (const [id, live] of this.live) {
+      if (this.live.size <= MAX_LIVE_SESSIONS) break;
+      if (id === keep || this.active.has(id)) continue;
+      this.live.delete(id);
+      void live.copilot.disconnect().catch(() => undefined);
+    }
   }
 
   private async disposeLive(sessionId: string): Promise<void> {
@@ -263,12 +288,18 @@ export class Describer {
     await live.copilot.disconnect().catch(() => undefined);
   }
 
-  private async runTurn(live: LiveSession, prompt: string): Promise<Analysis> {
+  private async runTurn(
+    live: LiveSession,
+    prompt: string,
+    pendingFeedback?: AnalysisFeedback,
+  ): Promise<Analysis> {
     live.holder.submission = undefined;
     this.emit(live.sessionId, "working", "Thinking…");
     try {
       await live.copilot.sendAndWait(prompt, TURN_TIMEOUT_MS);
     } catch (err) {
+      // Don't leave the agent running past our timeout/abort — reclaim the turn.
+      await live.copilot.abort().catch(() => undefined);
       throw new Error(`Analysis run failed: ${msg(err)}`);
     }
     if (!live.holder.submission) {
@@ -279,23 +310,30 @@ export class Describer {
     if (!submission) throw new Error("The agent finished without submitting an analysis.");
 
     live.revision += 1;
+    // Record the feedback round only now that it actually produced a revision, so
+    // a failed turn above never leaves a phantom entry with a duplicated revision.
+    if (pendingFeedback) {
+      live.feedbackLog = [
+        ...live.feedbackLog,
+        {
+          revision: live.revision,
+          at: Date.now(),
+          overall: pendingFeedback.overall,
+          steps: pendingFeedback.steps,
+        },
+      ];
+    }
     this.emit(live.sessionId, "drafting", "Finalizing analysis…");
     const analysis = toAnalysis(live.sessionId, live.revision, submission, [...live.feedbackLog]);
-    this.persist(live.sessionDir, analysis, live.copilot.sessionId);
+    this.persist(live.sessionDir, analysis);
     this.emit(live.sessionId, "done", `Analysis ready (revision ${analysis.revision}).`);
     return analysis;
   }
 
-  private persist(sessionDir: string, analysis: Analysis, copilotSessionId?: string): void {
+  private persist(sessionDir: string, analysis: Analysis): void {
     try {
       writeFileSync(path.join(sessionDir, "analysis.json"), JSON.stringify(analysis, null, 2));
       writeFileSync(path.join(sessionDir, "analysis.md"), renderAnalysisMarkdown(analysis));
-      if (copilotSessionId) {
-        writeFileSync(
-          path.join(sessionDir, "describer.json"),
-          JSON.stringify({ copilotSessionId }, null, 2),
-        );
-      }
     } catch (err) {
       log.warn("failed to persist analysis:", msg(err));
     }

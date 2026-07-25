@@ -52,6 +52,8 @@ function openLibrary(): void {
       recorderWindow.setBounds(recorderHome);
     }
     recorderHome = null;
+    // Drop idle agent conversations now that the library is gone.
+    void describer.evictIdle();
   });
 }
 

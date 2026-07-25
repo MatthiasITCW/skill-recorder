@@ -13,6 +13,31 @@ export function sessionsRoot(): string {
 }
 
 /**
+ * True when `id` is safe to use as a single path segment under {@link sessionsRoot}.
+ *
+ * This is a traversal guard, not a format check: renderer- or caller-supplied ids
+ * must be a single segment with no path separators and no `..`, so `path.join`
+ * can never escape the sessions root. It intentionally accepts any reasonable slug
+ * (our own `YYYYMMDD-HHMMSS-<hex>` ids, but also eval/test/imported ids) rather
+ * than coupling to {@link makeSessionId}'s exact shape.
+ */
+export function isValidSessionId(id: unknown): id is string {
+  return (
+    typeof id === "string" &&
+    id.length > 0 &&
+    id.length <= 128 &&
+    !id.includes("..") &&
+    /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(id)
+  );
+}
+
+/** Absolute directory for a session id. Throws on an unsafe id (no traversal). */
+export function sessionDir(id: string): string {
+  if (!isValidSessionId(id)) throw new Error(`Invalid session id: ${String(id)}`);
+  return path.join(sessionsRoot(), id);
+}
+
+/**
  * Owns the on-disk artifacts for a single recording session:
  *   <sessionsRoot>/<id>/session.json      session metadata
  *   <sessionsRoot>/<id>/events.jsonl      append-only event stream

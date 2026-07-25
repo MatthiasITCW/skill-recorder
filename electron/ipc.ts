@@ -8,6 +8,7 @@ import { Describer, loadPersistedAnalysis } from "./describer/describer";
 import { runDoctor } from "./doctor";
 import { createLogger } from "./logger";
 import type { RecorderController } from "./recorder/controller";
+import { isValidSessionId } from "./recorder/session-store";
 import { listSessions } from "./sessions";
 import type { SettingsStore } from "./settings";
 
@@ -48,6 +49,7 @@ export function registerIpc(
   ipcMain.handle(IPC.analyze, async (_event, sessionId?: string): Promise<AnalyzeResult> => {
     const id = resolveSessionId(sessionId);
     if (!id) return { ok: false, error: "No completed session to analyze yet." };
+    if (!isValidSessionId(id)) return { ok: false, error: "Unknown session." };
     try {
       const analysis = await describer.analyze(id);
       return { ok: true, analysis };
@@ -61,7 +63,7 @@ export function registerIpc(
   ipcMain.handle(
     IPC.analyzeFeedback,
     async (_event, input: AnalysisFeedbackInput): Promise<AnalyzeResult> => {
-      if (!input?.sessionId) return { ok: false, error: "Missing sessionId." };
+      if (!isValidSessionId(input?.sessionId)) return { ok: false, error: "Unknown session." };
       try {
         const analysis = await describer.feedback(input.sessionId, {
           overall: input.overall,
@@ -77,11 +79,11 @@ export function registerIpc(
   );
 
   ipcMain.handle(IPC.getAnalysis, (_event, sessionId: string) =>
-    sessionId ? loadPersistedAnalysis(sessionId) : null,
+    isValidSessionId(sessionId) ? loadPersistedAnalysis(sessionId) : null,
   );
 
   ipcMain.handle(IPC.approveAnalysis, async (_event, sessionId: string): Promise<AnalyzeResult> => {
-    if (!sessionId) return { ok: false, error: "Missing sessionId." };
+    if (!isValidSessionId(sessionId)) return { ok: false, error: "Unknown session." };
     try {
       const analysis = await describer.approve(sessionId);
       return { ok: true, analysis };
@@ -93,7 +95,7 @@ export function registerIpc(
   });
 
   ipcMain.handle(IPC.updateAnalysis, async (_event, input: AnalysisEditInput): Promise<AnalyzeResult> => {
-    if (!input?.sessionId) return { ok: false, error: "Missing sessionId." };
+    if (!isValidSessionId(input?.sessionId)) return { ok: false, error: "Unknown session." };
     try {
       const analysis = await describer.edit(input.sessionId, {
         title: input.title,
@@ -108,7 +110,7 @@ export function registerIpc(
   });
 
   ipcMain.handle(IPC.cancelAnalysis, async (_event, sessionId: string) => {
-    if (sessionId) await describer.cancel(sessionId);
+    if (isValidSessionId(sessionId)) await describer.cancel(sessionId);
     return { ok: true };
   });
 

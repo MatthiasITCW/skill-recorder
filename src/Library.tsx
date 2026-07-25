@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { Analysis } from "../common/analysis";
 import type { AnalyzeProgress, SessionSummary } from "../common/ipc";
@@ -131,6 +131,9 @@ function AnalysisWorkspace({
   const [editing, setEditing] = useState(false);
   const [draftTitle, setDraftTitle] = useState("");
   const [draftIntent, setDraftIntent] = useState("");
+  // Set while the user is deliberately canceling, so the aborted run's rejection
+  // doesn't surface as an error toast.
+  const canceled = useRef(false);
 
   useEffect(() => {
     let live = true;
@@ -152,15 +155,23 @@ function AnalysisWorkspace({
   }, [sessionId]);
 
   const run = useCallback(async () => {
+    canceled.current = false;
     setAnalyzing(true);
     setError(null);
     setStatusLine("Starting…");
     const res = await window.skillRecorder.analyze(sessionId);
     if (res.ok && res.analysis) setAnalysis(res.analysis);
-    else setError(res.error ?? "Analysis failed");
+    else if (!canceled.current) setError(res.error ?? "Analysis failed");
     setAnalyzing(false);
     void onChanged();
   }, [sessionId, onChanged]);
+
+  const cancel = useCallback(async () => {
+    canceled.current = true;
+    setStatusLine("Stopping…");
+    await window.skillRecorder.cancelAnalysis(sessionId);
+    setAnalyzing(false);
+  }, [sessionId]);
 
   const hasFeedback =
     overall.trim().length > 0 || Object.values(notes).some((n) => n.trim().length > 0);
@@ -170,6 +181,7 @@ function AnalysisWorkspace({
       .filter(([, note]) => note.trim())
       .map(([stepId, note]) => ({ stepId, note: note.trim() }));
     if (!overall.trim() && steps.length === 0) return;
+    canceled.current = false;
     setAnalyzing(true);
     setError(null);
     setStatusLine("Re-analyzing with your feedback…");
@@ -183,7 +195,7 @@ function AnalysisWorkspace({
       setOverall("");
       setOverallOpen(false);
       setNotes({});
-    } else {
+    } else if (!canceled.current) {
       setError(res.error ?? "Re-analysis failed");
     }
     setAnalyzing(false);
@@ -257,7 +269,10 @@ function AnalysisWorkspace({
         {analyzing && (
           <div className="status-line">
             <span className="spinner" />
-            {statusLine || "Working…"}
+            <span className="status-text">{statusLine || "Working…"}</span>
+            <button className="linky status-cancel" onClick={cancel}>
+              Cancel
+            </button>
           </div>
         )}
 

@@ -81,6 +81,14 @@ Business, repeatable knowledge-work patterns (`evals/scenarios/`):
 | `invoice-extract` | Extract invoice rows from a web table into a spreadsheet |
 | `research-compile` | Research two articles and compile quotes into a note |
 | `directory-lookup` | Collect contact details from a directory into a spreadsheet |
+| `expense-report` | Reconcile card charges against receipts and file an expense report (Chrome + Preview + Expensify) |
+| `release-notes` | Compile release notes from merged PRs, then version + deploy (Terminal + GitHub + editor) |
+| `lead-to-crm` | Qualify inbound leads and enter them into the CRM (Mail + LinkedIn + Salesforce) |
+
+The last three are longer, multi-app **business processes** — they loop over several
+records, mix a native app with the browser and/or terminal, and end in a submit /
+deploy / commit step — stress-testing segmentation and app attribution beyond the
+simple copy→paste flows.
 
 Each also exercises the describer's judgment: **pastes are inferred** (a paste
 emits no event), **recorder start/stop bracketing is dropped**, and **tracking

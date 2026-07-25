@@ -1,8 +1,7 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { createRequire } from "node:module";
 import path from "node:path";
 
-import { approveAll, CopilotClient, type CopilotSession, RuntimeConnection } from "@github/copilot-sdk";
+import { approveAll, CopilotClient, type CopilotSession } from "@github/copilot-sdk";
 
 import {
   AnalysisSchema,
@@ -15,38 +14,12 @@ import type { AnalyzeProgress } from "../../common/ipc";
 import type { SessionMeta } from "../../common/types";
 import { FrameExtractor } from "../frames/extractor";
 import { createLogger } from "../logger";
+import { copilotConnectionOption } from "../copilot-cli-path";
 import { sessionsRoot, sessionDir, isValidSessionId } from "../recorder/session-store";
 import { DESCRIBER_INSTRUCTIONS } from "./instructions";
 import { createDescriberTools } from "./tools";
 
 const log = createLogger("Describer");
-const require = createRequire(import.meta.url);
-
-/**
- * Resolve the path to the bundled Copilot CLI binary. The SDK's own resolution
- * (`getBundledCliPath`) uses `import.meta.resolve` relative to its bundle location,
- * which fails when the SDK is externalized by Vite (the bundle lives in dist-electron/
- * but node_modules is a sibling). We resolve it ourselves via createRequire anchored
- * to *this* file's pre-bundle location, which correctly finds node_modules.
- */
-function resolveCopilotCliPath(): string | undefined {
-  const platform = process.platform === "win32" ? "win32" : process.platform === "darwin" ? "darwin" : "linux";
-  const arch = process.arch;
-  const packageName = `@github/copilot-${platform}-${arch}`;
-  try {
-    // The package's main export points directly to the native binary (e.g. copilot.exe)
-    const resolved = require.resolve(packageName);
-    if (existsSync(resolved)) return resolved;
-  } catch {}
-  // Fallback: look for copilot binary by known path in node_modules
-  try {
-    const pkgDir = path.dirname(require.resolve(`${packageName}/package.json`));
-    const binName = process.platform === "win32" ? "copilot.exe" : "copilot";
-    const binPath = path.join(pkgDir, binName);
-    if (existsSync(binPath)) return binPath;
-  } catch {}
-  return undefined;
-}
 
 /** How long a single agent turn may run before we give up (multi-tool loop). */
 const TURN_TIMEOUT_MS = 180_000;
@@ -213,9 +186,9 @@ export class Describer {
     if (this.client) return this.client;
     if (this.clientStart) return this.clientStart;
     this.clientStart = (async () => {
-      const cliPath = resolveCopilotCliPath();
-      if (cliPath) log.info("CLI path:", cliPath);
-      const client = new CopilotClient(cliPath ? { connection: RuntimeConnection.forStdio({ path: cliPath }) } : undefined);
+      const connOpts = copilotConnectionOption();
+      if (connOpts) log.info("CLI path resolved from node_modules");
+      const client = new CopilotClient(connOpts);
       await client.start();
       const auth = await client.getAuthStatus();
       if (!auth.isAuthenticated) {

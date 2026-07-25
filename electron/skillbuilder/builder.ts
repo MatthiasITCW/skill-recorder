@@ -16,6 +16,7 @@ import {
 } from "../../common/skill";
 import type { SkillBuildInput, SkillBuildProgress } from "../../common/ipc";
 import { loadPersistedAnalysis } from "../describer/describer";
+import { copilotConnectionOption } from "../copilot-cli-path";
 import { createLogger } from "../logger";
 import { isValidSessionId, sessionDir } from "../recorder/session-store";
 import { SKILL_BUILDER_INSTRUCTIONS } from "./instructions";
@@ -183,7 +184,7 @@ export class SkillBuilder {
     if (this.client) return this.client;
     if (this.clientStart) return this.clientStart;
     this.clientStart = (async () => {
-      const client = new CopilotClient();
+      const client = new CopilotClient(copilotConnectionOption());
       await client.start();
       const auth = await client.getAuthStatus();
       if (!auth.isAuthenticated) {

@@ -14,7 +14,7 @@ import type { AnalyzeProgress } from "../../common/ipc";
 import type { SessionMeta } from "../../common/types";
 import { FrameExtractor } from "../frames/extractor";
 import { createLogger } from "../logger";
-import { copilotConnectionOption } from "../copilot-cli-path";
+import { copilotConnectionOption, withStartupTimeout } from "../copilot-cli-path";
 import { sessionsRoot, sessionDir, isValidSessionId } from "../recorder/session-store";
 import { DESCRIBER_INSTRUCTIONS } from "./instructions";
 import { createDescriberTools } from "./tools";
@@ -189,7 +189,7 @@ export class Describer {
       const connOpts = copilotConnectionOption();
       if (connOpts) log.info("CLI path resolved from node_modules");
       const client = new CopilotClient(connOpts);
-      await client.start();
+      await withStartupTimeout(client.start(), "Copilot CLI (Describer)");
       const auth = await client.getAuthStatus();
       if (!auth.isAuthenticated) {
         await client.stop().catch(() => undefined);

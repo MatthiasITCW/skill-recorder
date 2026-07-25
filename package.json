@@ -10,6 +10,8 @@
     "build:vite": "vite build",
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
+    "typecheck:evals": "tsc --noEmit -p evals/tsconfig.json",
+    "eval": "node --experimental-transform-types --no-warnings --import ./evals/register.mjs evals/run.ts",
     "dist": "vite build && electron-builder",
     "start": "electron ."
   },

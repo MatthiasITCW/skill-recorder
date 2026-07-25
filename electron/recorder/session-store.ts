@@ -7,6 +7,8 @@ import type { RecEvent, SessionMeta } from "../../common/types";
 
 /** Root folder that holds one sub-directory per recorded session. */
 export function sessionsRoot(): string {
+  const override = process.env.SKILL_RECORDER_SESSIONS_DIR;
+  if (override) return path.resolve(override);
   return path.join(app.getPath("userData"), "sessions");
 }
 

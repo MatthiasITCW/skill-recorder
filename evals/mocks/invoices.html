@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Invoices — Acme Books</title>
+<style>
+  :root { --ink:#141a24; --muted:#5b6672; --line:#e4e8ee; --accent:#2f6bff; --paper:#fbfcfe; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:15px/1.5 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+         color:var(--ink); background:var(--paper); }
+  header { padding:24px 32px; border-bottom:1px solid var(--line); display:flex; align-items:baseline; gap:12px; }
+  .brand { font-weight:700; letter-spacing:-.02em; font-size:19px; }
+  .tag { color:var(--muted); font-size:13px; }
+  main { max-width:820px; margin:0 auto; padding:36px 32px 64px; }
+  h1 { font-size:26px; letter-spacing:-.02em; margin:0 0 20px; }
+  table { width:100%; border-collapse:collapse; background:#fff; border:1px solid var(--line); border-radius:12px; overflow:hidden; }
+  th, td { text-align:left; padding:12px 16px; border-bottom:1px solid var(--line); }
+  th { font-size:12px; letter-spacing:.04em; text-transform:uppercase; color:var(--muted); background:#f6f8fb; }
+  tbody tr:last-child td { border-bottom:none; }
+  td.amount { text-align:right; font-variant-numeric:tabular-nums; font-weight:600; }
+  .status { font-size:12px; padding:2px 8px; border-radius:999px; background:#eef2f7; color:var(--muted); }
+  .status.due { background:#fff2e8; color:#b4530f; }
+</style>
+</head>
+<body>
+  <header><div class="brand">Acme Books</div><div class="tag">Accounts · Invoices</div></header>
+  <main>
+    <h1>Outstanding invoices — Q3</h1>
+    <table>
+      <thead>
+        <tr><th>Invoice</th><th>Customer</th><th>Status</th><th style="text-align:right">Amount</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>INV-1001</td><td>Soylent</td><td><span class="status">Paid</span></td><td class="amount">$620.00</td></tr>
+        <tr><td>INV-1002</td><td>Globex</td><td><span class="status due">Due</span></td><td class="amount">$1,250.00</td></tr>
+        <tr><td>INV-1003</td><td>Initech</td><td><span class="status due">Due</span></td><td class="amount">$980.00</td></tr>
+        <tr><td>INV-1004</td><td>Umbrella</td><td><span class="status due">Due</span></td><td class="amount">$3,400.00</td></tr>
+        <tr><td>INV-1005</td><td>Hooli</td><td><span class="status">Paid</span></td><td class="amount">$210.00</td></tr>
+      </tbody>
+    </table>
+  </main>
+</body>
+</html>

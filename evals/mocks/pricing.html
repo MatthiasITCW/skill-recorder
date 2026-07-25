@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Pricing — Acme</title>
+<style>
+  :root { --ink:#141a24; --muted:#5b6672; --line:#e4e8ee; --accent:#2f6bff; --paper:#fbfcfe; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:16px/1.55 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+         color:var(--ink); background:var(--paper); }
+  header { padding:28px 32px; border-bottom:1px solid var(--line); display:flex; align-items:baseline; gap:12px; }
+  .brand { font-weight:700; letter-spacing:-.02em; font-size:20px; }
+  .brand span { color:var(--accent); }
+  .tag { color:var(--muted); font-size:13px; }
+  main { max-width:900px; margin:0 auto; padding:40px 32px 64px; }
+  h1 { font-size:30px; letter-spacing:-.02em; margin:0 0 6px; }
+  .lede { color:var(--muted); margin:0 0 32px; }
+  .plans { display:grid; grid-template-columns:repeat(3,1fr); gap:16px; }
+  .plan { border:1px solid var(--line); border-radius:14px; padding:22px; background:#fff; }
+  .plan.pro { border-color:var(--accent); box-shadow:0 6px 24px rgba(47,107,255,.10); }
+  .plan h2 { margin:0 0 4px; font-size:18px; }
+  .plan .who { color:var(--muted); font-size:13px; min-height:34px; }
+  .price { font-size:34px; font-weight:700; letter-spacing:-.03em; margin:10px 0 2px; }
+  .price small { font-size:14px; font-weight:500; color:var(--muted); }
+  .annual { color:var(--muted); font-size:14px; }
+  ul { padding-left:18px; margin:14px 0 0; color:#31404f; }
+  li { margin:5px 0; }
+</style>
+</head>
+<body>
+  <header><div class="brand">Acme<span>·</span></div><div class="tag">Product · Pricing</div></header>
+  <main>
+    <h1>Simple, transparent pricing</h1>
+    <p class="lede">Pick a plan. Upgrade or cancel anytime.</p>
+    <section class="plans">
+      <article class="plan">
+        <h2>Starter</h2>
+        <div class="who">For individuals getting started.</div>
+        <div class="price">$0 <small>/ month</small></div>
+        <div class="annual">Free forever</div>
+        <ul><li>1 project</li><li>Community support</li><li>1 GB storage</li></ul>
+      </article>
+      <article class="plan pro">
+        <h2>Pro</h2>
+        <div class="who">For professionals who need more.</div>
+        <div class="price">$49 <small>/ month</small></div>
+        <div class="annual">or $490 / year (save 17%)</div>
+        <ul><li>Unlimited projects</li><li>Priority support</li><li>100 GB storage</li></ul>
+      </article>
+      <article class="plan">
+        <h2>Team</h2>
+        <div class="who">For growing teams.</div>
+        <div class="price">$129 <small>/ month</small></div>
+        <div class="annual">or $1,290 / year</div>
+        <ul><li>Everything in Pro</li><li>SSO &amp; roles</li><li>1 TB storage</li></ul>
+      </article>
+    </section>
+  </main>
+</body>
+</html>

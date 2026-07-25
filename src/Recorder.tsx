@@ -2,22 +2,40 @@ import { useCallback, useEffect, useState } from "react";
 
 import { CAPTURE_LEVEL_INFO, type CaptureLevel } from "../common/config";
 import type { CaptureState, DoctorReport, RecorderStatus } from "../common/ipc";
+import { formatMs } from "./format";
 
-export function App() {
+const IS_MAC = typeof navigator !== "undefined" && /Mac/i.test(navigator.userAgent);
+/** Mirrors the main-process global shortcut "CommandOrControl+Shift+R", per OS. */
+const TOGGLE_SHORTCUT = IS_MAC ? "⌘⇧R" : "Ctrl+Shift+R";
+
+export function Recorder() {
   const [status, setStatus] = useState<RecorderStatus | null>(null);
   const [doctor, setDoctor] = useState<DoctorReport | null>(null);
   const [capture, setCapture] = useState<CaptureState | null>(null);
   const [elapsed, setElapsed] = useState(0);
+  const [sessionCount, setSessionCount] = useState(0);
+
+  const refreshCount = useCallback(async () => {
+    const list = await window.skillRecorder.listSessions();
+    setSessionCount(list.length);
+  }, []);
 
   useEffect(() => {
     void window.skillRecorder.status().then(setStatus);
     void window.skillRecorder.doctor().then(setDoctor);
     void window.skillRecorder.getCapture().then(setCapture);
+    void refreshCount();
     return window.skillRecorder.onStatusChanged(setStatus);
-  }, []);
+  }, [refreshCount]);
 
   const recording = status?.state === "recording";
   const startedAt = status?.startedAt ?? null;
+  const justSaved = !recording && status?.lastSession != null;
+
+  // Refresh the library count whenever a recording finishes.
+  useEffect(() => {
+    if (!recording) void refreshCount();
+  }, [recording, refreshCount]);
 
   useEffect(() => {
     if (!recording || startedAt == null) {
@@ -42,50 +60,76 @@ export function App() {
   const chooseLevel = useCallback(async (level: Exclude<CaptureLevel, "custom">) => {
     const next = await window.skillRecorder.setLevel(level);
     setCapture(next);
-    // Active-source list depends on the level, so refresh the doctor report too.
     setDoctor(await window.skillRecorder.doctor());
   }, []);
 
+  const openLibrary = useCallback(() => {
+    void window.skillRecorder.openLibrary();
+  }, []);
+
   return (
-    <div className="app">
-      <header>
-        <h1>Skill Recorder</h1>
-        <div className={`status ${recording ? "rec" : "idle"}`}>
-          <span className="dot" />
-          {recording ? "Recording" : "Idle"}
-          {recording && <span className="timer">{formatMs(elapsed)}</span>}
+    <div className="hud">
+      <header className="hud-head">
+        <div className="wordmark">
+          <span className="mark-lamp" />
+          <span className="mark-text">Skill Recorder</span>
         </div>
+        <span className={`rec-chip ${recording ? "rec" : "idle"}`}>
+          <span className="lamp" />
+          {recording ? "REC" : "READY"}
+        </span>
       </header>
 
-      <button className={`primary ${recording ? "stop" : "start"}`} onClick={toggle}>
-        {recording ? "Stop" : "Start"}
-      </button>
-      <button className="secondary" onClick={addMarker} disabled={!recording}>
+      <div className="transport">
+        <button
+          className={`record ${recording ? "on" : ""}`}
+          onClick={toggle}
+          aria-label={recording ? "Stop recording" : "Start recording"}
+        >
+          <span className="record-glyph" />
+        </button>
+        <div className={`timecode ${recording ? "live" : ""}`}>
+          {recording ? formatMs(elapsed) : "00:00"}
+        </div>
+        <div className="transport-sub">
+          {recording
+            ? `${status?.eventCount ?? 0} events captured`
+            : justSaved
+              ? "Capture saved — open Sessions to review"
+              : "Ready to capture"}
+        </div>
+      </div>
+
+      <button className="marker" onClick={addMarker} disabled={!recording}>
         Add marker
       </button>
 
-      <p className="meta">
-        {status?.sessionId
-          ? `${status.sessionId} · ${status.eventCount} events`
-          : "No active session"}
-      </p>
-
       {capture && (
-        <CapturePicker
-          level={capture.level}
-          disabled={recording}
-          onChoose={chooseLevel}
-        />
+        <CapturePicker level={capture.level} disabled={recording} onChoose={chooseLevel} />
       )}
+
+      <button className="sessions-open" onClick={openLibrary}>
+        <span className="sessions-open-label">Sessions</span>
+        <span className="sessions-open-right">
+          <span className="pill">{sessionCount}</span>
+          <span className="ext" aria-hidden>
+            ↗
+          </span>
+        </span>
+      </button>
 
       {doctor && (
         <div className="doctor">
-          <Row label="ffmpeg" ok={doctor.ffmpeg.ok} note={doctor.ffmpeg.ok ? doctor.ffmpeg.source : "missing"} />
+          <Row
+            label="ffmpeg"
+            ok={doctor.ffmpeg.ok}
+            note={doctor.ffmpeg.ok ? doctor.ffmpeg.source : "missing"}
+          />
           <Row label="copilot CLI" ok={doctor.copilotCli.ok} note={doctor.copilotCli.ok ? "found" : "missing"} />
         </div>
       )}
 
-      <p className="hint">Global toggle: ⌘/Ctrl + Shift + R</p>
+      <p className="hint">{TOGGLE_SHORTCUT} toggles from anywhere</p>
     </div>
   );
 }
@@ -103,7 +147,7 @@ function CapturePicker({
   return (
     <div className="capture">
       <div className="capture-head">
-        <span className="capture-title">Capture level</span>
+        <span className="eyebrow">Capture</span>
         {level === "custom" && <span className="capture-custom">custom</span>}
       </div>
       <div className="segmented" role="group" aria-label="Capture level">
@@ -119,10 +163,7 @@ function CapturePicker({
           </button>
         ))}
       </div>
-      <p className="capture-blurb">
-        {active?.blurb ?? "A custom mix of sources is active."}
-      </p>
-      {disabled && <p className="capture-note">Stop recording to change the level.</p>}
+      <p className="capture-blurb">{active?.blurb ?? "A custom mix of sources is active."}</p>
     </div>
   );
 }
@@ -135,11 +176,4 @@ function Row({ label, ok, note }: { label: string; ok: boolean; note: string }) 
       <span className="row-note">{note}</span>
     </div>
   );
-}
-
-function formatMs(ms: number): string {
-  const totalSeconds = Math.floor(ms / 1000);
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }

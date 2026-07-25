@@ -1,0 +1,179 @@
+import { z } from "zod";
+
+/**
+ * The Skill Builder's contract. From an *approved* {@link Analysis} the multi-turn
+ * Copilot agent first proposes a **plan** ({@link SkillPlan}) — how it will
+ * generalize the recorded task, what inputs it needs, and which of the target
+ * architecture's native tools it will use — which the user refines in natural
+ * language. On confirmation the agent submits the final **built skill**
+ * ({@link BuiltSkill}), which is rendered to a `SKILL.md` and exported into the
+ * target agent (Scout first). Kept separate from `analysis.ts` (the builder's
+ * *input*); this is the builder's *output*.
+ */
+
+/** Agent architectures a skill can target. Only Scout is enabled for now. */
+export const SkillArchitecture = z.enum(["scout", "cowork", "copilot-studio"]);
+export type SkillArchitecture = z.infer<typeof SkillArchitecture>;
+
+/** UI metadata for the architecture selector (shared so main + renderer agree). */
+export interface ArchitectureOption {
+  id: SkillArchitecture;
+  label: string;
+  /** Enabled targets can be built today; the rest are shown greyed out. */
+  enabled: boolean;
+  /** One-line reason / "coming soon" note shown under the option. */
+  note: string;
+}
+
+export const ARCHITECTURES: readonly ArchitectureOption[] = [
+  { id: "scout", label: "Scout", enabled: true, note: "Microsoft Scout: native WorkIQ, browser, files, and built-in skills." },
+  { id: "cowork", label: "Cowork", enabled: false, note: "Coming soon." },
+  { id: "copilot-studio", label: "Copilot Studio", enabled: false, note: "Coming soon." },
+] as const;
+
+/**
+ * Where a skill's input comes from at run time. Kept deliberately small:
+ * - **ask** — the skill asks the user for it when it runs (a path, URL, value).
+ * - **discover** — the agent finds it on the local OS with native file tools
+ *   (e.g. "the most recent *.csv in ~/Downloads") instead of asking.
+ * - **constant** — a genuinely fixed value baked into the skill (e.g. one URL).
+ */
+export const SkillInputSource = z.enum(["ask", "discover", "constant"]);
+export type SkillInputSource = z.infer<typeof SkillInputSource>;
+
+export const SkillInputSchema = z.object({
+  /** Short name for the input, e.g. "records spreadsheet". */
+  name: z.string(),
+  /** What it is and how it's used in the task. */
+  description: z.string().default(""),
+  source: SkillInputSource,
+  /**
+   * Source-specific detail: the discovery instruction (for `discover`), the
+   * fixed value (for `constant`), or what to ask the user for (for `ask`).
+   */
+  detail: z.string().default(""),
+});
+export type SkillInput = z.infer<typeof SkillInputSchema>;
+
+/** One recorded action mapped to the native capability that will perform it. */
+export const ToolMappingSchema = z.object({
+  /** What the recording showed, e.g. "Search a Teams chat". */
+  action: z.string(),
+  /** The native tool/skill chosen, e.g. "workiq_search_chats". */
+  tool: z.string(),
+  /** Why this tool (or how it replaces the UI step). */
+  note: z.string().default(""),
+});
+export type ToolMapping = z.infer<typeof ToolMappingSchema>;
+
+/**
+ * The agent's proposed plan, shown to the user before any skill is written.
+ * This is what `propose_plan` submits and what the user refines in NL.
+ */
+export const SkillPlanSchema = z.object({
+  /** Target architecture this plan is written for. */
+  architecture: SkillArchitecture,
+  /** kebab-case skill id, e.g. "submit-expense-records". */
+  name: z.string().transform(slugifySkillName),
+  /** Human-friendly title, e.g. "Submit expense records". */
+  title: z.string(),
+  /** Trigger-oriented description (becomes the SKILL.md `description`). */
+  description: z.string(),
+  /** Plain-language summary of what the skill does. */
+  summary: z.string().default(""),
+  /** How the recorded specifics are generalized (the loop/collection insight). */
+  generalization: z.string().default(""),
+  inputs: z.array(SkillInputSchema).default([]),
+  toolMapping: z.array(ToolMappingSchema).default([]),
+  /** The generalized procedure, as ordered plain-language steps. */
+  steps: z.array(z.string()).default([]),
+  /** Proposed `allowed-tools` frontmatter patterns, e.g. "Bash(git *)". */
+  allowedTools: z.array(z.string()).default([]),
+});
+export type SkillPlan = z.infer<typeof SkillPlanSchema>;
+
+/**
+ * The payload the agent submits via `submit_skill` once the plan is approved.
+ * The engine renders this into `SKILL.md` and wraps it into a {@link BuiltSkill}.
+ */
+export const SkillSubmissionSchema = z.object({
+  /** kebab-case skill id. */
+  name: z.string().transform(slugifySkillName),
+  /** SKILL.md `description` (trigger keywords). */
+  description: z.string(),
+  /** `allowed-tools` frontmatter patterns. */
+  allowedTools: z.array(z.string()).default([]),
+  /** The markdown instructions body (everything after the frontmatter). */
+  body: z.string(),
+});
+export type SkillSubmission = z.infer<typeof SkillSubmissionSchema>;
+
+/** The full, persisted result of a build for a session. */
+export const BuiltSkillSchema = z.object({
+  version: z.literal(1),
+  sessionId: z.string(),
+  architecture: SkillArchitecture,
+  name: z.string(),
+  description: z.string(),
+  allowedTools: z.array(z.string()).default([]),
+  /** The markdown instructions body. */
+  body: z.string(),
+  /** The plan the skill was built from (for the UI / re-export). */
+  plan: SkillPlanSchema.nullable().default(null),
+  createdAt: z.number(),
+  /** Absolute path of the exported SKILL.md, once exported. */
+  exportedPath: z.string().optional(),
+  exportedAt: z.number().optional(),
+});
+export type BuiltSkill = z.infer<typeof BuiltSkillSchema>;
+
+/** Coerce arbitrary text into a safe kebab-case skill name Scout will accept. */
+export function slugifySkillName(raw: string): string {
+  const slug = raw
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60)
+    .replace(/-+$/g, "");
+  return slug || "recorded-skill";
+}
+
+/** Build a full BuiltSkill from an agent submission + engine-managed fields. */
+export function toBuiltSkill(
+  sessionId: string,
+  architecture: SkillArchitecture,
+  submission: SkillSubmission,
+  plan: SkillPlan | null,
+): BuiltSkill {
+  return BuiltSkillSchema.parse({
+    version: 1,
+    sessionId,
+    architecture,
+    name: slugifySkillName(submission.name),
+    description: submission.description,
+    allowedTools: submission.allowedTools,
+    body: submission.body,
+    plan,
+    createdAt: Date.now(),
+  });
+}
+
+/**
+ * Render a {@link BuiltSkill} to the exact `SKILL.md` text Scout parses:
+ * YAML frontmatter (`name`, `description`, optional `allowed-tools`) followed by
+ * the instructions body. The description is emitted as a double-quoted scalar so
+ * colons/commas in it never break the YAML.
+ */
+export function renderSkillMarkdown(skill: BuiltSkill): string {
+  const lines: string[] = ["---", `name: ${slugifySkillName(skill.name)}`];
+  // JSON.stringify yields a valid YAML double-quoted scalar for normal text.
+  lines.push(`description: ${JSON.stringify(skill.description.trim())}`);
+  const tools = skill.allowedTools.map((t) => t.trim()).filter(Boolean);
+  if (tools.length) {
+    lines.push("allowed-tools:");
+    for (const t of tools) lines.push(`  - ${t}`);
+  }
+  lines.push("---", "");
+  lines.push(skill.body.trim(), "");
+  return lines.join("\n");
+}

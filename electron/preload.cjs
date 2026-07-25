@@ -8,6 +8,7 @@ const IPC = {
   status: "recorder:status",
   marker: "recorder:marker",
   doctor: "doctor:check",
+  installShellHook: "doctor:install-shell-hook",
   statusChanged: "recorder:status-changed",
   getCapture: "capture:get",
   setLevel: "capture:set-level",
@@ -15,12 +16,17 @@ const IPC = {
   analyze: "analyze:start",
   analyzeFeedback: "analyze:feedback",
   getAnalysis: "analyze:get",
-  approveAnalysis: "analyze:approve",
   updateAnalysis: "analyze:update",
   cancelAnalysis: "analyze:cancel",
   analyzeProgress: "analyze:progress",
   listSessions: "sessions:list",
   deleteSession: "sessions:delete",
+  buildSkill: "skill:build",
+  createSkill: "skill:create",
+  getSkill: "skill:get",
+  cancelSkill: "skill:cancel",
+  revealSkill: "skill:reveal",
+  skillProgress: "skill:progress",
   openLibrary: "ui:open-library",
   closeLibrary: "ui:close-library",
 };
@@ -31,6 +37,7 @@ contextBridge.exposeInMainWorld("skillRecorder", {
   status: () => ipcRenderer.invoke(IPC.status),
   marker: (note) => ipcRenderer.invoke(IPC.marker, note),
   doctor: () => ipcRenderer.invoke(IPC.doctor),
+  installShellHook: () => ipcRenderer.invoke(IPC.installShellHook),
   getCapture: () => ipcRenderer.invoke(IPC.getCapture),
   setLevel: (level) => ipcRenderer.invoke(IPC.setLevel, level),
   setConfig: (config) => ipcRenderer.invoke(IPC.setConfig, config),
@@ -42,7 +49,6 @@ contextBridge.exposeInMainWorld("skillRecorder", {
   analyze: (sessionId) => ipcRenderer.invoke(IPC.analyze, sessionId),
   analyzeFeedback: (input) => ipcRenderer.invoke(IPC.analyzeFeedback, input),
   getAnalysis: (sessionId) => ipcRenderer.invoke(IPC.getAnalysis, sessionId),
-  approveAnalysis: (sessionId) => ipcRenderer.invoke(IPC.approveAnalysis, sessionId),
   updateAnalysis: (input) => ipcRenderer.invoke(IPC.updateAnalysis, input),
   cancelAnalysis: (sessionId) => ipcRenderer.invoke(IPC.cancelAnalysis, sessionId),
   onAnalyzeProgress: (cb) => {
@@ -52,6 +58,16 @@ contextBridge.exposeInMainWorld("skillRecorder", {
   },
   listSessions: () => ipcRenderer.invoke(IPC.listSessions),
   deleteSession: (sessionId) => ipcRenderer.invoke(IPC.deleteSession, sessionId),
+  buildSkill: (input) => ipcRenderer.invoke(IPC.buildSkill, input),
+  createSkill: (sessionId) => ipcRenderer.invoke(IPC.createSkill, sessionId),
+  getSkill: (sessionId) => ipcRenderer.invoke(IPC.getSkill, sessionId),
+  cancelSkill: (sessionId) => ipcRenderer.invoke(IPC.cancelSkill, sessionId),
+  revealSkill: (sessionId) => ipcRenderer.invoke(IPC.revealSkill, sessionId),
+  onSkillProgress: (cb) => {
+    const listener = (_event, progress) => cb(progress);
+    ipcRenderer.on(IPC.skillProgress, listener);
+    return () => ipcRenderer.removeListener(IPC.skillProgress, listener);
+  },
   openLibrary: () => ipcRenderer.invoke(IPC.openLibrary),
   closeLibrary: () => ipcRenderer.invoke(IPC.closeLibrary),
 });

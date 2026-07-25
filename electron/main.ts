@@ -8,6 +8,7 @@ import { registerIpc } from "./ipc";
 import { createLogger } from "./logger";
 import { RecorderController } from "./recorder/controller";
 import { SettingsStore } from "./settings";
+import { SkillBuilder } from "./skillbuilder/builder";
 import { createTray } from "./tray";
 import { VideoRecorder } from "./video/recorder";
 import { createLibraryWindow, createRecorderWindow, redockLibrary } from "./window";
@@ -33,6 +34,7 @@ function broadcast(channel: string, payload: unknown): void {
 }
 
 const describer = new Describer((progress) => broadcast(IPC.analyzeProgress, progress));
+const builder = new SkillBuilder((progress) => broadcast(IPC.skillProgress, progress));
 
 /** Open, focus, and re-dock the Sessions library window (creating it lazily). */
 function openLibrary(): void {
@@ -54,12 +56,13 @@ function openLibrary(): void {
     recorderHome = null;
     // Drop idle agent conversations now that the library is gone.
     void describer.evictIdle();
+    void builder.evictIdle();
   });
 }
 
 app.whenReady().then(() => {
   settings = new SettingsStore();
-  registerIpc(recorder, settings, describer);
+  registerIpc(recorder, settings, describer, builder);
   log.info("Capture level:", settings.level);
 
   ipcMain.handle(IPC.openLibrary, () => openLibrary());
@@ -102,6 +105,7 @@ app.on("will-quit", () => {
   globalShortcut.unregisterAll();
   if (recorder.state === "recording") void recorder.stop();
   void describer.dispose();
+  void builder.dispose();
 });
 
 

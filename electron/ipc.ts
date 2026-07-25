@@ -1,4 +1,4 @@
-import { ipcMain } from "electron";
+import { ipcMain, shell } from "electron";
 import path from "node:path";
 
 import { type CaptureConfig, type CaptureLevel, levelForConfig } from "../common/config";
@@ -8,23 +8,29 @@ import type {
   AnalyzeResult,
   CaptureState,
   DeleteSessionResult,
+  SkillBuildInput,
+  SkillCreateResult,
+  SkillPlanResult,
 } from "../common/ipc";
 import { IPC } from "../common/ipc";
 import { Describer, loadPersistedAnalysis } from "./describer/describer";
 import { runDoctor } from "./doctor";
+import { installShellHook } from "./collectors/shell-hook";
 import { createLogger } from "./logger";
 import type { RecorderController } from "./recorder/controller";
 import { isValidSessionId } from "./recorder/session-store";
 import { deleteSession, listSessions } from "./sessions";
 import type { SettingsStore } from "./settings";
+import { loadPersistedSkill, SkillBuilder } from "./skillbuilder/builder";
 
 const log = createLogger("IPC");
 
-/** Wire the renderer-facing invoke channels to the recorder, describer, doctor + settings. */
+/** Wire the renderer-facing invoke channels to the recorder, describer, builder, doctor + settings. */
 export function registerIpc(
   recorder: RecorderController,
   settings: SettingsStore,
   describer: Describer,
+  builder: SkillBuilder,
 ): void {
   const captureState = (): CaptureState => {
     const config = settings.resolve();
@@ -36,6 +42,7 @@ export function registerIpc(
   ipcMain.handle(IPC.status, () => recorder.status());
   ipcMain.handle(IPC.marker, (_event, note: string) => recorder.marker(note));
   ipcMain.handle(IPC.doctor, () => runDoctor(settings));
+  ipcMain.handle(IPC.installShellHook, () => installShellHook());
   ipcMain.handle(IPC.getCapture, () => captureState());
   ipcMain.handle(IPC.setLevel, (_event, level: Exclude<CaptureLevel, "custom">) => {
     settings.setLevel(level);
@@ -88,18 +95,6 @@ export function registerIpc(
     isValidSessionId(sessionId) ? loadPersistedAnalysis(sessionId) : null,
   );
 
-  ipcMain.handle(IPC.approveAnalysis, async (_event, sessionId: string): Promise<AnalyzeResult> => {
-    if (!isValidSessionId(sessionId)) return { ok: false, error: "Unknown session." };
-    try {
-      const analysis = await describer.approve(sessionId);
-      return { ok: true, analysis };
-    } catch (err) {
-      const error = err instanceof Error ? err.message : String(err);
-      log.warn("approve failed:", error);
-      return { ok: false, error };
-    }
-  });
-
   ipcMain.handle(IPC.updateAnalysis, async (_event, input: AnalysisEditInput): Promise<AnalyzeResult> => {
     if (!isValidSessionId(input?.sessionId)) return { ok: false, error: "Unknown session." };
     try {
@@ -130,8 +125,12 @@ export function registerIpc(
     if (describer.isAnalyzing(sessionId)) {
       return { ok: false, error: "This recording is being analyzed. Cancel that first, then delete." };
     }
+    if (builder.isBuilding(sessionId)) {
+      return { ok: false, error: "This recording is being turned into a skill. Cancel that first, then delete." };
+    }
     try {
       await describer.forget(sessionId); // release any idle agent holding the folder
+      await builder.forget(sessionId);
       await deleteSession(sessionId);
       recorder.forgetSession(sessionId); // clear the "last completed" pointer if it was this one
       return { ok: true };
@@ -140,6 +139,46 @@ export function registerIpc(
       log.warn("delete failed:", error);
       return { ok: false, error };
     }
+  });
+
+  ipcMain.handle(IPC.buildSkill, async (_event, input: SkillBuildInput): Promise<SkillPlanResult> => {
+    if (!isValidSessionId(input?.sessionId)) return { ok: false, error: "Unknown session." };
+    try {
+      const plan = await builder.build(input);
+      return { ok: true, plan };
+    } catch (err) {
+      const error = err instanceof Error ? err.message : String(err);
+      log.warn("build skill failed:", error);
+      return { ok: false, error };
+    }
+  });
+
+  ipcMain.handle(IPC.createSkill, async (_event, sessionId: string): Promise<SkillCreateResult> => {
+    if (!isValidSessionId(sessionId)) return { ok: false, error: "Unknown session." };
+    try {
+      const { skill, path: file } = await builder.create(sessionId);
+      return { ok: true, skill, path: file };
+    } catch (err) {
+      const error = err instanceof Error ? err.message : String(err);
+      log.warn("create skill failed:", error);
+      return { ok: false, error };
+    }
+  });
+
+  ipcMain.handle(IPC.getSkill, (_event, sessionId: string) =>
+    isValidSessionId(sessionId) ? loadPersistedSkill(sessionId) : null,
+  );
+
+  ipcMain.handle(IPC.cancelSkill, async (_event, sessionId: string) => {
+    if (isValidSessionId(sessionId)) await builder.cancel(sessionId);
+    return { ok: true };
+  });
+
+  ipcMain.handle(IPC.revealSkill, (_event, sessionId: string) => {
+    if (!isValidSessionId(sessionId)) return { ok: false };
+    const skill = loadPersistedSkill(sessionId);
+    if (skill?.exportedPath) shell.showItemInFolder(skill.exportedPath);
+    return { ok: true };
   });
 }
 

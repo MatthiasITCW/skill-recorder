@@ -2,6 +2,7 @@
   "name": "skill-recorder",
   "version": "0.1.0",
   "description": "Records a user's on-screen work session and derives a structured description for building AI-agent skills.",
+  "author": "Skill Recorder",
   "private": true,
   "type": "module",
   "main": "dist-electron/main.js",
@@ -34,5 +35,42 @@
     "typescript": "^7.0.0",
     "vite": "^8.0.16",
     "vite-plugin-electron": "1.0.4"
+  },
+  "build": {
+    "appId": "com.skillrecorder.app",
+    "productName": "Skill Recorder",
+    "files": [
+      "dist/**",
+      "dist-electron/**",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "node_modules/get-windows/**",
+      "node_modules/sharp/**",
+      "node_modules/@img/**",
+      "node_modules/ffmpeg-static/**"
+    ],
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.developer-tools"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true
+    }
   }
 }

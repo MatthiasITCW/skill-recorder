@@ -9,9 +9,6 @@ const IPC = {
   marker: "recorder:marker",
   doctor: "doctor:check",
   statusChanged: "recorder:status-changed",
-  getCapture: "capture:get",
-  setLevel: "capture:set-level",
-  setConfig: "capture:set-config",
   analyze: "analyze:start",
   analyzeFeedback: "analyze:feedback",
   getAnalysis: "analyze:get",
@@ -36,9 +33,6 @@ contextBridge.exposeInMainWorld("skillRecorder", {
   status: () => ipcRenderer.invoke(IPC.status),
   marker: (note) => ipcRenderer.invoke(IPC.marker, note),
   doctor: () => ipcRenderer.invoke(IPC.doctor),
-  getCapture: () => ipcRenderer.invoke(IPC.getCapture),
-  setLevel: (level) => ipcRenderer.invoke(IPC.setLevel, level),
-  setConfig: (config) => ipcRenderer.invoke(IPC.setConfig, config),
   onStatusChanged: (cb) => {
     const listener = (_event, status) => cb(status);
     ipcRenderer.on(IPC.statusChanged, listener);

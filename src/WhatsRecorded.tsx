@@ -1,0 +1,105 @@
+import { useEffect, useRef } from "react";
+
+/**
+ * Plain-language disclosure of what the recorder captures, where it is stored,
+ * and what leaves the machine on analysis. Every claim here is grounded in the
+ * actual collectors and describer behavior, so it must be kept in sync with them.
+ */
+export function WhatsRecorded({ onClose }: { onClose: () => void }) {
+  const sheetRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    sheetRef.current?.focus({ preventScroll: true });
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div className="sheet-backdrop" onClick={onClose}>
+      <div
+        ref={sheetRef}
+        className="sheet"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="whats-recorded-title"
+        tabIndex={-1}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <header className="sheet-head">
+          <span className="sheet-icon" aria-hidden>
+            <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
+              <path
+                d="M10 2.5 4 4.8v4.3c0 3.4 2.4 6.2 6 7.4 3.6-1.2 6-4 6-7.4V4.8L10 2.5Z"
+                stroke="currentColor"
+                strokeWidth="1.4"
+                strokeLinejoin="round"
+              />
+              <path
+                d="m7.4 9.8 1.9 1.9 3.4-3.6"
+                stroke="currentColor"
+                strokeWidth="1.4"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </span>
+          <h2 id="whats-recorded-title">What's recorded</h2>
+        </header>
+
+        <p className="sheet-lead">
+          This tool records your screen and activity so it can turn what you did into a reusable
+          skill. Here is exactly what it captures and what leaves your computer.
+        </p>
+
+        <section className="sheet-block">
+          <h3>While you're recording</h3>
+          <p className="sheet-note">Only between Start and Stop.</p>
+          <ul>
+            <li>Which apps you switch to, and their window and document titles.</li>
+            <li>Web addresses of the pages you open.</li>
+            <li>A short preview of text you copy, up to 120 characters.</li>
+            <li>A silent video of your screen at a low frame rate. No microphone or audio.</li>
+          </ul>
+          <p className="sheet-caution">
+            If you copy something sensitive like a password while recording, its preview is captured.
+            Stop the recording or avoid copying secrets during a session.
+          </p>
+        </section>
+
+        <section className="sheet-block">
+          <h3>Where it's stored</h3>
+          <ul>
+            <li>Everything is saved on this computer, in the app's own session folder.</li>
+            <li>Recordings stay until you delete them. You can delete any recording from Sessions.</li>
+          </ul>
+        </section>
+
+        <section className="sheet-block">
+          <h3>What's sent for analysis</h3>
+          <ul>
+            <li>Nothing leaves your computer while you record.</li>
+            <li>
+              When you choose Analyze, the timeline, the recorded events, and screenshots from your
+              video are sent to a Copilot AI model so it can describe what you did.
+            </li>
+          </ul>
+        </section>
+
+        <section className="sheet-block">
+          <h3>What it never does</h3>
+          <ul>
+            <li>It does not log your keystrokes.</li>
+            <li>It only captures while a recording is running. Nothing runs in the background.</li>
+          </ul>
+        </section>
+
+        <button className="sheet-close" onClick={onClose}>
+          Got it
+        </button>
+      </div>
+    </div>
+  );
+}

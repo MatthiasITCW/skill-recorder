@@ -1,5 +1,6 @@
 import { app, globalShortcut, ipcMain, BrowserWindow } from "electron";
 
+import { FULL_CAPTURE } from "../common/config";
 import { IPC } from "../common/ipc";
 import { createCollectors } from "./collectors";
 import { Describer } from "./describer/describer";
@@ -7,7 +8,6 @@ import { processSession } from "./pipeline";
 import { registerIpc } from "./ipc";
 import { createLogger } from "./logger";
 import { RecorderController } from "./recorder/controller";
-import { SettingsStore } from "./settings";
 import { SkillBuilder } from "./skillbuilder/builder";
 import { createTray } from "./tray";
 import { VideoRecorder } from "./video/recorder";
@@ -18,9 +18,8 @@ const log = createLogger("Main");
 let recorderWindow: BrowserWindow | null = null;
 let libraryWindow: BrowserWindow | null = null;
 let recorderHome: Electron.Rectangle | null = null;
-let settings: SettingsStore | null = null;
 const recorder = new RecorderController({
-  resolveConfig: () => (settings as SettingsStore).resolve(),
+  resolveConfig: () => ({ ...FULL_CAPTURE }),
   buildCollectors: createCollectors,
   createVideoRecorder: () => new VideoRecorder(),
   postProcess: processSession,
@@ -61,9 +60,8 @@ function openLibrary(): void {
 }
 
 app.whenReady().then(() => {
-  settings = new SettingsStore();
-  registerIpc(recorder, settings, describer, builder);
-  log.info("Capture level:", settings.level);
+  registerIpc(recorder, describer, builder);
+  log.info("Capture: recording all sources");
 
   ipcMain.handle(IPC.openLibrary, () => openLibrary());
   ipcMain.handle(IPC.closeLibrary, () => {

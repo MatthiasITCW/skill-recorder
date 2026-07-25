@@ -1,131 +1,51 @@
 /**
- * Capture configuration — the knob the user turns to trade *consent + setup*
- * against *description accuracy*. The guiding principle: the default level
- * must work with ZERO permission prompts and ZERO manual setup, and each step
- * up is an explicit, understood opt-in.
+ * Capture configuration. The recorder captures every available signal on every
+ * recording — there is no user-facing capture level. Transparency comes from the
+ * in-app "What's recorded" note, not from a tiered picker that mostly described
+ * overlapping OS permissions.
  *
- * Cost tiers (per source):
- *   0 — no prompt, no setup   (works out of the box)
- *   1 — one-time OS grant     (accessibility / screen-capture permission)
- *   3 — heaviest OS grant     (screen-capture permission for video)
+ * This module stays the single source of truth for *which* signals exist, so the
+ * collectors, the doctor, and the evals all share one shape.
  */
 
-export type CaptureLevel = "basic" | "standard" | "full" | "custom";
-
 export interface CaptureConfig {
-  /** Foreground app switches (app name/bundle/pid). Tier 0 — no prompt. */
+  /** Foreground app switches (app name/bundle/pid). */
   appActivity: boolean;
-  /** Clipboard copies (formats, length, hash, short preview). Tier 0 — no prompt. */
+  /** Clipboard copies (formats, length, hash, short text preview). */
   clipboard: boolean;
-  /** Window titles. Tier 1 — needs an accessibility / screen-capture grant. */
+  /** Window and document titles. */
   windowTitles: boolean;
-  /** Active browser tab URLs. Tier 1 — needs the same grant as titles. */
+  /** Active browser tab URLs. */
   browserUrls: boolean;
-  /** Low-fps screen video + extracted keyframes. Tier 3 — needs screen-capture. */
+  /** Low-fps screen video + extracted keyframes. */
   video: boolean;
 }
 
 export type CaptureSourceKey = keyof CaptureConfig;
 
-/** Preset levels. "custom" is represented by an explicit CaptureConfig, not here. */
-export const LEVEL_PRESETS: Record<Exclude<CaptureLevel, "custom">, CaptureConfig> = {
-  // Zero friction: nothing here shows an OS prompt or needs setup.
-  basic: {
-    appActivity: true,
-    clipboard: true,
-    windowTitles: false,
-    browserUrls: false,
-    video: false,
-  },
-  // One-time OS grant unlocks the biggest accuracy jump (what/where, not just which app).
-  standard: {
-    appActivity: true,
-    clipboard: true,
-    windowTitles: true,
-    browserUrls: true,
-    video: false,
-  },
-  // Everything: adds screen video + frame correlation on top of standard.
-  full: {
-    appActivity: true,
-    clipboard: true,
-    windowTitles: true,
-    browserUrls: true,
-    video: true,
-  },
+/** The recorder always captures everything. */
+export const FULL_CAPTURE: CaptureConfig = {
+  appActivity: true,
+  clipboard: true,
+  windowTitles: true,
+  browserUrls: true,
+  video: true,
 };
-
-export const DEFAULT_LEVEL: CaptureLevel = "basic";
 
 export interface CaptureSourceInfo {
   key: CaptureSourceKey;
   label: string;
+  /** Rough setup weight, surfaced only in the doctor: 0 none, 1 one-time OS grant, 3 screen capture. */
   tier: 0 | 1 | 2 | 3;
-  /** Short, human description of what enabling this costs the user. */
+  /** Short, human description of what this source needs to work (doctor diagnostics). */
   cost: string;
 }
 
-/** Metadata for the settings UI and the doctor report. */
+/** Source metadata for the doctor report (labels + platform-support diagnostics). */
 export const CAPTURE_SOURCES: readonly CaptureSourceInfo[] = [
   { key: "appActivity", label: "App switches", tier: 0, cost: "No permission needed" },
   { key: "clipboard", label: "Clipboard copies", tier: 0, cost: "No permission needed" },
-  {
-    key: "windowTitles",
-    label: "Window titles",
-    tier: 1,
-    cost: "One-time OS permission",
-  },
-  {
-    key: "browserUrls",
-    label: "Browser URLs",
-    tier: 1,
-    cost: "One-time OS permission",
-  },
+  { key: "windowTitles", label: "Window titles", tier: 1, cost: "One-time OS permission" },
+  { key: "browserUrls", label: "Browser URLs", tier: 1, cost: "One-time OS permission" },
   { key: "video", label: "Screen video + keyframes", tier: 3, cost: "Screen-capture permission" },
 ];
-
-export function configForLevel(level: Exclude<CaptureLevel, "custom">): CaptureConfig {
-  return { ...LEVEL_PRESETS[level] };
-}
-
-export interface CaptureLevelInfo {
-  level: Exclude<CaptureLevel, "custom">;
-  label: string;
-  /** One-line summary of the consent/accuracy trade-off. */
-  blurb: string;
-}
-
-/** Ordered, user-facing descriptions of the preset levels for the settings UI. */
-export const CAPTURE_LEVEL_INFO: readonly CaptureLevelInfo[] = [
-  {
-    level: "basic",
-    label: "Basic",
-    blurb: "App switches + clipboard. No permissions, no setup.",
-  },
-  {
-    level: "standard",
-    label: "Standard",
-    blurb: "Adds window titles + browser URLs. One-time OS permission.",
-  },
-  {
-    level: "full",
-    label: "Full",
-    blurb: "Adds screen video + keyframes. Most setup, best detail.",
-  },
-];
-
-/** Reverse-map a config to a named level, or "custom" if it matches no preset. */
-export function levelForConfig(config: CaptureConfig): CaptureLevel {
-  for (const level of ["basic", "standard", "full"] as const) {
-    const preset = LEVEL_PRESETS[level];
-    if ((Object.keys(preset) as CaptureSourceKey[]).every((k) => preset[k] === config[k])) {
-      return level;
-    }
-  }
-  return "custom";
-}
-
-/** True when the config needs no OS prompt and no manual setup (all tier-0). */
-export function isFrictionless(config: CaptureConfig): boolean {
-  return CAPTURE_SOURCES.every((s) => s.tier === 0 || !config[s.key]);
-}

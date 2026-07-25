@@ -1,12 +1,10 @@
 import { ipcMain, shell } from "electron";
 import path from "node:path";
 
-import { type CaptureConfig, type CaptureLevel, levelForConfig } from "../common/config";
 import type {
   AnalysisEditInput,
   AnalysisFeedbackInput,
   AnalyzeResult,
-  CaptureState,
   DeleteSessionResult,
   SkillBuildInput,
   SkillCreateResult,
@@ -19,37 +17,21 @@ import { createLogger } from "./logger";
 import type { RecorderController } from "./recorder/controller";
 import { isValidSessionId } from "./recorder/session-store";
 import { deleteSession, listSessions } from "./sessions";
-import type { SettingsStore } from "./settings";
 import { loadPersistedSkill, SkillBuilder } from "./skillbuilder/builder";
 
 const log = createLogger("IPC");
 
-/** Wire the renderer-facing invoke channels to the recorder, describer, builder, doctor + settings. */
+/** Wire the renderer-facing invoke channels to the recorder, describer, builder + doctor. */
 export function registerIpc(
   recorder: RecorderController,
-  settings: SettingsStore,
   describer: Describer,
   builder: SkillBuilder,
 ): void {
-  const captureState = (): CaptureState => {
-    const config = settings.resolve();
-    return { level: levelForConfig(config), config };
-  };
-
   ipcMain.handle(IPC.start, () => recorder.start());
   ipcMain.handle(IPC.stop, () => recorder.stop());
   ipcMain.handle(IPC.status, () => recorder.status());
   ipcMain.handle(IPC.marker, (_event, note: string) => recorder.marker(note));
-  ipcMain.handle(IPC.doctor, () => runDoctor(settings));
-  ipcMain.handle(IPC.getCapture, () => captureState());
-  ipcMain.handle(IPC.setLevel, (_event, level: Exclude<CaptureLevel, "custom">) => {
-    settings.setLevel(level);
-    return captureState();
-  });
-  ipcMain.handle(IPC.setConfig, (_event, config: CaptureConfig) => {
-    settings.setConfig(config);
-    return captureState();
-  });
+  ipcMain.handle(IPC.doctor, () => runDoctor());
 
   const resolveSessionId = (sessionId?: string): string | null => {
     if (sessionId) return sessionId;

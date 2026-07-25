@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 
-import { CAPTURE_SOURCES } from "../common/config";
+import { CAPTURE_SOURCES, FULL_CAPTURE } from "../common/config";
 import type {
   ActiveWindowInfo,
   BrowserUrlInfo,
@@ -14,7 +14,6 @@ import type {
 } from "../common/ipc";
 import { browserUrlProviderKind } from "./collectors/url-provider";
 import { sessionsRoot } from "./recorder/session-store";
-import type { SettingsStore } from "./settings";
 
 const require = createRequire(import.meta.url);
 
@@ -84,8 +83,8 @@ function sourceSupport(key: string, browserUrl: BrowserUrlInfo): { supported: bo
 }
 
 /** Environment readiness check surfaced in the UI and (later) a CLI `doctor` command. */
-export function runDoctor(settings: SettingsStore): DoctorReport {
-  const config = settings.resolve();
+export function runDoctor(): DoctorReport {
+  const config = FULL_CAPTURE;
   const browserUrl = checkBrowserUrl();
 
   const activeSources: DoctorSource[] = CAPTURE_SOURCES.filter((s) => config[s.key]).map((s) => {
@@ -100,7 +99,6 @@ export function runDoctor(settings: SettingsStore): DoctorReport {
     activeWindow: checkActiveWindow(),
     browserUrl,
     sessionsDir: sessionsRoot(),
-    captureLevel: settings.level,
     activeSources,
   };
 }

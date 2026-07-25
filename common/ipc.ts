@@ -1,5 +1,4 @@
 import type { Analysis, AnalysisFeedback, Confidence } from "./analysis";
-import type { CaptureConfig, CaptureLevel } from "./config";
 import type { BuiltSkill, SkillArchitecture, SkillPlan } from "./skill";
 import type { RecorderState } from "./types";
 
@@ -169,14 +168,7 @@ export interface DoctorReport {
   activeWindow: ActiveWindowInfo;
   browserUrl: BrowserUrlInfo;
   sessionsDir: string;
-  captureLevel: CaptureLevel;
   activeSources: DoctorSource[];
-}
-
-/** Current capture configuration plus its resolved named level. */
-export interface CaptureState {
-  level: CaptureLevel;
-  config: CaptureConfig;
 }
 
 /** IPC channel names — the single source of truth shared by main + preload. */
@@ -187,9 +179,6 @@ export const IPC = {
   marker: "recorder:marker",
   doctor: "doctor:check",
   statusChanged: "recorder:status-changed",
-  getCapture: "capture:get",
-  setLevel: "capture:set-level",
-  setConfig: "capture:set-config",
   analyze: "analyze:start",
   analyzeFeedback: "analyze:feedback",
   getAnalysis: "analyze:get",
@@ -215,9 +204,6 @@ export interface SkillRecorderApi {
   status(): Promise<RecorderStatus>;
   marker(note: string): Promise<MarkerResult>;
   doctor(): Promise<DoctorReport>;
-  getCapture(): Promise<CaptureState>;
-  setLevel(level: Exclude<CaptureLevel, "custom">): Promise<CaptureState>;
-  setConfig(config: CaptureConfig): Promise<CaptureState>;
   onStatusChanged(cb: (status: RecorderStatus) => void): () => void;
   /** Run the Copilot describer on a session (defaults to the last completed one). */
   analyze(sessionId?: string): Promise<AnalyzeResult>;

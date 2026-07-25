@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 
-import { CAPTURE_LEVEL_INFO, type CaptureLevel } from "../common/config";
-import type { CaptureState, DoctorReport, RecorderStatus } from "../common/ipc";
+import type { DoctorReport, RecorderStatus } from "../common/ipc";
 import { formatMs } from "./format";
+import { WhatsRecorded } from "./WhatsRecorded";
 
 const IS_MAC = typeof navigator !== "undefined" && /Mac/i.test(navigator.userAgent);
 /** Mirrors the main-process global shortcut "CommandOrControl+Shift+R", per OS. */
@@ -11,7 +11,7 @@ const TOGGLE_SHORTCUT = IS_MAC ? "⌘⇧R" : "Ctrl+Shift+R";
 export function Recorder() {
   const [status, setStatus] = useState<RecorderStatus | null>(null);
   const [doctor, setDoctor] = useState<DoctorReport | null>(null);
-  const [capture, setCapture] = useState<CaptureState | null>(null);
+  const [showPrivacy, setShowPrivacy] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [sessionCount, setSessionCount] = useState(0);
   const [pendingCount, setPendingCount] = useState(0);
@@ -25,7 +25,6 @@ export function Recorder() {
   useEffect(() => {
     void window.skillRecorder.status().then(setStatus);
     void window.skillRecorder.doctor().then(setDoctor);
-    void window.skillRecorder.getCapture().then(setCapture);
     void refreshCount();
     return window.skillRecorder.onStatusChanged(setStatus);
   }, [refreshCount]);
@@ -65,12 +64,6 @@ export function Recorder() {
   const addMarker = useCallback(async () => {
     const note = window.prompt("Marker: what are you doing right now?");
     if (note) await window.skillRecorder.marker(note);
-  }, []);
-
-  const chooseLevel = useCallback(async (level: Exclude<CaptureLevel, "custom">) => {
-    const next = await window.skillRecorder.setLevel(level);
-    setCapture(next);
-    setDoctor(await window.skillRecorder.doctor());
   }, []);
 
   const openLibrary = useCallback(() => {
@@ -114,9 +107,40 @@ export function Recorder() {
         Add marker
       </button>
 
-      {capture && (
-        <CapturePicker level={capture.level} disabled={recording} onChoose={chooseLevel} />
-      )}
+      <button className="privacy-note" onClick={() => setShowPrivacy(true)}>
+        <span className="privacy-note-icon" aria-hidden>
+          <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
+            <path
+              d="M10 2.5 4 4.8v4.3c0 3.4 2.4 6.2 6 7.4 3.6-1.2 6-4 6-7.4V4.8L10 2.5Z"
+              stroke="currentColor"
+              strokeWidth="1.4"
+              strokeLinejoin="round"
+            />
+            <path
+              d="m7.4 9.8 1.9 1.9 3.4-3.6"
+              stroke="currentColor"
+              strokeWidth="1.4"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </span>
+        <span className="privacy-note-text">
+          <span className="privacy-note-title">Records your screen and activity</span>
+          <span className="privacy-note-sub">See exactly what's captured</span>
+        </span>
+        <span className="privacy-note-chevron" aria-hidden>
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <path
+              d="M6 4l4 4-4 4"
+              stroke="currentColor"
+              strokeWidth="1.7"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </span>
+      </button>
 
       <button
         className={`sessions-open ${pendingCount > 0 ? "has-new" : ""}`}
@@ -203,40 +227,8 @@ export function Recorder() {
       )}
 
       <p className="hint">{TOGGLE_SHORTCUT} toggles from anywhere</p>
-    </div>
-  );
-}
 
-function CapturePicker({
-  level,
-  disabled,
-  onChoose,
-}: {
-  level: CaptureLevel;
-  disabled: boolean;
-  onChoose: (level: Exclude<CaptureLevel, "custom">) => void;
-}) {
-  const active = CAPTURE_LEVEL_INFO.find((l) => l.level === level);
-  return (
-    <div className="capture">
-      <div className="capture-head">
-        <span className="eyebrow">Capture</span>
-        {level === "custom" && <span className="capture-custom">custom</span>}
-      </div>
-      <div className="segmented" role="group" aria-label="Capture level">
-        {CAPTURE_LEVEL_INFO.map((info) => (
-          <button
-            key={info.level}
-            className={`seg ${level === info.level ? "on" : ""}`}
-            aria-pressed={level === info.level}
-            disabled={disabled}
-            onClick={() => onChoose(info.level)}
-          >
-            {info.label}
-          </button>
-        ))}
-      </div>
-      <p className="capture-blurb">{active?.blurb ?? "A custom mix of sources is active."}</p>
+      {showPrivacy && <WhatsRecorded onClose={() => setShowPrivacy(false)} />}
     </div>
   );
 }

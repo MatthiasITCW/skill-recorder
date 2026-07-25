@@ -1,10 +1,10 @@
-import { access, readdir, readFile, stat } from "node:fs/promises";
+import { access, readdir, readFile, rm, stat } from "node:fs/promises";
 import path from "node:path";
 
 import { AnalysisSchema, type Analysis } from "../common/analysis";
 import type { SessionSummary } from "../common/ipc";
 import type { SessionMeta } from "../common/types";
-import { isValidSessionId, sessionsRoot } from "./recorder/session-store";
+import { isValidSessionId, sessionDir, sessionsRoot } from "./recorder/session-store";
 
 /** True when `file` exists (non-throwing `fs.access`). */
 async function exists(file: string): Promise<boolean> {
@@ -86,4 +86,15 @@ export async function listSessions(): Promise<SessionSummary[]> {
   const out = summaries.filter((s): s is SessionSummary => s !== null);
   out.sort((a, b) => (b.startedAt ?? 0) - (a.startedAt ?? 0));
   return out;
+}
+
+/**
+ * Permanently remove a saved recording and every artifact under its directory
+ * (events, video, frames, analysis). The id is validated via {@link sessionDir},
+ * which throws on any unsafe segment, so this can never escape the sessions root.
+ * `force` makes an already-missing session a no-op rather than an error.
+ */
+export async function deleteSession(id: string): Promise<void> {
+  const dir = sessionDir(id); // throws on traversal / invalid id
+  await rm(dir, { recursive: true, force: true });
 }

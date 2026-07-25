@@ -2,14 +2,20 @@ import { ipcMain } from "electron";
 import path from "node:path";
 
 import { type CaptureConfig, type CaptureLevel, levelForConfig } from "../common/config";
-import type { AnalysisEditInput, AnalysisFeedbackInput, AnalyzeResult, CaptureState } from "../common/ipc";
+import type {
+  AnalysisEditInput,
+  AnalysisFeedbackInput,
+  AnalyzeResult,
+  CaptureState,
+  DeleteSessionResult,
+} from "../common/ipc";
 import { IPC } from "../common/ipc";
 import { Describer, loadPersistedAnalysis } from "./describer/describer";
 import { runDoctor } from "./doctor";
 import { createLogger } from "./logger";
 import type { RecorderController } from "./recorder/controller";
 import { isValidSessionId } from "./recorder/session-store";
-import { listSessions } from "./sessions";
+import { deleteSession, listSessions } from "./sessions";
 import type { SettingsStore } from "./settings";
 
 const log = createLogger("IPC");
@@ -115,5 +121,25 @@ export function registerIpc(
   });
 
   ipcMain.handle(IPC.listSessions, () => listSessions());
+
+  ipcMain.handle(IPC.deleteSession, async (_event, sessionId: string): Promise<DeleteSessionResult> => {
+    if (!isValidSessionId(sessionId)) return { ok: false, error: "Unknown session." };
+    if (recorder.status().sessionId === sessionId) {
+      return { ok: false, error: "You can't delete a recording while it's still in progress." };
+    }
+    if (describer.isAnalyzing(sessionId)) {
+      return { ok: false, error: "This recording is being analyzed. Cancel that first, then delete." };
+    }
+    try {
+      await describer.forget(sessionId); // release any idle agent holding the folder
+      await deleteSession(sessionId);
+      recorder.forgetSession(sessionId); // clear the "last completed" pointer if it was this one
+      return { ok: true };
+    } catch (err) {
+      const error = err instanceof Error ? err.message : String(err);
+      log.warn("delete failed:", error);
+      return { ok: false, error };
+    }
+  });
 }
 

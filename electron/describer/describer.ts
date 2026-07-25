@@ -151,6 +151,19 @@ export class Describer {
     if (live) await live.copilot.abort().catch(() => undefined);
   }
 
+  /** True while an analyze/feedback turn is actively running for this session. */
+  isAnalyzing(sessionId: string): boolean {
+    return this.active.has(sessionId);
+  }
+
+  /**
+   * Drop any live agent conversation held for a session and forget it. Called
+   * before the session's files are deleted so no agent keeps its directory open.
+   */
+  async forget(sessionId: string): Promise<void> {
+    await this.disposeLive(sessionId);
+  }
+
   /**
    * Disconnect live sessions that aren't currently running — called when the
    * library window closes, so idle agent conversations don't linger. The active

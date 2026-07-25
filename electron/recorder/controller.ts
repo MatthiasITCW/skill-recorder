@@ -72,6 +72,18 @@ export class RecorderController {
     return this.lastCompleted?.dir ?? null;
   }
 
+  /**
+   * Forget a session if it's the one being tracked as "last completed" — called
+   * after a session is deleted, so status()/analyze no longer point at a dir that
+   * no longer exists. No-op for any other id.
+   */
+  forgetSession(id: string): void {
+    if (this.lastCompleted?.id !== id) return;
+    this.lastCompleted = null;
+    this.lastProcessed = false;
+    this.emit();
+  }
+
   status(): RecorderStatus {
     return {
       state: this.state,

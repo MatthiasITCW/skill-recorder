@@ -84,6 +84,11 @@ export interface MarkerResult {
   error?: string;
 }
 
+export interface DeleteSessionResult {
+  ok: boolean;
+  error?: string;
+}
+
 export interface FfmpegInfo {
   ok: boolean;
   path: string | null;
@@ -129,6 +134,7 @@ export const IPC = {
   cancelAnalysis: "analyze:cancel",
   analyzeProgress: "analyze:progress",
   listSessions: "sessions:list",
+  deleteSession: "sessions:delete",
   openLibrary: "ui:open-library",
   closeLibrary: "ui:close-library",
 } as const;
@@ -159,6 +165,8 @@ export interface SkillRecorderApi {
   onAnalyzeProgress(cb: (progress: AnalyzeProgress) => void): () => void;
   /** All saved recordings, newest first, for the sessions library. */
   listSessions(): Promise<SessionSummary[]>;
+  /** Permanently delete a saved recording and all its artifacts from disk. */
+  deleteSession(sessionId: string): Promise<DeleteSessionResult>;
   /** Open (and focus) the Sessions library window, docked to the recorder. */
   openLibrary(): Promise<void>;
   /** Close the Sessions library window from within it. */

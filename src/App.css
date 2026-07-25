@@ -691,6 +691,100 @@ button:focus-visible,
   color: var(--faint);
 }
 
+/* Per-row delete: a quiet trash affordance revealed on hover/focus, plus an
+   inline confirm that swaps in so deletion always takes a deliberate second tap. */
+.sess-row {
+  position: relative;
+}
+
+.sess-del {
+  position: absolute;
+  right: 7px;
+  bottom: 7px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--faint);
+  opacity: 0;
+  transition: opacity 0.12s ease, background 0.12s ease, color 0.12s ease;
+}
+
+.sess-row:hover .sess-del,
+.sess-del:focus-visible {
+  opacity: 1;
+}
+
+.sess-del:hover {
+  background: rgba(var(--rec-rgb), 0.12);
+  color: var(--rec);
+}
+
+.sess-confirm {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  background: var(--surface);
+  border: 1px solid var(--signal);
+  border-radius: 10px;
+  padding: 9px 11px;
+}
+
+.sess-confirm-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.sess-confirm-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.sess-confirm-sub {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.sess-confirm-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+}
+
+.danger {
+  background: var(--rec);
+  color: var(--brand-fg);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 12px;
+}
+
+.danger:not(:disabled):hover {
+  background: hsl(6, 82%, 43%);
+}
+
+.sess-notice {
+  display: block;
+  width: calc(100% - 24px);
+  margin: 0 12px 8px;
+  padding: 8px 10px;
+  text-align: left;
+  font-size: 11.5px;
+  line-height: 1.35;
+  color: var(--brand-ink);
+  background: var(--signal-dim);
+  border-radius: 8px;
+}
+
 .lib-detail {
   flex: 1;
   min-width: 0;

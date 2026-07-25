@@ -8,6 +8,7 @@ export function Library() {
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const loadSessions = useCallback(async () => {
     const list = await window.skillRecorder.listSessions();
@@ -23,6 +24,25 @@ export function Library() {
     });
   }, [loadSessions]);
 
+  const deleteSession = useCallback(async (id: string) => {
+    setNotice(null);
+    const res = await window.skillRecorder.deleteSession(id);
+    if (!res.ok) {
+      setNotice(res.error ?? "Could not delete this recording.");
+      return;
+    }
+    setSessions((prev) => {
+      const idx = prev.findIndex((s) => s.id === id);
+      const next = prev.filter((s) => s.id !== id);
+      setSelectedId((cur) => {
+        if (cur !== id) return cur;
+        if (next.length === 0) return null;
+        return (next[idx] ?? next[next.length - 1]).id;
+      });
+      return next;
+    });
+  }, []);
+
   const selected = sessions.find((s) => s.id === selectedId) ?? null;
 
   return (
@@ -32,12 +52,18 @@ export function Library() {
           <span className="eyebrow">Sessions</span>
           <span className="pill">{sessions.length}</span>
         </div>
+        {notice && (
+          <button className="sess-notice" onClick={() => setNotice(null)} title="Dismiss">
+            {notice}
+          </button>
+        )}
         <div className="lib-list-scroll">
           <SessionsList
             sessions={sessions}
             loaded={loaded}
             selectedId={selectedId}
             onSelect={setSelectedId}
+            onDelete={deleteSession}
           />
         </div>
       </aside>
@@ -62,44 +88,91 @@ function SessionsList({
   loaded,
   selectedId,
   onSelect,
+  onDelete,
 }: {
   sessions: SessionSummary[];
   loaded: boolean;
   selectedId: string | null;
   onSelect: (id: string) => void;
+  onDelete: (id: string) => void | Promise<void>;
 }) {
+  const [confirmId, setConfirmId] = useState<string | null>(null);
+
   if (sessions.length === 0) {
     return <p className="sessions-empty">{loaded ? "No recordings yet." : "Loading…"}</p>;
   }
   return (
     <ul className="sess-list">
-      {sessions.map((s) => (
-        <li key={s.id}>
-          <button
-            className={`sess ${s.id === selectedId ? "on" : ""}`}
-            onClick={() => onSelect(s.id)}
-          >
-            <div className="sess-top">
-              <span className="sess-when">{formatWhen(s.startedAt)}</span>
-              {s.analysis?.approved ? (
-                <span className="tag ok">approved</span>
-              ) : s.analysis ? (
-                <span className="tag an">analyzed</span>
-              ) : !s.processed ? (
-                <span className="tag warn">processing</span>
-              ) : null}
+      {sessions.map((s) =>
+        confirmId === s.id ? (
+          <li key={s.id}>
+            <div className="sess-confirm" role="alertdialog" aria-label="Confirm delete">
+              <div className="sess-confirm-text">
+                <span className="sess-confirm-title">Delete this recording?</span>
+                <span className="sess-confirm-sub">This cannot be undone.</span>
+              </div>
+              <div className="sess-confirm-actions">
+                <button className="linky" onClick={() => setConfirmId(null)}>
+                  Cancel
+                </button>
+                <button
+                  className="danger"
+                  onClick={() => {
+                    setConfirmId(null);
+                    void onDelete(s.id);
+                  }}
+                >
+                  Delete
+                </button>
+              </div>
             </div>
-            <div className="sess-intent">
-              {s.analysis?.title?.trim() || s.analysis?.intent || "Not analyzed yet"}
+          </li>
+        ) : (
+          <li key={s.id}>
+            <div className="sess-row">
+              <button
+                className={`sess ${s.id === selectedId ? "on" : ""}`}
+                onClick={() => onSelect(s.id)}
+              >
+                <div className="sess-top">
+                  <span className="sess-when">{formatWhen(s.startedAt)}</span>
+                  {s.analysis?.approved ? (
+                    <span className="tag ok">approved</span>
+                  ) : s.analysis ? (
+                    <span className="tag an">analyzed</span>
+                  ) : !s.processed ? (
+                    <span className="tag warn">processing</span>
+                  ) : null}
+                </div>
+                <div className="sess-intent">
+                  {s.analysis?.title?.trim() || s.analysis?.intent || "Not analyzed yet"}
+                </div>
+                <div className="sess-sub">
+                  {s.durationMs != null && <span>{formatDur(s.durationMs)}</span>}
+                  {s.analysis && <span>{s.analysis.stepCount} steps</span>}
+                  {s.hasVideo && <span>video</span>}
+                </div>
+              </button>
+              <button
+                className="sess-del"
+                aria-label={`Delete recording from ${formatWhen(s.startedAt)}`}
+                title="Delete recording"
+                onClick={() => setConfirmId(s.id)}
+              >
+                <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden>
+                  <path
+                    d="M3 4.5h10M6.4 4.5V3.3c0-.44.36-.8.8-.8h1.6c.44 0 .8.36.8.8v1.2M4.7 4.5l.5 8.2c.02.42.37.75.8.75h4c.42 0 .77-.33.8-.75l.5-8.2"
+                    stroke="currentColor"
+                    strokeWidth="1.2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </button>
             </div>
-            <div className="sess-sub">
-              {s.durationMs != null && <span>{formatDur(s.durationMs)}</span>}
-              {s.analysis && <span>{s.analysis.stepCount} steps</span>}
-              {s.hasVideo && <span>video</span>}
-            </div>
-          </button>
-        </li>
-      ))}
+          </li>
+        ),
+      )}
     </ul>
   );
 }

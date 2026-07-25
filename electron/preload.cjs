@@ -20,6 +20,7 @@ const IPC = {
   cancelAnalysis: "analyze:cancel",
   analyzeProgress: "analyze:progress",
   listSessions: "sessions:list",
+  deleteSession: "sessions:delete",
   openLibrary: "ui:open-library",
   closeLibrary: "ui:close-library",
 };
@@ -50,6 +51,7 @@ contextBridge.exposeInMainWorld("skillRecorder", {
     return () => ipcRenderer.removeListener(IPC.analyzeProgress, listener);
   },
   listSessions: () => ipcRenderer.invoke(IPC.listSessions),
+  deleteSession: (sessionId) => ipcRenderer.invoke(IPC.deleteSession, sessionId),
   openLibrary: () => ipcRenderer.invoke(IPC.openLibrary),
   closeLibrary: () => ipcRenderer.invoke(IPC.closeLibrary),
 });

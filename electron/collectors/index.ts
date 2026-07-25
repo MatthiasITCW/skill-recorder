@@ -2,7 +2,6 @@ import type { CaptureConfig } from "../../common/config";
 import type { Collector } from "../recorder/collector";
 import { ActiveWindowCollector } from "./active-window";
 import { ClipboardCollector } from "./clipboard";
-import { TerminalCollector } from "./terminal";
 
 /**
  * Builds the collectors enabled by `config`. Sources the user hasn't opted into
@@ -25,7 +24,6 @@ export function createCollectors(config: CaptureConfig): Collector[] {
     );
   }
   if (config.clipboard) collectors.push(new ClipboardCollector());
-  if (config.terminal) collectors.push(new TerminalCollector());
 
   return collectors;
 }

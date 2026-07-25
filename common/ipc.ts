@@ -150,13 +150,6 @@ export interface BrowserUrlInfo {
   supported: boolean;
 }
 
-/** Shell-hook install status for terminal capture. */
-export interface ShellHookInfo {
-  shell: "zsh" | "bash" | "pwsh" | null;
-  profilePath: string | null;
-  installed: boolean;
-}
-
 /** One capture source in the doctor report, annotated with platform support. */
 export interface DoctorSource {
   key: string;
@@ -175,19 +168,9 @@ export interface DoctorReport {
   copilotCli: CopilotInfo;
   activeWindow: ActiveWindowInfo;
   browserUrl: BrowserUrlInfo;
-  shellHook: ShellHookInfo;
   sessionsDir: string;
   captureLevel: CaptureLevel;
   activeSources: DoctorSource[];
-}
-
-/** Result of installing the terminal shell hook. */
-export interface ShellHookInstallResult {
-  ok: boolean;
-  shell: "zsh" | "bash" | "pwsh" | null;
-  profilePath: string | null;
-  alreadyInstalled: boolean;
-  error?: string;
 }
 
 /** Current capture configuration plus its resolved named level. */
@@ -203,7 +186,6 @@ export const IPC = {
   status: "recorder:status",
   marker: "recorder:marker",
   doctor: "doctor:check",
-  installShellHook: "doctor:install-shell-hook",
   statusChanged: "recorder:status-changed",
   getCapture: "capture:get",
   setLevel: "capture:set-level",
@@ -233,8 +215,6 @@ export interface SkillRecorderApi {
   status(): Promise<RecorderStatus>;
   marker(note: string): Promise<MarkerResult>;
   doctor(): Promise<DoctorReport>;
-  /** Install the terminal shell hook into the user's shell profile (idempotent). */
-  installShellHook(): Promise<ShellHookInstallResult>;
   getCapture(): Promise<CaptureState>;
   setLevel(level: Exclude<CaptureLevel, "custom">): Promise<CaptureState>;
   setConfig(config: CaptureConfig): Promise<CaptureState>;

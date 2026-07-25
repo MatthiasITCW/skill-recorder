@@ -24,7 +24,7 @@ The skill-recorder **works on Windows** for core recording. Install, typecheck, 
 | Pipeline (bundle + description) | ✅ | `bundle.json` and `description.md` generated post-stop |
 | ffmpeg-static | ✅ | Binary exists at `node_modules/ffmpeg-static/ffmpeg.exe`, runs `ffmpeg -version` |
 | Path handling | ✅ | All `path.join` usage is OS-agnostic; no hardcoded `/` separators found |
-| Terminal hooks (pwsh) | ✅ | PowerShell hook snippet is correct and would write to `~/.skill-recorder/shell.jsonl` |
+| Terminal hooks (pwsh) | ➖ | Removed after this report. The always-on shell hook was dropped; a safer recorded-terminal (PTY) approach is tracked in #7 |
 
 ---
 
@@ -65,7 +65,7 @@ The skill-recorder **works on Windows** for core recording. Install, typecheck, 
 ### Things that already work correctly
 
 1. **`doctor.ts`** — uses `where` (Windows) vs `which` (Unix) for binary detection ✅
-2. **`terminal-hooks.ts`** — includes a PowerShell hook (`PWSH_HOOK`) alongside zsh/bash ✅
+2. **`terminal-hooks.ts`** — _(removed after this report; terminal capture dropped, see #7)_ included a PowerShell hook (`PWSH_HOOK`) alongside zsh/bash
 3. **`session-store.ts`** — uses `path.join()` everywhere, no hardcoded separators ✅
 4. **`vite.config.ts`** — uses `path.join()` for all asset copying ✅
 5. **`video/recorder.ts`** — uses `path.join()` for preload and capture.html paths ✅

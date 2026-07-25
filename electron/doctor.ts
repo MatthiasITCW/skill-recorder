@@ -12,7 +12,6 @@ import type {
   DoctorSource,
   FfmpegInfo,
 } from "../common/ipc";
-import { shellHookStatus } from "./collectors/shell-hook";
 import { browserUrlProviderKind } from "./collectors/url-provider";
 import { sessionsRoot } from "./recorder/session-store";
 import type { SettingsStore } from "./settings";
@@ -88,15 +87,10 @@ function sourceSupport(key: string, browserUrl: BrowserUrlInfo): { supported: bo
 export function runDoctor(settings: SettingsStore): DoctorReport {
   const config = settings.resolve();
   const browserUrl = checkBrowserUrl();
-  const shellHook = shellHookStatus();
 
   const activeSources: DoctorSource[] = CAPTURE_SOURCES.filter((s) => config[s.key]).map((s) => {
     const support = sourceSupport(s.key, browserUrl);
-    let note = support.note;
-    if (s.key === "terminal" && support.supported && !shellHook.installed) {
-      note = "Shell hook not installed";
-    }
-    return { key: s.key, label: s.label, tier: s.tier, cost: s.cost, supported: support.supported, note };
+    return { key: s.key, label: s.label, tier: s.tier, cost: s.cost, supported: support.supported, note: support.note };
   });
 
   return {
@@ -105,7 +99,6 @@ export function runDoctor(settings: SettingsStore): DoctorReport {
     copilotCli: checkCopilot(),
     activeWindow: checkActiveWindow(),
     browserUrl,
-    shellHook,
     sessionsDir: sessionsRoot(),
     captureLevel: settings.level,
     activeSources,

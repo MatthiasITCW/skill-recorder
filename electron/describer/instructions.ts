@@ -23,7 +23,7 @@ The recorder harvested cheap, high-signal OS events as the PRIMARY source:
 - **window titles**,
 - **browser URLs** (the pages visited),
 - **clipboard changes** (copied text),
-- **terminal commands** (when the shell hook was active).
+- **terminal commands** (only if a terminal producer was active for the session).
 
 A low-frame-rate **screen video** may also exist. It is OPPORTUNISTIC enrichment
 — you pull frames only where the events are ambiguous. Do NOT assume you must

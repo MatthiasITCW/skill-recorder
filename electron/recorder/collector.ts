@@ -16,7 +16,7 @@ export interface CollectorContext {
 /**
  * A source of events. Implementations are cheap to construct and only do real
  * work between `start` and `stop`. Both may be async (native handles, polling
- * loops, file tails). Later milestones add ActiveWindow / Clipboard / Terminal.
+ * loops, file tails). Implementations include ActiveWindow and Clipboard.
  */
 export interface Collector {
   readonly name: string;

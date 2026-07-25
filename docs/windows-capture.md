@@ -14,7 +14,6 @@ before trusting a Windows build.
 | Window titles | `get-windows` native addon | Full (better: no grant needed) | None |
 | Browser URLs | UI Automation address bar read (`powershell.exe` host) | Functional, not byte exact | None |
 | Clipboard | Electron clipboard | Full | None |
-| Terminal commands | PowerShell `$PROFILE` hook writing `~/.skill-recorder/shell.jsonl` | Parity for pwsh (no cmd.exe) | Install hook once |
 | Screen video + frames | `desktopCapturer` + ffmpeg + sharp | Full | Screen capture |
 
 Notes:
@@ -25,8 +24,6 @@ Notes:
   segmentation, and unlike macOS it also reads **Firefox**. Values that look like
   a search term (whitespace, or no dot) are dropped rather than emitted as noise.
 - **Window titles** need no OS permission on Windows (macOS needs Accessibility).
-- **Terminal** capture is pwsh only. The hook overrides the `prompt` function, so
-  a heavily customized prompt (oh-my-posh etc.) may need manual merging.
 
 ## Prerequisites
 
@@ -49,8 +46,6 @@ On Windows, confirm:
 - **window tracking** = `native` (not `addon missing`). `addon missing` means the
   `get-windows` `.node` did not resolve, which is a packaging or install problem.
 - **browser URLs** = `uia` when the capture level includes URLs.
-- **terminal hook** shows `install` until the PowerShell hook is added; click it
-  (or run the installer) and it flips to `pwsh`.
 
 ## Live smoke test
 
@@ -66,11 +61,8 @@ Run a real recording on Windows and verify each source lands in the session's
    Typing a partial URL or a search term should not emit a bogus event.
 4. **Clipboard.** Copy some text. Expect a `clipboard.change` event with a
    preview and hash.
-5. **Terminal.** Ensure the hook is installed (doctor row shows `pwsh`), open a
-   new PowerShell window, run a couple of commands. Expect `terminal.command`
-   events tailing `~/.skill-recorder/shell.jsonl`.
-6. **Video.** Confirm a `.webm` is written and `frame.captured` events appear.
-7. **Stop.** The recording should show up in the library as `recorded`, and
+5. **Video.** Confirm a `.webm` is written and `frame.captured` events appear.
+6. **Stop.** The recording should show up in the library as `recorded`, and
    analysis should produce a coherent intent + ordered steps.
 
 If a source produces nothing, check the doctor row for it first, then the main
@@ -98,7 +90,8 @@ binaries and is not supported here.
 ## Known limitations
 
 - Browser URLs are best effort display strings, not the exact tab URL.
-- Terminal capture is pwsh only (no cmd.exe).
+- Terminal capture is not currently implemented; a recorded-terminal (PTY)
+  approach is tracked in issue #7.
 - Semantic UI events (focus/invoke/value via UI Automation) are not implemented
   on either platform yet.
 - The Windows paths above are validated by typecheck, a PowerShell parse check of

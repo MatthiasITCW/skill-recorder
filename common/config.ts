@@ -7,7 +7,6 @@
  * Cost tiers (per source):
  *   0 — no prompt, no setup   (works out of the box)
  *   1 — one-time OS grant     (accessibility / screen-capture permission)
- *   2 — manual setup          (install a shell hook)
  *   3 — heaviest OS grant     (screen-capture permission for video)
  */
 
@@ -22,8 +21,6 @@ export interface CaptureConfig {
   windowTitles: boolean;
   /** Active browser tab URLs. Tier 1 — needs the same grant as titles. */
   browserUrls: boolean;
-  /** Terminal commands. Tier 2 — needs the opt-in shell hook installed. */
-  terminal: boolean;
   /** Low-fps screen video + extracted keyframes. Tier 3 — needs screen-capture. */
   video: boolean;
 }
@@ -38,7 +35,6 @@ export const LEVEL_PRESETS: Record<Exclude<CaptureLevel, "custom">, CaptureConfi
     clipboard: true,
     windowTitles: false,
     browserUrls: false,
-    terminal: false,
     video: false,
   },
   // One-time OS grant unlocks the biggest accuracy jump (what/where, not just which app).
@@ -47,16 +43,14 @@ export const LEVEL_PRESETS: Record<Exclude<CaptureLevel, "custom">, CaptureConfi
     clipboard: true,
     windowTitles: true,
     browserUrls: true,
-    terminal: false,
     video: false,
   },
-  // Everything, including shell hooks and screen video for frame correlation.
+  // Everything: adds screen video + frame correlation on top of standard.
   full: {
     appActivity: true,
     clipboard: true,
     windowTitles: true,
     browserUrls: true,
-    terminal: true,
     video: true,
   },
 };
@@ -87,7 +81,6 @@ export const CAPTURE_SOURCES: readonly CaptureSourceInfo[] = [
     tier: 1,
     cost: "One-time OS permission",
   },
-  { key: "terminal", label: "Terminal commands", tier: 2, cost: "Install a shell hook (one-time)" },
   { key: "video", label: "Screen video + keyframes", tier: 3, cost: "Screen-capture permission" },
 ];
 
@@ -117,7 +110,7 @@ export const CAPTURE_LEVEL_INFO: readonly CaptureLevelInfo[] = [
   {
     level: "full",
     label: "Full",
-    blurb: "Adds terminal commands + screen video. Most setup, best detail.",
+    blurb: "Adds screen video + keyframes. Most setup, best detail.",
   },
 ];
 

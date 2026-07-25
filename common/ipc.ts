@@ -19,6 +19,8 @@ export interface SessionSummary {
   /** True once post-processing produced a bundle. */
   processed: boolean;
   hasVideo: boolean;
+  /** True once a skill has been built and persisted for this session. */
+  hasSkill: boolean;
   /** Present once the describer has produced an analysis for this session. */
   analysis: {
     revision: number;
@@ -26,7 +28,6 @@ export interface SessionSummary {
     intent: string;
     intentConfidence: Confidence;
     stepCount: number;
-    approved: boolean;
   } | null;
 }
 
@@ -76,7 +77,7 @@ export interface SkillBuildProgress {
   message: string;
 }
 
-/** Start a build (or refine one) for a session's approved analysis. */
+/** Start a build (or refine one) for a session's analysis. */
 export interface SkillBuildInput {
   sessionId: string;
   /** Target architecture (only "scout" is enabled today). */
@@ -164,7 +165,6 @@ export const IPC = {
   analyze: "analyze:start",
   analyzeFeedback: "analyze:feedback",
   getAnalysis: "analyze:get",
-  approveAnalysis: "analyze:approve",
   updateAnalysis: "analyze:update",
   cancelAnalysis: "analyze:cancel",
   analyzeProgress: "analyze:progress",
@@ -197,8 +197,6 @@ export interface SkillRecorderApi {
   analyzeFeedback(input: AnalysisFeedbackInput): Promise<AnalyzeResult>;
   /** Load the persisted analysis for a session, if any. */
   getAnalysis(sessionId: string): Promise<Analysis | null>;
-  /** Mark an analysis as accepted/correct — the artifact a Skill is built from. */
-  approveAnalysis(sessionId: string): Promise<AnalyzeResult>;
   /** Edit the title/intent text directly (no re-analysis). */
   updateAnalysis(input: AnalysisEditInput): Promise<AnalyzeResult>;
   /** Abort an in-flight analysis. */
@@ -209,7 +207,7 @@ export interface SkillRecorderApi {
   /** Permanently delete a saved recording and all its artifacts from disk. */
   deleteSession(sessionId: string): Promise<DeleteSessionResult>;
   /**
-   * Propose (or refine) a skill from an approved analysis. Pass `feedback` to
+   * Propose (or refine) a skill from a recording's analysis. Pass `feedback` to
    * revise the current plan in the same multi-turn conversation.
    */
   buildSkill(input: SkillBuildInput): Promise<SkillPlanResult>;

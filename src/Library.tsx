@@ -138,8 +138,8 @@ function SessionsList({
               >
                 <div className="sess-top">
                   <span className="sess-when">{formatWhen(s.startedAt)}</span>
-                  {s.analysis?.approved ? (
-                    <span className="tag ok">approved</span>
+                  {s.hasSkill ? (
+                    <span className="tag ok">skill</span>
                   ) : s.analysis ? (
                     <span className="tag an">analyzed</span>
                   ) : !s.processed ? (
@@ -280,13 +280,6 @@ function AnalysisWorkspace({
     void onChanged();
   }, [notes, overall, sessionId, onChanged]);
 
-  const approve = useCallback(async () => {
-    const res = await window.skillRecorder.approveAnalysis(sessionId);
-    if (res.ok && res.analysis) setAnalysis(res.analysis);
-    else setError(res.error ?? "Could not save");
-    void onChanged();
-  }, [sessionId, onChanged]);
-
   const startEdit = useCallback(() => {
     if (!analysis) return;
     setDraftTitle(analysis.title ?? "");
@@ -313,8 +306,6 @@ function AnalysisWorkspace({
   const setNote = useCallback((stepId: string, note: string) => {
     setNotes((prev) => ({ ...prev, [stepId]: note }));
   }, []);
-
-  const approved = analysis?.approved ?? false;
 
   if (building && analysis) {
     return (
@@ -427,7 +418,6 @@ function AnalysisWorkspace({
                   {analysis.intentRationale && (
                     <p className="summary-why">{analysis.intentRationale}</p>
                   )}
-                  {approved && <span className="tag ok">approved</span>}
                 </>
               )}
             </div>
@@ -464,31 +454,27 @@ function AnalysisWorkspace({
 
       {analysis && !analyzing && (
         <div className="ws-foot">
-          <span className="foot-status">{approved ? "Saved" : ""}</span>
+          <span className="foot-status">{summary.hasSkill ? "Skill created" : ""}</span>
           <div className="ws-foot-actions">
             {hasFeedback && (
               <button className="secondary" onClick={sendFeedback}>
                 Send feedback &amp; re-analyze
               </button>
             )}
-            {approved ? (
-              <button
-                className="record-cta"
-                onClick={() => setBuilding(true)}
-                title="Turn this recording into a reusable skill"
-              >
-                Create skill →
-              </button>
-            ) : (
-              <button
-                className="record-cta"
-                onClick={approve}
-                disabled={hasFeedback}
-                title={hasFeedback ? "Send or clear your feedback first" : "Save as correct"}
-              >
-                Looks good, save
-              </button>
-            )}
+            <button
+              className="record-cta"
+              onClick={() => setBuilding(true)}
+              disabled={hasFeedback}
+              title={
+                hasFeedback
+                  ? "Send or clear your feedback first"
+                  : summary.hasSkill
+                    ? "Open the skill built from this recording"
+                    : "Turn this recording into a reusable skill"
+              }
+            >
+              {summary.hasSkill ? "Open skill →" : "Create skill →"}
+            </button>
           </div>
         </div>
       )}
@@ -524,6 +510,15 @@ function SkillBuilderView({
   const [exportedPath, setExportedPath] = useState("");
   const [builtName, setBuiltName] = useState("");
   const canceled = useRef(false);
+  const inFlight = useRef(false);
+
+  // Leaving the builder (session switch or Close) discards an in-progress plan —
+  // we don't save drafts — so stop any run that's still going in the background.
+  useEffect(() => {
+    return () => {
+      if (inFlight.current) void window.skillRecorder.cancelSkill(sessionId);
+    };
+  }, [sessionId]);
 
   // Reopen straight to the exported state if this recording already has a skill.
   useEffect(() => {
@@ -550,10 +545,12 @@ function SkillBuilderView({
   const runPlan = useCallback(
     async (note?: string) => {
       canceled.current = false;
+      inFlight.current = true;
       setError(null);
       setStatusLine(note ? "Refining the plan…" : "Planning the skill…");
       setPhase("planning");
       const res = await window.skillRecorder.buildSkill({ sessionId, architecture, feedback: note });
+      inFlight.current = false;
       if (res.ok && res.plan) {
         setPlan(res.plan);
         setFeedback("");
@@ -568,10 +565,12 @@ function SkillBuilderView({
 
   const create = useCallback(async () => {
     canceled.current = false;
+    inFlight.current = true;
     setError(null);
     setStatusLine("Writing the skill…");
     setPhase("creating");
     const res = await window.skillRecorder.createSkill(sessionId);
+    inFlight.current = false;
     if (res.ok && res.skill) {
       setBuiltName(res.skill.name);
       setExportedPath(res.path ?? res.skill.exportedPath ?? "");
@@ -584,6 +583,7 @@ function SkillBuilderView({
 
   const cancelRun = useCallback(async () => {
     canceled.current = true;
+    inFlight.current = false;
     setStatusLine("Stopping…");
     await window.skillRecorder.cancelSkill(sessionId);
     setPhase(plan ? "plan" : "arch");
@@ -745,8 +745,7 @@ function SkillBuilderView({
             <button
               className="record-cta"
               onClick={() => void create()}
-              disabled={feedback.trim().length > 0}
-              title={feedback.trim() ? "Refine or clear your notes first" : "Create and export the skill"}
+              title="Create and export the skill"
             >
               Create &amp; export skill
             </button>

@@ -44,10 +44,11 @@ async function summarize(root: string, name: string): Promise<SessionSummary | n
   }
   if (!meta?.id) return null;
 
-  const [analysis, processed, hasVideo] = await Promise.all([
+  const [analysis, processed, hasVideo, hasSkill] = await Promise.all([
     loadAnalysis(dir),
     exists(path.join(dir, "bundle.json")),
     exists(path.join(dir, "video.json")),
+    exists(path.join(dir, "skill.json")),
   ]);
 
   return {
@@ -57,6 +58,7 @@ async function summarize(root: string, name: string): Promise<SessionSummary | n
     durationMs: meta.startedAt && meta.stoppedAt ? meta.stoppedAt - meta.startedAt : null,
     processed,
     hasVideo,
+    hasSkill,
     analysis: analysis
       ? {
           revision: analysis.revision,
@@ -64,7 +66,6 @@ async function summarize(root: string, name: string): Promise<SessionSummary | n
           intent: analysis.intent,
           intentConfidence: analysis.intentConfidence,
           stepCount: analysis.steps.length,
-          approved: analysis.approved ?? false,
         }
       : null,
   };

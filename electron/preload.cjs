@@ -15,7 +15,6 @@ const IPC = {
   analyze: "analyze:start",
   analyzeFeedback: "analyze:feedback",
   getAnalysis: "analyze:get",
-  approveAnalysis: "analyze:approve",
   updateAnalysis: "analyze:update",
   cancelAnalysis: "analyze:cancel",
   analyzeProgress: "analyze:progress",
@@ -48,7 +47,6 @@ contextBridge.exposeInMainWorld("skillRecorder", {
   analyze: (sessionId) => ipcRenderer.invoke(IPC.analyze, sessionId),
   analyzeFeedback: (input) => ipcRenderer.invoke(IPC.analyzeFeedback, input),
   getAnalysis: (sessionId) => ipcRenderer.invoke(IPC.getAnalysis, sessionId),
-  approveAnalysis: (sessionId) => ipcRenderer.invoke(IPC.approveAnalysis, sessionId),
   updateAnalysis: (input) => ipcRenderer.invoke(IPC.updateAnalysis, input),
   cancelAnalysis: (sessionId) => ipcRenderer.invoke(IPC.cancelAnalysis, sessionId),
   onAnalyzeProgress: (cb) => {

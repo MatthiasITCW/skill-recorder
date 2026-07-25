@@ -119,16 +119,6 @@ export class Describer {
     }
   }
 
-  /** Accept an analysis as correct. Persists `approved` so a Skill can be built from it. */
-  async approve(sessionId: string): Promise<Analysis> {
-    if (this.active.has(sessionId)) throw new Error("Wait for the current analysis to finish before saving.");
-    const prior = loadPersistedAnalysis(sessionId);
-    if (!prior) throw new Error("There is no analysis to approve yet.");
-    const approved: Analysis = { ...prior, approved: true, approvedAt: Date.now() };
-    this.persist(sessionDir(sessionId), approved);
-    return approved;
-  }
-
   /**
    * Apply a direct text edit to the title and/or intent — a user correction, NOT a
    * re-analysis. Steps and evidence are untouched; the agent is not invoked. Blank

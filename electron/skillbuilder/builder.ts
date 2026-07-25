@@ -74,7 +74,7 @@ export function loadPersistedSkill(sessionId: string): BuiltSkill | null {
 }
 
 /**
- * Drives the multi-turn GitHub Copilot CLI agent that turns an *approved* analysis
+ * Drives the multi-turn GitHub Copilot CLI agent that turns a recording's analysis
  * into a generalized, native-tool-first skill for a target architecture. Owns one
  * shared {@link CopilotClient}; keeps one live conversation per recording so the
  * plan → refine → build flow stays in a single session. Streams progress out via a
@@ -98,7 +98,6 @@ export class SkillBuilder {
     }
     const analysis = loadPersistedAnalysis(sessionId);
     if (!analysis) throw new Error("There is no analysis for this recording yet.");
-    if (!analysis.approved) throw new Error("Approve the analysis before building a skill from it.");
 
     this.active.add(sessionId);
     try {
@@ -116,7 +115,7 @@ export class SkillBuilder {
     }
   }
 
-  /** Finalize the approved plan into a SKILL.md and export it. */
+  /** Finalize the proposed plan into a SKILL.md and export it. */
   async create(sessionId: string): Promise<{ skill: BuiltSkill; path: string }> {
     if (this.active.has(sessionId)) throw new Error("Wait for the current step to finish.");
     const live = this.live.get(sessionId);

@@ -93,18 +93,6 @@ export function registerIpc(
     isValidSessionId(sessionId) ? loadPersistedAnalysis(sessionId) : null,
   );
 
-  ipcMain.handle(IPC.approveAnalysis, async (_event, sessionId: string): Promise<AnalyzeResult> => {
-    if (!isValidSessionId(sessionId)) return { ok: false, error: "Unknown session." };
-    try {
-      const analysis = await describer.approve(sessionId);
-      return { ok: true, analysis };
-    } catch (err) {
-      const error = err instanceof Error ? err.message : String(err);
-      log.warn("approve failed:", error);
-      return { ok: false, error };
-    }
-  });
-
   ipcMain.handle(IPC.updateAnalysis, async (_event, input: AnalysisEditInput): Promise<AnalyzeResult> => {
     if (!isValidSessionId(input?.sessionId)) return { ok: false, error: "Unknown session." };
     try {

@@ -1,5 +1,6 @@
 import type { Analysis, AnalysisFeedback, Confidence } from "./analysis";
 import type { CaptureConfig, CaptureLevel } from "./config";
+import type { BuiltSkill, SkillArchitecture, SkillPlan } from "./skill";
 import type { RecorderState } from "./types";
 
 /** The last completed session — the one that can be analyzed. */
@@ -18,6 +19,8 @@ export interface SessionSummary {
   /** True once post-processing produced a bundle. */
   processed: boolean;
   hasVideo: boolean;
+  /** True once a skill has been built and persisted for this session. */
+  hasSkill: boolean;
   /** Present once the describer has produced an analysis for this session. */
   analysis: {
     revision: number;
@@ -25,7 +28,6 @@ export interface SessionSummary {
     intent: string;
     intentConfidence: Confidence;
     stepCount: number;
-    approved: boolean;
   } | null;
 }
 
@@ -66,6 +68,40 @@ export interface AnalysisEditInput {
   intent?: string;
 }
 
+/* --- Skill Builder -------------------------------------------------------- */
+
+/** Streamed to the renderer while the skill-builder agent works. */
+export interface SkillBuildProgress {
+  sessionId: string;
+  phase: "start" | "working" | "drafting" | "done" | "error";
+  message: string;
+}
+
+/** Start a build (or refine one) for a session's analysis. */
+export interface SkillBuildInput {
+  sessionId: string;
+  /** Target architecture (only "scout" is enabled today). */
+  architecture: SkillArchitecture;
+  /** Natural-language refinement for the current plan; omit for the first pass. */
+  feedback?: string;
+}
+
+/** Result of a propose/refine round: the plan to show the user. */
+export interface SkillPlanResult {
+  ok: boolean;
+  plan?: SkillPlan;
+  error?: string;
+}
+
+/** Result of finalizing + exporting a skill. */
+export interface SkillCreateResult {
+  ok: boolean;
+  skill?: BuiltSkill;
+  /** Absolute path of the exported SKILL.md. */
+  path?: string;
+  error?: string;
+}
+
 export interface StartResult {
   ok: boolean;
   sessionId?: string;
@@ -100,13 +136,58 @@ export interface CopilotInfo {
   path: string | null;
 }
 
+/** Whether the native window-tracking addon (get-windows) loaded for this platform. */
+export interface ActiveWindowInfo {
+  ok: boolean;
+  /** The prebuilt binding path we resolved, for troubleshooting. */
+  bindingPath: string | null;
+  error?: string;
+}
+
+/** How, and whether, active-tab URLs can be read on this platform. */
+export interface BrowserUrlInfo {
+  kind: "applescript" | "uia" | "none";
+  supported: boolean;
+}
+
+/** Shell-hook install status for terminal capture. */
+export interface ShellHookInfo {
+  shell: "zsh" | "bash" | "pwsh" | null;
+  profilePath: string | null;
+  installed: boolean;
+}
+
+/** One capture source in the doctor report, annotated with platform support. */
+export interface DoctorSource {
+  key: string;
+  label: string;
+  tier: number;
+  cost: string;
+  /** False when this source can't work on the current platform. */
+  supported: boolean;
+  /** Short reason shown when unsupported, or a setup nudge. */
+  note?: string;
+}
+
 export interface DoctorReport {
   platform: NodeJS.Platform;
   ffmpeg: FfmpegInfo;
   copilotCli: CopilotInfo;
+  activeWindow: ActiveWindowInfo;
+  browserUrl: BrowserUrlInfo;
+  shellHook: ShellHookInfo;
   sessionsDir: string;
   captureLevel: CaptureLevel;
-  activeSources: { key: string; label: string; tier: number; cost: string }[];
+  activeSources: DoctorSource[];
+}
+
+/** Result of installing the terminal shell hook. */
+export interface ShellHookInstallResult {
+  ok: boolean;
+  shell: "zsh" | "bash" | "pwsh" | null;
+  profilePath: string | null;
+  alreadyInstalled: boolean;
+  error?: string;
 }
 
 /** Current capture configuration plus its resolved named level. */
@@ -122,6 +203,7 @@ export const IPC = {
   status: "recorder:status",
   marker: "recorder:marker",
   doctor: "doctor:check",
+  installShellHook: "doctor:install-shell-hook",
   statusChanged: "recorder:status-changed",
   getCapture: "capture:get",
   setLevel: "capture:set-level",
@@ -129,12 +211,17 @@ export const IPC = {
   analyze: "analyze:start",
   analyzeFeedback: "analyze:feedback",
   getAnalysis: "analyze:get",
-  approveAnalysis: "analyze:approve",
   updateAnalysis: "analyze:update",
   cancelAnalysis: "analyze:cancel",
   analyzeProgress: "analyze:progress",
   listSessions: "sessions:list",
   deleteSession: "sessions:delete",
+  buildSkill: "skill:build",
+  createSkill: "skill:create",
+  getSkill: "skill:get",
+  cancelSkill: "skill:cancel",
+  revealSkill: "skill:reveal",
+  skillProgress: "skill:progress",
   openLibrary: "ui:open-library",
   closeLibrary: "ui:close-library",
 } as const;
@@ -146,6 +233,8 @@ export interface SkillRecorderApi {
   status(): Promise<RecorderStatus>;
   marker(note: string): Promise<MarkerResult>;
   doctor(): Promise<DoctorReport>;
+  /** Install the terminal shell hook into the user's shell profile (idempotent). */
+  installShellHook(): Promise<ShellHookInstallResult>;
   getCapture(): Promise<CaptureState>;
   setLevel(level: Exclude<CaptureLevel, "custom">): Promise<CaptureState>;
   setConfig(config: CaptureConfig): Promise<CaptureState>;
@@ -156,8 +245,6 @@ export interface SkillRecorderApi {
   analyzeFeedback(input: AnalysisFeedbackInput): Promise<AnalyzeResult>;
   /** Load the persisted analysis for a session, if any. */
   getAnalysis(sessionId: string): Promise<Analysis | null>;
-  /** Mark an analysis as accepted/correct — the artifact a Skill is built from. */
-  approveAnalysis(sessionId: string): Promise<AnalyzeResult>;
   /** Edit the title/intent text directly (no re-analysis). */
   updateAnalysis(input: AnalysisEditInput): Promise<AnalyzeResult>;
   /** Abort an in-flight analysis. */
@@ -167,6 +254,21 @@ export interface SkillRecorderApi {
   listSessions(): Promise<SessionSummary[]>;
   /** Permanently delete a saved recording and all its artifacts from disk. */
   deleteSession(sessionId: string): Promise<DeleteSessionResult>;
+  /**
+   * Propose (or refine) a skill from a recording's analysis. Pass `feedback` to
+   * revise the current plan in the same multi-turn conversation.
+   */
+  buildSkill(input: SkillBuildInput): Promise<SkillPlanResult>;
+  /** Finalize the proposed skill and export its SKILL.md into the target agent. */
+  createSkill(sessionId: string): Promise<SkillCreateResult>;
+  /** Load a previously built skill for a session, if any. */
+  getSkill(sessionId: string): Promise<BuiltSkill | null>;
+  /** Abort an in-flight build. */
+  cancelSkill(sessionId: string): Promise<{ ok: boolean }>;
+  /** Reveal an exported SKILL.md in the OS file manager. */
+  /** Reveal a session's exported SKILL.md in the OS file manager. */
+  revealSkill(sessionId: string): Promise<{ ok: boolean }>;
+  onSkillProgress(cb: (progress: SkillBuildProgress) => void): () => void;
   /** Open (and focus) the Sessions library window, docked to the recorder. */
   openLibrary(): Promise<void>;
   /** Close the Sessions library window from within it. */

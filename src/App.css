@@ -47,6 +47,7 @@
   --signal-dim: rgba(var(--brand-rgb), 0.13);
   --go: hsl(158, 100%, 26%);       /* Scout success-loud (dark green) */
   --go-rgb: 0, 133, 84;
+  --warn: hsl(35, 92%, 42%);       /* amber for "needs setup" (not an error) */
 
   --sans: "Segoe Sans", Aptos, Calibri, -apple-system, BlinkMacSystemFont,
     "Segoe UI", Roboto, sans-serif;
@@ -255,6 +256,15 @@ button:focus-visible,
 .tag.warn::before {
   background: var(--faint); /* processing — gentle activity */
   animation: pulse 1.4s ease-in-out infinite;
+}
+
+.tag.recorded {
+  color: var(--rec); /* recorded but not yet analyzed — the one thing to act on */
+}
+
+.tag.recorded::before {
+  background: var(--rec);
+  box-shadow: 0 0 6px rgba(var(--rec-rgb), 0.55);
 }
 
 /* =========================================================================
@@ -537,6 +547,48 @@ button:focus-visible,
   transform: translateX(2px);
 }
 
+/* A recording is waiting to be analyzed: draw the eye to the one next step. */
+.sessions-open.has-new {
+  background: rgba(var(--rec-rgb), 0.05);
+  box-shadow: inset 0 0 0 1px rgba(var(--rec-rgb), 0.32);
+}
+
+.sessions-open.has-new:hover {
+  background: rgba(var(--rec-rgb), 0.08);
+  box-shadow: inset 0 0 0 1px rgba(var(--rec-rgb), 0.32), 0 7px 18px -6px rgba(var(--rec-rgb), 0.28);
+}
+
+.sessions-open.has-new .sessions-open-icon {
+  color: var(--rec);
+}
+
+.sessions-open-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.sessions-open-flag {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  color: #fff;
+  background: var(--rec);
+  border-radius: 999px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.sessions-open-sub.is-new {
+  color: var(--rec);
+  font-weight: 600;
+}
+
 .doctor {
   display: flex;
   flex-direction: column;
@@ -579,6 +631,30 @@ button:focus-visible,
 
 .badge.bad {
   background: var(--rec);
+}
+
+.badge.warn {
+  background: var(--warn);
+}
+
+.row-action {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--brand-ink);
+  background: var(--signal-dim);
+  border: 1px solid rgba(var(--brand-rgb), 0.3);
+  border-radius: 5px;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+
+.row-action:hover:not(:disabled) {
+  background: rgba(var(--brand-rgb), 0.2);
+}
+
+.row-action:disabled {
+  opacity: 0.55;
+  cursor: default;
 }
 
 .hint {
@@ -1181,4 +1257,296 @@ button:focus-visible,
   .rec-chip.rec .lamp {
     animation: none;
   }
+}
+
+/* ── Skill builder ───────────────────────────────────────────────────────
+   Reuses ws / ws-head / ws-foot / status-line / record-cta. The two signature
+   moments are the input-source badges and the action → native-tool rows, so
+   those carry the only colour; everything else stays quiet sand + neutral. */
+.sb-arch {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 640px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.sb-lead {
+  margin: 0;
+  font-size: 15px;
+  color: var(--text);
+}
+
+.arch-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.arch-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  text-align: left;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  padding: 13px 14px;
+}
+
+.arch-card:not(:disabled):hover {
+  border-color: var(--line-strong);
+}
+
+.arch-card.on {
+  border-color: var(--signal);
+  box-shadow: 0 2px 14px -6px rgba(var(--brand-rgb), 0.45);
+}
+
+.arch-card:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.arch-name {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.arch-note {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.sb-arch .record-cta {
+  align-self: flex-start;
+}
+
+/* Plan view */
+.sb-plan {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  max-width: 660px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.sb-planhead {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.sb-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+
+.sb-slug {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--brand-ink);
+  background: var(--signal-dim);
+  border-radius: 6px;
+  padding: 2px 7px;
+}
+
+.sb-desc {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--text);
+}
+
+.sb-sec {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sb-sec > p {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.sb-muted {
+  color: var(--muted) !important;
+}
+
+/* Inputs — each with a source badge (the "how it gets this" signal) */
+.sb-inputs {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.input-row {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 10px 12px;
+}
+
+.input-main {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.input-name {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.src-badge {
+  font-family: var(--mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-radius: 20px;
+  padding: 2px 9px;
+  white-space: nowrap;
+}
+
+.src-ask {
+  color: var(--brand-ink);
+  background: var(--signal-dim);
+}
+
+.src-discover {
+  color: var(--go);
+  background: rgba(var(--go-rgb), 0.12);
+}
+
+.src-constant {
+  color: var(--muted);
+  background: var(--surface-2);
+}
+
+.input-detail {
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+/* Steps */
+.sb-steps {
+  margin: 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sb-steps li {
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+/* Action → native tool mapping */
+.sb-map {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.map-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.map-action {
+  color: var(--text);
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.map-arrow {
+  color: var(--faint);
+  flex: none;
+}
+
+.map-tool {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text);
+  background: var(--surface-2);
+  border-radius: 6px;
+  padding: 2px 8px;
+  flex: none;
+}
+
+.sb-refine {
+  padding-top: 2px;
+}
+
+.sb-refine-hint {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+/* Done */
+.sb-done {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  text-align: center;
+  max-width: 520px;
+  margin: 32px auto 0;
+  width: 100%;
+}
+
+.sb-check {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: rgba(var(--go-rgb), 0.14);
+  color: var(--go);
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.sb-done p {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text);
+}
+
+.sb-path {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted) !important;
+  word-break: break-all;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 11px;
 }

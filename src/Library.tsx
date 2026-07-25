@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { Analysis } from "../common/analysis";
-import type { AnalyzeProgress, SessionSummary } from "../common/ipc";
+import type { AnalyzeProgress, SessionSummary, SkillBuildProgress } from "../common/ipc";
+import type { BuiltSkill, SkillArchitecture, SkillPlan } from "../common/skill";
+import { ARCHITECTURES } from "../common/skill";
 import { formatDur, formatMs, formatWhen, shortLabel } from "./format";
 
 export function Library() {
@@ -136,13 +138,15 @@ function SessionsList({
               >
                 <div className="sess-top">
                   <span className="sess-when">{formatWhen(s.startedAt)}</span>
-                  {s.analysis?.approved ? (
-                    <span className="tag ok">approved</span>
+                  {s.hasSkill ? (
+                    <span className="tag ok">skill</span>
                   ) : s.analysis ? (
                     <span className="tag an">analyzed</span>
                   ) : !s.processed ? (
                     <span className="tag warn">processing</span>
-                  ) : null}
+                  ) : (
+                    <span className="tag recorded">recorded</span>
+                  )}
                 </div>
                 <div className="sess-intent">
                   {s.analysis
@@ -206,6 +210,9 @@ function AnalysisWorkspace({
   const [editing, setEditing] = useState(false);
   const [draftTitle, setDraftTitle] = useState("");
   const [draftIntent, setDraftIntent] = useState("");
+  // A recording that's already a skill opens straight to the skill; otherwise
+  // it opens to the analysis, where "Create skill" starts the builder.
+  const [building, setBuilding] = useState(summary.hasSkill);
   // Set while the user is deliberately canceling, so the aborted run's rejection
   // doesn't surface as an error toast.
   const canceled = useRef(false);
@@ -277,13 +284,6 @@ function AnalysisWorkspace({
     void onChanged();
   }, [notes, overall, sessionId, onChanged]);
 
-  const approve = useCallback(async () => {
-    const res = await window.skillRecorder.approveAnalysis(sessionId);
-    if (res.ok && res.analysis) setAnalysis(res.analysis);
-    else setError(res.error ?? "Could not save");
-    void onChanged();
-  }, [sessionId, onChanged]);
-
   const startEdit = useCallback(() => {
     if (!analysis) return;
     setDraftTitle(analysis.title ?? "");
@@ -311,7 +311,19 @@ function AnalysisWorkspace({
     setNotes((prev) => ({ ...prev, [stepId]: note }));
   }, []);
 
-  const approved = analysis?.approved ?? false;
+  if (building) {
+    return (
+      <SkillBuilderView
+        sessionId={sessionId}
+        startedAt={summary.startedAt}
+        hasSkill={summary.hasSkill}
+        onClose={() => {
+          setBuilding(false);
+          void onChanged();
+        }}
+      />
+    );
+  }
 
   return (
     <section className="ws">
@@ -411,7 +423,6 @@ function AnalysisWorkspace({
                   {analysis.intentRationale && (
                     <p className="summary-why">{analysis.intentRationale}</p>
                   )}
-                  {approved && <span className="tag ok">approved</span>}
                 </>
               )}
             </div>
@@ -448,25 +459,333 @@ function AnalysisWorkspace({
 
       {analysis && !analyzing && (
         <div className="ws-foot">
-          <span className="foot-status">{approved ? "Saved" : ""}</span>
+          <span className="foot-status">{summary.hasSkill ? "Skill created" : ""}</span>
           <div className="ws-foot-actions">
             {hasFeedback && (
               <button className="secondary" onClick={sendFeedback}>
                 Send feedback &amp; re-analyze
               </button>
             )}
-            {approved ? (
-              <button className="record-cta" disabled title="Skill generation is the next milestone">
-                Create skill →
-              </button>
-            ) : (
-              <button
-                className="record-cta"
-                onClick={approve}
-                disabled={hasFeedback}
-                title={hasFeedback ? "Send or clear your feedback first" : "Save as correct"}
-              >
-                Looks good, save
+            <button
+              className="record-cta"
+              onClick={() => setBuilding(true)}
+              disabled={hasFeedback}
+              title={
+                hasFeedback
+                  ? "Send or clear your feedback first"
+                  : summary.hasSkill
+                    ? "Open the skill built from this recording"
+                    : "Turn this recording into a reusable skill"
+              }
+            >
+              {summary.hasSkill ? "Open skill →" : "Create skill →"}
+            </button>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+/* --- Skill builder ------------------------------------------------------- */
+
+type BuildPhase = "loading" | "arch" | "planning" | "plan" | "creating" | "done";
+
+const SOURCE_LABEL: Record<SkillPlan["inputs"][number]["source"], string> = {
+  ask: "You provide it",
+  discover: "Found on this device",
+  constant: "Fixed value",
+};
+
+function SkillBuilderView({
+  sessionId,
+  startedAt,
+  hasSkill,
+  onClose,
+}: {
+  sessionId: string;
+  startedAt: number | null;
+  hasSkill: boolean;
+  onClose: () => void;
+}) {
+  // If this recording is already a skill, hold on a spinner until we've loaded
+  // it, so we never flash the architecture picker before jumping to the skill.
+  const [phase, setPhase] = useState<BuildPhase>(hasSkill ? "loading" : "arch");
+  const [architecture, setArchitecture] = useState<SkillArchitecture>("scout");
+  const [plan, setPlan] = useState<SkillPlan | null>(null);
+  const [statusLine, setStatusLine] = useState("");
+  const [feedback, setFeedback] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [exportedPath, setExportedPath] = useState("");
+  const [builtName, setBuiltName] = useState("");
+  const canceled = useRef(false);
+  const inFlight = useRef(false);
+
+  // Leaving the builder (session switch or Close) discards an in-progress plan —
+  // we don't save drafts — so stop any run that's still going in the background.
+  useEffect(() => {
+    return () => {
+      if (inFlight.current) void window.skillRecorder.cancelSkill(sessionId);
+    };
+  }, [sessionId]);
+
+  // Reopen straight to the exported state if this recording already has a skill.
+  useEffect(() => {
+    let live = true;
+    void window.skillRecorder.getSkill(sessionId).then((s: BuiltSkill | null) => {
+      if (!live) return;
+      if (s?.exportedPath) {
+        setBuiltName(s.name);
+        setExportedPath(s.exportedPath);
+        setArchitecture(s.architecture);
+        if (s.plan) setPlan(s.plan);
+        setPhase("done");
+      } else if (hasSkill) {
+        // We expected a skill but couldn't load it; fall back to the picker.
+        setPhase("arch");
+      }
+    });
+    return () => {
+      live = false;
+    };
+  }, [sessionId, hasSkill]);
+
+  useEffect(() => {
+    return window.skillRecorder.onSkillProgress((p: SkillBuildProgress) => {
+      if (p.sessionId === sessionId) setStatusLine(p.message);
+    });
+  }, [sessionId]);
+
+  const runPlan = useCallback(
+    async (note?: string) => {
+      canceled.current = false;
+      inFlight.current = true;
+      setError(null);
+      setStatusLine(note ? "Refining the plan…" : "Planning the skill…");
+      setPhase("planning");
+      const res = await window.skillRecorder.buildSkill({ sessionId, architecture, feedback: note });
+      inFlight.current = false;
+      if (res.ok && res.plan) {
+        setPlan(res.plan);
+        setFeedback("");
+        setPhase("plan");
+      } else if (!canceled.current) {
+        setError(res.error ?? "Planning failed");
+        setPhase(note ? "plan" : "arch");
+      }
+    },
+    [sessionId, architecture],
+  );
+
+  const create = useCallback(async () => {
+    canceled.current = false;
+    inFlight.current = true;
+    setError(null);
+    setStatusLine("Writing the skill…");
+    setPhase("creating");
+    const res = await window.skillRecorder.createSkill(sessionId);
+    inFlight.current = false;
+    if (res.ok && res.skill) {
+      setBuiltName(res.skill.name);
+      setExportedPath(res.path ?? res.skill.exportedPath ?? "");
+      setPhase("done");
+    } else if (!canceled.current) {
+      setError(res.error ?? "Could not create the skill");
+      setPhase("plan");
+    }
+  }, [sessionId]);
+
+  const cancelRun = useCallback(async () => {
+    canceled.current = true;
+    inFlight.current = false;
+    setStatusLine("Stopping…");
+    await window.skillRecorder.cancelSkill(sessionId);
+    setPhase(plan ? "plan" : "arch");
+  }, [sessionId, plan]);
+
+  const busy = phase === "planning" || phase === "creating";
+
+  return (
+    <section className="ws">
+      <div className="ws-head">
+        <div className="ws-titles">
+          <span className="eyebrow">{phase === "done" ? "Skill" : "Create skill"}</span>
+          <span className="ws-when">{formatWhen(startedAt)}</span>
+        </div>
+        <button
+          className="ghost"
+          onClick={onClose}
+          disabled={busy}
+          title={phase === "done" ? "View this recording's analysis" : "Back to the analysis"}
+        >
+          {phase === "done" ? "Analysis" : "Close"}
+        </button>
+      </div>
+
+      <div className="ws-body">
+        {error && <div className="analysis-error">{error}</div>}
+
+        {phase === "loading" && (
+          <div className="status-line">
+            <span className="spinner" />
+            <span className="status-text">Opening the skill…</span>
+          </div>
+        )}
+
+        {phase === "arch" && (
+          <div className="sb-arch">
+            <p className="sb-lead">Which agent should run this skill?</p>
+            <div className="arch-grid">
+              {ARCHITECTURES.map((a) => (
+                <button
+                  key={a.id}
+                  className={`arch-card ${architecture === a.id ? "on" : ""}`}
+                  disabled={!a.enabled}
+                  onClick={() => a.enabled && setArchitecture(a.id)}
+                >
+                  <span className="arch-name">{a.label}</span>
+                  <span className="arch-note">{a.enabled ? a.note : "Coming soon"}</span>
+                </button>
+              ))}
+            </div>
+            <button className="record-cta" onClick={() => void runPlan()}>
+              Plan the skill →
+            </button>
+          </div>
+        )}
+
+        {busy && (
+          <div className="status-line">
+            <span className="spinner" />
+            <span className="status-text">{statusLine || "Working…"}</span>
+            <button className="linky status-cancel" onClick={cancelRun}>
+              Cancel
+            </button>
+          </div>
+        )}
+
+        {phase === "plan" && plan && (
+          <div className="sb-plan">
+            <div className="sb-planhead">
+              <h2 className="sb-title">{plan.title}</h2>
+              <code className="sb-slug">{plan.name}</code>
+            </div>
+            <p className="sb-desc">{plan.description}</p>
+
+            {(plan.summary || plan.generalization) && (
+              <div className="sb-sec">
+                <span className="eyebrow">How it generalizes</span>
+                {plan.summary && <p>{plan.summary}</p>}
+                {plan.generalization && <p className="sb-muted">{plan.generalization}</p>}
+              </div>
+            )}
+
+            {plan.inputs.length > 0 && (
+              <div className="sb-sec">
+                <span className="eyebrow">Inputs</span>
+                <ul className="sb-inputs">
+                  {plan.inputs.map((inp, i) => (
+                    <li key={i} className="input-row">
+                      <div className="input-main">
+                        <span className="input-name">{inp.name}</span>
+                        <span className={`src-badge src-${inp.source}`}>{SOURCE_LABEL[inp.source]}</span>
+                      </div>
+                      {(inp.detail || inp.description) && (
+                        <span className="input-detail">{inp.detail || inp.description}</span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {plan.steps.length > 0 && (
+              <div className="sb-sec">
+                <span className="eyebrow">What the skill will do</span>
+                <ol className="sb-steps">
+                  {plan.steps.map((s, i) => (
+                    <li key={i}>{s}</li>
+                  ))}
+                </ol>
+              </div>
+            )}
+
+            {plan.toolMapping.length > 0 && (
+              <div className="sb-sec">
+                <span className="eyebrow">Native tools it will use</span>
+                <ul className="sb-map">
+                  {plan.toolMapping.map((m, i) => (
+                    <li key={i} className="map-row">
+                      <span className="map-action">{m.action}</span>
+                      <span className="map-arrow" aria-hidden>
+                        →
+                      </span>
+                      <code className="map-tool">{m.tool}</code>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            <div className="sb-sec sb-refine">
+              <span className="eyebrow">Adjust the plan</span>
+              <p className="sb-refine-hint">
+                Describe any change in plain language, then Refine to re-plan before you export.
+              </p>
+              <textarea
+                className="overall-fb"
+                placeholder="e.g. 'read the spreadsheet from Downloads instead of asking', or 'also fill in the Phone field'…"
+                value={feedback}
+                onChange={(e) => setFeedback(e.target.value)}
+              />
+            </div>
+          </div>
+        )}
+
+        {phase === "done" && (
+          <div className="sb-done">
+            <div className="sb-check" aria-hidden>
+              ✓
+            </div>
+            <h2 className="sb-title">Skill ready</h2>
+            <p>
+              <code className="sb-slug">{builtName}</code> is built for {archLabel(architecture)}.
+            </p>
+            {exportedPath && <p className="sb-path">{exportedPath}</p>}
+          </div>
+        )}
+      </div>
+
+      {phase === "plan" && plan && (
+        <div className="ws-foot">
+          <span className="foot-status" />
+          <div className="ws-foot-actions">
+            <button
+              className="secondary"
+              onClick={() => void runPlan(feedback.trim())}
+              disabled={!feedback.trim()}
+              title={feedback.trim() ? "Apply your changes and re-plan" : "Type a change above to refine"}
+            >
+              Refine plan
+            </button>
+            <button
+              className="record-cta"
+              onClick={() => void create()}
+              title="Create and export the skill"
+            >
+              Create &amp; export skill
+            </button>
+          </div>
+        </div>
+      )}
+
+      {phase === "done" && (
+        <div className="ws-foot">
+          <span className="foot-status">Skill created</span>
+          <div className="ws-foot-actions">
+            {exportedPath && (
+              <button className="record-cta" onClick={() => void window.skillRecorder.revealSkill(sessionId)}>
+                Reveal file
               </button>
             )}
           </div>
@@ -474,6 +793,10 @@ function AnalysisWorkspace({
       )}
     </section>
   );
+}
+
+function archLabel(id: SkillArchitecture): string {
+  return ARCHITECTURES.find((a) => a.id === id)?.label ?? id;
 }
 
 /* --- One step, told as plain language ------------------------------------- */

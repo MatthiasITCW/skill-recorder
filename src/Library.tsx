@@ -701,10 +701,14 @@ function SkillBuilderView({
               </div>
             )}
 
-            <div className="sb-refine">
+            <div className="sb-sec sb-refine">
+              <span className="eyebrow">Adjust the plan</span>
+              <p className="sb-refine-hint">
+                Describe any change in plain language, then Refine to re-plan before you export.
+              </p>
               <textarea
                 className="overall-fb"
-                placeholder="Adjust anything in plain language, e.g. 'read the file from Downloads instead of asking'…"
+                placeholder="e.g. 'read the spreadsheet from Downloads instead of asking', or 'also fill in the Phone field'…"
                 value={feedback}
                 onChange={(e) => setFeedback(e.target.value)}
               />
@@ -730,11 +734,14 @@ function SkillBuilderView({
         <div className="ws-foot">
           <span className="foot-status" />
           <div className="ws-foot-actions">
-            {feedback.trim() && (
-              <button className="secondary" onClick={() => void runPlan(feedback.trim())}>
-                Refine plan
-              </button>
-            )}
+            <button
+              className="secondary"
+              onClick={() => void runPlan(feedback.trim())}
+              disabled={!feedback.trim()}
+              title={feedback.trim() ? "Apply your changes and re-plan" : "Type a change above to refine"}
+            >
+              Refine plan
+            </button>
             <button
               className="record-cta"
               onClick={() => void create()}

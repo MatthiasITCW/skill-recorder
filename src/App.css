@@ -1427,6 +1427,13 @@ button:focus-visible,
   padding-top: 2px;
 }
 
+.sb-refine-hint {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
 /* Done */
 .sb-done {
   display: flex;

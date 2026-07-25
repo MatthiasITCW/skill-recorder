@@ -108,13 +108,57 @@ export function Recorder() {
         <CapturePicker level={capture.level} disabled={recording} onChoose={chooseLevel} />
       )}
 
-      <button className="sessions-open" onClick={openLibrary}>
-        <span className="sessions-open-label">Sessions</span>
-        <span className="sessions-open-right">
-          <span className="pill">{sessionCount}</span>
-          <span className="ext" aria-hidden>
-            ↗
+      <button
+        className="sessions-open"
+        onClick={openLibrary}
+        aria-label={
+          sessionCount === 0
+            ? "Review sessions, nothing recorded yet"
+            : `Review sessions, ${sessionCount} recorded`
+        }
+      >
+        <span className="sessions-open-icon" aria-hidden>
+          <svg width="19" height="19" viewBox="0 0 20 20" fill="none">
+            <path
+              d="M10 2.6 3.2 6 10 9.4 16.8 6 10 2.6Z"
+              stroke="currentColor"
+              strokeWidth="1.4"
+              strokeLinejoin="round"
+            />
+            <path
+              d="M3.4 10 10 13.3 16.6 10"
+              stroke="currentColor"
+              strokeWidth="1.4"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+            <path
+              d="M3.4 13.6 10 16.9 16.6 13.6"
+              stroke="currentColor"
+              strokeWidth="1.4"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </span>
+        <span className="sessions-open-text">
+          <span className="sessions-open-label">Review sessions</span>
+          <span className="sessions-open-sub">
+            {sessionCount === 0
+              ? "No recordings yet"
+              : `${sessionCount} recording${sessionCount === 1 ? "" : "s"}`}
           </span>
+        </span>
+        <span className="sessions-open-chevron" aria-hidden>
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <path
+              d="M6 4l4 4-4 4"
+              stroke="currentColor"
+              strokeWidth="1.7"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
         </span>
       </button>
 

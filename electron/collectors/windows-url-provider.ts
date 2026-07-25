@@ -111,7 +111,7 @@ function Read-Url {
         $n = ""; $id = ""
         try { $n = $el.Current.Name } catch {}
         try { $id = $el.Current.AutomationId } catch {}
-        if ($id -eq 'urlbar-input' -or $n -like '*address*' -or $n -like '*enter address*' -or $n -like '*search or enter*') {
+        if ($id -eq 'omnibox' -or $id -eq 'addressEditBox' -or $id -eq 'urlbar-input' -or $n -like '*address*' -or $n -like '*enter address*' -or $n -like '*search or enter*') {
           return "$v$SEP$title"
         }
         if ($best -eq "") { $best = $v }

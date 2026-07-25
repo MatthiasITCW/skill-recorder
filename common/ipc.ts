@@ -218,7 +218,8 @@ export interface SkillRecorderApi {
   /** Abort an in-flight build. */
   cancelSkill(sessionId: string): Promise<{ ok: boolean }>;
   /** Reveal an exported SKILL.md in the OS file manager. */
-  revealSkill(path: string): Promise<{ ok: boolean }>;
+  /** Reveal a session's exported SKILL.md in the OS file manager. */
+  revealSkill(sessionId: string): Promise<{ ok: boolean }>;
   onSkillProgress(cb: (progress: SkillBuildProgress) => void): () => void;
   /** Open (and focus) the Sessions library window, docked to the recorder. */
   openLibrary(): Promise<void>;

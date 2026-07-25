@@ -60,7 +60,7 @@ contextBridge.exposeInMainWorld("skillRecorder", {
   createSkill: (sessionId) => ipcRenderer.invoke(IPC.createSkill, sessionId),
   getSkill: (sessionId) => ipcRenderer.invoke(IPC.getSkill, sessionId),
   cancelSkill: (sessionId) => ipcRenderer.invoke(IPC.cancelSkill, sessionId),
-  revealSkill: (path) => ipcRenderer.invoke(IPC.revealSkill, path),
+  revealSkill: (sessionId) => ipcRenderer.invoke(IPC.revealSkill, sessionId),
   onSkillProgress: (cb) => {
     const listener = (_event, progress) => cb(progress);
     ipcRenderer.on(IPC.skillProgress, listener);

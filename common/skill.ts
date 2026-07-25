@@ -74,7 +74,7 @@ export const SkillPlanSchema = z.object({
   /** Target architecture this plan is written for. */
   architecture: SkillArchitecture,
   /** kebab-case skill id, e.g. "submit-expense-records". */
-  name: z.string(),
+  name: z.string().transform(slugifySkillName),
   /** Human-friendly title, e.g. "Submit expense records". */
   title: z.string(),
   /** Trigger-oriented description (becomes the SKILL.md `description`). */
@@ -98,7 +98,7 @@ export type SkillPlan = z.infer<typeof SkillPlanSchema>;
  */
 export const SkillSubmissionSchema = z.object({
   /** kebab-case skill id. */
-  name: z.string(),
+  name: z.string().transform(slugifySkillName),
   /** SKILL.md `description` (trigger keywords). */
   description: z.string(),
   /** `allowed-tools` frontmatter patterns. */

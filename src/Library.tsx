@@ -527,6 +527,7 @@ function SkillBuilderView({
       if (live && s?.exportedPath) {
         setBuiltName(s.name);
         setExportedPath(s.exportedPath);
+        setArchitecture(s.architecture);
         if (s.plan) setPlan(s.plan);
         setPhase("done");
       }
@@ -758,7 +759,7 @@ function SkillBuilderView({
           <span className="foot-status">Saved</span>
           <div className="ws-foot-actions">
             {exportedPath && (
-              <button className="secondary" onClick={() => void window.skillRecorder.revealSkill(exportedPath)}>
+              <button className="secondary" onClick={() => void window.skillRecorder.revealSkill(sessionId)}>
                 Reveal file
               </button>
             )}

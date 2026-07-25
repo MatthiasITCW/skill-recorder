@@ -172,8 +172,10 @@ export function registerIpc(
     return { ok: true };
   });
 
-  ipcMain.handle(IPC.revealSkill, (_event, file: string) => {
-    if (typeof file === "string" && file) shell.showItemInFolder(file);
+  ipcMain.handle(IPC.revealSkill, (_event, sessionId: string) => {
+    if (!isValidSessionId(sessionId)) return { ok: false };
+    const skill = loadPersistedSkill(sessionId);
+    if (skill?.exportedPath) shell.showItemInFolder(skill.exportedPath);
     return { ok: true };
   });
 }

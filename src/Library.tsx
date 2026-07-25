@@ -145,7 +145,7 @@ function SessionsList({
                   ) : !s.processed ? (
                     <span className="tag warn">processing</span>
                   ) : (
-                    <span className="tag new">new</span>
+                    <span className="tag recorded">recorded</span>
                   )}
                 </div>
                 <div className="sess-intent">

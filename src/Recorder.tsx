@@ -156,7 +156,7 @@ export function Recorder() {
         <span className="sessions-open-text">
           <span className="sessions-open-label">
             Review sessions
-            {pendingCount > 0 && <span className="sessions-open-flag">New</span>}
+            {pendingCount > 0 && <span className="sessions-open-flag">{pendingCount}</span>}
           </span>
           <span className={`sessions-open-sub ${pendingCount > 0 ? "is-new" : ""}`}>
             {pendingCount > 0

@@ -34,7 +34,7 @@ const IPC = {
 };
 
 contextBridge.exposeInMainWorld("skillRecorder", {
-  start: () => ipcRenderer.invoke(IPC.start),
+  start: (options) => ipcRenderer.invoke(IPC.start, options),
   stop: () => ipcRenderer.invoke(IPC.stop),
   status: () => ipcRenderer.invoke(IPC.status),
   marker: (note) => ipcRenderer.invoke(IPC.marker, note),

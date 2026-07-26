@@ -1,0 +1,19 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'none'"
+    />
+    <title>Skill Recorder — narration</title>
+  </head>
+  <body>
+    <!--
+      Hidden utility window. All microphone-capture logic lives in the preload
+      (audio/capture-preload.cjs), which has DOM/Web-API access
+      (navigator.mediaDevices, MediaRecorder) plus ipcRenderer. No page script is
+      needed, so the CSP forbids scripts entirely.
+    -->
+  </body>
+</html>

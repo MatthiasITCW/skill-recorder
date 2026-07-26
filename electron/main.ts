@@ -11,6 +11,7 @@ import { RecorderController } from "./recorder/controller";
 import { SkillBuilder } from "./skillbuilder/builder";
 import { AutomationBuilder } from "./automationbuilder/builder";
 import { createTray } from "./tray";
+import { AudioRecorder } from "./audio/recorder";
 import { VideoRecorder } from "./video/recorder";
 import { createLibraryWindow, createRecorderWindow, redockLibrary } from "./window";
 
@@ -23,6 +24,7 @@ const recorder = new RecorderController({
   resolveConfig: () => ({ ...FULL_CAPTURE }),
   buildCollectors: createCollectors,
   createVideoRecorder: () => new VideoRecorder(),
+  createAudioRecorder: () => new AudioRecorder(),
   postProcess: processSession,
 });
 

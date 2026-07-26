@@ -61,12 +61,22 @@ export function WhatsRecorded({ onClose }: { onClose: () => void }) {
             <li>Which apps you switch to, and their window and document titles.</li>
             <li>Web addresses of the pages you open.</li>
             <li>A short preview of text you copy, up to 120 characters.</li>
-            <li>A silent video of your screen at a low frame rate. No microphone or audio.</li>
+            <li>A silent video of your screen at a low frame rate.</li>
           </ul>
           <p className="sheet-caution">
             If you copy something sensitive like a password while recording, its preview is captured.
             Stop the recording or avoid copying secrets during a session.
           </p>
+        </section>
+
+        <section className="sheet-block">
+          <h3>Voice narration (only if you turn it on)</h3>
+          <p className="sheet-note">Off by default. The Narrate switch is your choice, per recording.</p>
+          <ul>
+            <li>Your microphone is used only while Narrate is on and a recording is running.</li>
+            <li>The recording is turned into text on this computer, using an offline model.</li>
+            <li>Turn Narrate off and your microphone is never touched.</li>
+          </ul>
         </section>
 
         <section className="sheet-block">
@@ -82,8 +92,9 @@ export function WhatsRecorded({ onClose }: { onClose: () => void }) {
           <ul>
             <li>Nothing leaves your computer while you record.</li>
             <li>
-              When you choose Analyze, the timeline, the recorded events, and screenshots from your
-              video are sent to a Copilot AI model so it can describe what you did.
+              When you choose Analyze, the timeline, the recorded events, screenshots from your
+              video, and your narration text (if you recorded any) are sent to a Copilot AI model so
+              it can describe what you did.
             </li>
           </ul>
         </section>

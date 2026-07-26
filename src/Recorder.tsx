@@ -12,6 +12,7 @@ export function Recorder() {
   const [status, setStatus] = useState<RecorderStatus | null>(null);
   const [doctor, setDoctor] = useState<DoctorReport | null>(null);
   const [showPrivacy, setShowPrivacy] = useState(false);
+  const [narrate, setNarrate] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [sessionCount, setSessionCount] = useState(0);
   const [pendingCount, setPendingCount] = useState(0);
@@ -56,15 +57,12 @@ export function Recorder() {
   }, [recording, startedAt]);
 
   const toggle = useCallback(async () => {
-    const res = recording ? await window.skillRecorder.stop() : await window.skillRecorder.start();
+    const res = recording
+      ? await window.skillRecorder.stop()
+      : await window.skillRecorder.start({ narration: narrate });
     if (!res.ok) window.alert(res.error ?? "Action failed");
     setStatus(await window.skillRecorder.status());
-  }, [recording]);
-
-  const addMarker = useCallback(async () => {
-    const note = window.prompt("Marker: what are you doing right now?");
-    if (note) await window.skillRecorder.marker(note);
-  }, []);
+  }, [recording, narrate]);
 
   const openLibrary = useCallback(() => {
     void window.skillRecorder.openLibrary();
@@ -103,8 +101,40 @@ export function Recorder() {
         </div>
       </div>
 
-      <button className="marker" onClick={addMarker} disabled={!recording}>
-        Add marker
+      <button
+        className={`narrate ${narrate ? "on" : ""}`}
+        role="switch"
+        aria-checked={narrate}
+        onClick={() => setNarrate((v) => !v)}
+        disabled={recording}
+      >
+        <span className="narrate-icon" aria-hidden>
+          <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
+            <rect x="7.5" y="2.5" width="5" height="9" rx="2.5" stroke="currentColor" strokeWidth="1.4" />
+            <path
+              d="M5 9.2a5 5 0 0 0 10 0"
+              stroke="currentColor"
+              strokeWidth="1.4"
+              strokeLinecap="round"
+            />
+            <path d="M10 14.2v3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+          </svg>
+        </span>
+        <span className="narrate-text">
+          <span className="narrate-label">Narrate</span>
+          <span className="narrate-sub">
+            {recording
+              ? narrate
+                ? "Listening to your voice"
+                : "Voice off for this recording"
+              : narrate
+                ? "Your voice will be included"
+                : "Explain out loud (optional)"}
+          </span>
+        </span>
+        <span className={`narrate-switch ${narrate ? "on" : ""}`} aria-hidden>
+          <span className="narrate-knob" />
+        </span>
       </button>
 
       <button className="privacy-note" onClick={() => setShowPrivacy(true)}>

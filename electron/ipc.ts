@@ -12,6 +12,7 @@ import type {
   SkillBuildInput,
   SkillCreateResult,
   SkillPlanResult,
+  StartOptions,
 } from "../common/ipc";
 import { IPC } from "../common/ipc";
 import { AutomationBuilder, loadPersistedAutomation } from "./automationbuilder/builder";
@@ -32,7 +33,7 @@ export function registerIpc(
   builder: SkillBuilder,
   automationBuilder: AutomationBuilder,
 ): void {
-  ipcMain.handle(IPC.start, () => recorder.start());
+  ipcMain.handle(IPC.start, (_event, options?: StartOptions) => recorder.start(options));
   ipcMain.handle(IPC.stop, () => recorder.stop());
   ipcMain.handle(IPC.status, () => recorder.status());
   ipcMain.handle(IPC.marker, (_event, note: string) => recorder.marker(note));

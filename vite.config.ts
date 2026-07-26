@@ -14,6 +14,7 @@ function copyStaticAssets(): void {
   const out = path.join(rootDir, "dist-electron");
   mkdirSync(out, { recursive: true });
   mkdirSync(path.join(out, "video"), { recursive: true });
+  mkdirSync(path.join(out, "audio"), { recursive: true });
   copyFileSync(path.join(rootDir, "electron", "preload.cjs"), path.join(out, "preload.cjs"));
   copyFileSync(
     path.join(rootDir, "electron", "video", "capture.html"),
@@ -22,6 +23,14 @@ function copyStaticAssets(): void {
   copyFileSync(
     path.join(rootDir, "electron", "video", "capture-preload.cjs"),
     path.join(out, "video", "capture-preload.cjs"),
+  );
+  copyFileSync(
+    path.join(rootDir, "electron", "audio", "capture.html"),
+    path.join(out, "audio", "capture.html"),
+  );
+  copyFileSync(
+    path.join(rootDir, "electron", "audio", "capture-preload.cjs"),
+    path.join(out, "audio", "capture-preload.cjs"),
   );
 }
 
@@ -45,7 +54,15 @@ export default defineConfig({
             rolldownOptions: {
               // Native / binary deps must be required from node_modules at runtime,
               // never inlined into the main bundle.
-              external: ["electron", "@github/copilot-sdk", "get-windows", "sharp", "ffmpeg-static"],
+              external: [
+                "electron",
+                "@github/copilot-sdk",
+                "get-windows",
+                "sharp",
+                "ffmpeg-static",
+                "@huggingface/transformers",
+                "onnxruntime-node",
+              ],
             },
           },
           plugins: [

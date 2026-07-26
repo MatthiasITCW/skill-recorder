@@ -6,6 +6,7 @@ import type { Tool } from "@github/copilot-sdk";
 import { AnalysisSubmissionSchema, type AnalysisSubmission } from "../../common/analysis";
 import { MEANINGFUL_EVENT_TYPES } from "../../common/correlation";
 import type { SessionBundle } from "../../common/bundle";
+import { NARRATION_FILE, type NarrationTranscript } from "../../common/narration";
 import type { RecEvent } from "../../common/types";
 import { readEvents } from "../frames/correlate";
 import type { FrameExtractor } from "../frames/extractor";
@@ -44,6 +45,16 @@ function readBundle(sessionDir: string): SessionBundle | null {
   }
 }
 
+function readNarration(sessionDir: string): NarrationTranscript | null {
+  const p = path.join(sessionDir, NARRATION_FILE);
+  if (!existsSync(p)) return null;
+  try {
+    return JSON.parse(readFileSync(p, "utf8")) as NarrationTranscript;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Build the custom in-process tools exposed to one Copilot session. Handlers run
  * in the Electron main process (dispatched over JSON-RPC by the SDK), read the
@@ -58,6 +69,10 @@ export function createDescriberTools(ctx: ToolContext): Tool[] {
   const rel = (epoch: number) => Math.round(epoch - startedAt);
   const abs = (atMs: number) => startedAt + atMs;
   const sec = (atMs: number) => (atMs / 1000).toFixed(1);
+  const mmss = (atMs: number) => {
+    const total = Math.max(0, Math.round(atMs / 1000));
+    return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
+  };
 
   const getTimeline: Tool = {
     name: "get_timeline",
@@ -262,6 +277,38 @@ export function createDescriberTools(ctx: ToolContext): Tool[] {
     },
   };
 
+  const getNarration: Tool = {
+    name: "get_narration",
+    description:
+      "Return the user's spoken voice narration for this session as timestamped lines ([mm:ss] text). This is the user's own words describing what they are doing and why, so treat it as the most direct statement of intent and use it to name and order the steps. Optionally pass `query` to return only lines containing that text (case-insensitive). Returns a note when the user recorded no narration.",
+    parameters: {
+      type: "object",
+      properties: {
+        query: {
+          type: "string",
+          description: "Only return narration lines containing this text (case-insensitive).",
+        },
+      },
+      additionalProperties: false,
+    },
+    handler: (raw) => {
+      const args = (raw ?? {}) as { query?: string };
+      const transcript = readNarration(sessionDir);
+      if (!transcript || transcript.segments.length === 0) {
+        return "The user did not record any voice narration for this session.";
+      }
+      progress(args.query ? `Searching narration for “${args.query}”…` : "Reading the voice narration…");
+      const q = args.query?.trim().toLowerCase();
+      const lines = transcript.segments
+        .filter((s) => (q ? s.text.toLowerCase().includes(q) : true))
+        .map((s) => `[${mmss(s.atMs)}] ${s.text}`);
+      if (lines.length === 0) {
+        return `No narration lines match “${args.query}”. Call get_narration with no query to read the whole transcript.`;
+      }
+      return lines.join("\n");
+    },
+  };
+
   const submitAnalysis: Tool = {
     name: "submit_analysis",
     description:
@@ -315,5 +362,5 @@ export function createDescriberTools(ctx: ToolContext): Tool[] {
     },
   };
 
-  return [getTimeline, getEvents, listFrames, getFrames, submitAnalysis];
+  return [getTimeline, getEvents, getNarration, listFrames, getFrames, submitAnalysis];
 }

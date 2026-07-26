@@ -144,6 +144,12 @@ export interface StartResult {
   error?: string;
 }
 
+/** Per-session capture choices the user makes in the HUD before recording. */
+export interface StartOptions {
+  /** Capture microphone narration for this session (opt-in, off by default). */
+  narration?: boolean;
+}
+
 export interface StopResult {
   ok: boolean;
   sessionId?: string;
@@ -242,7 +248,7 @@ export const IPC = {
 
 /** Shape exposed on `window.skillRecorder` by the preload bridge. */
 export interface SkillRecorderApi {
-  start(): Promise<StartResult>;
+  start(options?: StartOptions): Promise<StartResult>;
   stop(): Promise<StopResult>;
   status(): Promise<RecorderStatus>;
   marker(note: string): Promise<MarkerResult>;

@@ -4,7 +4,7 @@ import { app } from "electron";
 
 import type { CaptureConfig } from "../../common/config";
 import { EventType } from "../../common/events";
-import type { MarkerResult, RecorderStatus, StartResult, StopResult } from "../../common/ipc";
+import type { MarkerResult, RecorderStatus, StartOptions, StartResult, StopResult } from "../../common/ipc";
 import type { RecorderState, SessionMeta } from "../../common/types";
 import { createLogger } from "../logger";
 import type { Collector } from "./collector";
@@ -35,6 +35,8 @@ export interface RecorderDeps {
   buildCollectors: (config: CaptureConfig) => readonly Collector[];
   /** Optional factory for the video sidecar; only used when `config.video`. */
   createVideoRecorder?: () => SessionMediaRecorder;
+  /** Optional factory for the narration sidecar; only used when the user opts in. */
+  createAudioRecorder?: () => SessionMediaRecorder;
   /** Optional best-effort post-processing (frames + correlation) after stop. */
   postProcess?: (sessionDir: string) => Promise<void>;
 }
@@ -53,6 +55,7 @@ export class RecorderController {
   private readonly host: CollectorHost;
   private activeCollectors: readonly Collector[] = [];
   private video: SessionMediaRecorder | null = null;
+  private audio: SessionMediaRecorder | null = null;
   private processing: Promise<void> | null = null;
   private lastCompleted: { id: string; dir: string } | null = null;
   private lastProcessed = false;
@@ -108,7 +111,7 @@ export class RecorderController {
     for (const cb of this.listeners) cb(s);
   }
 
-  async start(): Promise<StartResult> {
+  async start(options?: StartOptions): Promise<StartResult> {
     if (this.store) return { ok: false, error: "Already recording" };
     const meta: SessionMeta = {
       id: makeSessionId(),
@@ -142,9 +145,25 @@ export class RecorderController {
         this.video = null;
       }
     }
+
+    // Narration is strictly opt-in (the HUD toggle), off by default, and just as
+    // best-effort as video: a missing mic or denied permission never fails the run.
+    if (options?.narration && this.deps.createAudioRecorder) {
+      this.audio = this.deps.createAudioRecorder();
+      try {
+        await this.audio.start(store.dir);
+      } catch (err) {
+        log.warn("narration start failed:", err instanceof Error ? err.message : err);
+        this.audio = null;
+      }
+    }
     return { ok: true, sessionId: meta.id };
   }
 
+  // Marker capture is intentionally retained even though the "Add marker" HUD
+  // button was removed in favor of voice narration (see docs/future-features.md).
+  // The full path (IPC -> event bus -> bundle -> describer) stays wired so a
+  // future UI (e.g. a silent hotkey flag) can re-enable it without backend work.
   marker(note: string): MarkerResult {
     if (!this.store) return { ok: false, error: "Not recording" };
     this.bus.publish({ type: EventType.Marker, source: "user", payload: { note } });
@@ -163,6 +182,14 @@ export class RecorderController {
         log.warn("video stop failed:", err instanceof Error ? err.message : err);
       }
       this.video = null;
+    }
+    if (this.audio) {
+      try {
+        await this.audio.stop();
+      } catch (err) {
+        log.warn("narration stop failed:", err instanceof Error ? err.message : err);
+      }
+      this.audio = null;
     }
     this.bus.publish({ type: EventType.SessionStop, source: "recorder", payload: {} });
     this.bus.detach();

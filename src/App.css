@@ -267,6 +267,22 @@ button:focus-visible,
   box-shadow: 0 0 6px rgba(var(--rec-rgb), 0.55);
 }
 
+.tag.auto {
+  color: var(--brand-ink); /* automation — a distinct coral, set apart from the green skill tag */
+}
+
+.tag.auto::before {
+  background: var(--brand-ink);
+}
+
+.sess-tags {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 /* =========================================================================
    Recorder HUD (compact window)
    ========================================================================= */
@@ -1693,4 +1709,46 @@ button:focus-visible,
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 8px 11px;
+}
+
+/* Automation-specific: trigger, prompt-steps, and the import hint */
+.sb-trigger {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 10px 12px;
+}
+
+.trigger-when {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.trigger-cond {
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.sb-steps li .sb-step-label {
+  display: block;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.sb-steps li .sb-step-prompt {
+  display: block;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.sb-import-hint {
+  margin: 4px 0 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--muted) !important;
+  max-width: 460px;
 }

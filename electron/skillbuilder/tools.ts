@@ -1,10 +1,5 @@
-import { existsSync, readFileSync } from "node:fs";
-import path from "node:path";
-
 import type { Tool } from "@github/copilot-sdk";
 
-import type { Analysis } from "../../common/analysis";
-import type { SessionBundle } from "../../common/bundle";
 import {
   SkillPlanSchema,
   SkillSubmissionSchema,
@@ -13,12 +8,9 @@ import {
   type SkillSubmission,
 } from "../../common/skill";
 
-/** Everything the builder's tools are bound to for one session. */
+/** Everything the builder's skill-specific tools are bound to for one session. */
 export interface SkillToolContext {
-  sessionDir: string;
   architecture: SkillArchitecture;
-  /** The approved analysis being generalized (the builder's input). */
-  analysis: Analysis;
   /** Streamed to the UI as the agent works. */
   onProgress?: (message: string) => void;
   /** Called when the agent proposes a (validated) plan for review. */
@@ -27,79 +19,16 @@ export interface SkillToolContext {
   onSubmit: (submission: SkillSubmission) => void;
 }
 
-function readBundle(sessionDir: string): SessionBundle | null {
-  const p = path.join(sessionDir, "bundle.json");
-  if (!existsSync(p)) return null;
-  try {
-    return JSON.parse(readFileSync(p, "utf8")) as SessionBundle;
-  } catch {
-    return null;
-  }
-}
-
 /**
- * Build the custom in-process tools exposed to one Skill Builder session. The
- * agent reads the approved analysis (get_analysis) and its deterministic timeline
- * (get_timeline), then proposes a reviewable plan (propose_plan) and — once the
- * user approves — submits the final skill (submit_skill). Both submissions are
- * zod-validated; the architecture is injected server-side so the agent can't set it.
+ * Build the skill-specific tools exposed to one Skill Builder session. The agent
+ * reads the recording via the shared read-tools (get_analysis / get_timeline), then
+ * proposes a reviewable plan (propose_plan) and — once the user approves — submits
+ * the final skill (submit_skill). Both submissions are zod-validated; the
+ * architecture is injected server-side so the agent can't set it.
  */
 export function createSkillBuilderTools(ctx: SkillToolContext): Tool[] {
-  const { sessionDir, architecture, analysis, onPlan, onSubmit } = ctx;
+  const { architecture, onPlan, onSubmit } = ctx;
   const progress = (m: string) => ctx.onProgress?.(m);
-
-  const getAnalysis: Tool = {
-    name: "get_analysis",
-    description:
-      "Return the approved analysis you are generalizing: the overall intent and the ordered list of steps (with each step's title, detail, apps, and evidence). Read this first.",
-    parameters: { type: "object", properties: {}, additionalProperties: false },
-    handler: () => {
-      progress("Reading the approved analysis…");
-      const view = {
-        intent: analysis.intent,
-        intentRationale: analysis.intentRationale,
-        stepCount: analysis.steps.length,
-        steps: analysis.steps.map((s) => ({
-          id: s.id,
-          title: s.title,
-          detail: s.detail,
-          apps: s.apps,
-          evidence: s.evidence,
-        })),
-      };
-      return JSON.stringify(view, null, 2);
-    },
-  };
-
-  const getTimeline: Tool = {
-    name: "get_timeline",
-    description:
-      "Return the deterministic timeline behind the analysis: ordered steps with their app, window titles, hosts, URLs, terminal commands, clipboard counts and markers. Use it to ground your native-tool mapping in real evidence.",
-    parameters: { type: "object", properties: {}, additionalProperties: false },
-    handler: () => {
-      progress("Reading the timeline…");
-      const bundle = readBundle(sessionDir);
-      if (!bundle) {
-        return "No timeline is available (bundle.json missing). Work from get_analysis instead.";
-      }
-      const view = {
-        durationMs: bundle.session.durationMs,
-        platform: bundle.session.platform,
-        steps: bundle.steps.map((s) => ({
-          index: s.index,
-          app: s.app,
-          titles: s.titles,
-          hosts: s.hosts,
-          urls: s.urls,
-          commands: s.commands,
-          clipboardCount: s.clipboardCount,
-          markers: s.markers,
-          summary: s.summary,
-        })),
-      };
-      return JSON.stringify(view, null, 2);
-    },
-  };
 
   const proposePlan: Tool = {
     name: "propose_plan",
@@ -225,5 +154,5 @@ export function createSkillBuilderTools(ctx: SkillToolContext): Tool[] {
     },
   };
 
-  return [getAnalysis, getTimeline, proposePlan, submitSkill];
+  return [proposePlan, submitSkill];
 }

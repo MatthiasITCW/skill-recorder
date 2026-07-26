@@ -23,6 +23,12 @@ const IPC = {
   cancelSkill: "skill:cancel",
   revealSkill: "skill:reveal",
   skillProgress: "skill:progress",
+  buildAutomation: "automation:build",
+  createAutomation: "automation:create",
+  getAutomation: "automation:get",
+  cancelAutomation: "automation:cancel",
+  revealAutomation: "automation:reveal",
+  automationProgress: "automation:progress",
   openLibrary: "ui:open-library",
   closeLibrary: "ui:close-library",
 };
@@ -59,6 +65,16 @@ contextBridge.exposeInMainWorld("skillRecorder", {
     const listener = (_event, progress) => cb(progress);
     ipcRenderer.on(IPC.skillProgress, listener);
     return () => ipcRenderer.removeListener(IPC.skillProgress, listener);
+  },
+  buildAutomation: (input) => ipcRenderer.invoke(IPC.buildAutomation, input),
+  createAutomation: (sessionId) => ipcRenderer.invoke(IPC.createAutomation, sessionId),
+  getAutomation: (sessionId) => ipcRenderer.invoke(IPC.getAutomation, sessionId),
+  cancelAutomation: (sessionId) => ipcRenderer.invoke(IPC.cancelAutomation, sessionId),
+  revealAutomation: (sessionId) => ipcRenderer.invoke(IPC.revealAutomation, sessionId),
+  onAutomationProgress: (cb) => {
+    const listener = (_event, progress) => cb(progress);
+    ipcRenderer.on(IPC.automationProgress, listener);
+    return () => ipcRenderer.removeListener(IPC.automationProgress, listener);
   },
   openLibrary: () => ipcRenderer.invoke(IPC.openLibrary),
   closeLibrary: () => ipcRenderer.invoke(IPC.closeLibrary),

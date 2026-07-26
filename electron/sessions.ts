@@ -44,11 +44,12 @@ async function summarize(root: string, name: string): Promise<SessionSummary | n
   }
   if (!meta?.id) return null;
 
-  const [analysis, processed, hasVideo, hasSkill] = await Promise.all([
+  const [analysis, processed, hasVideo, hasSkill, hasAutomation] = await Promise.all([
     loadAnalysis(dir),
     exists(path.join(dir, "bundle.json")),
     exists(path.join(dir, "video.json")),
     exists(path.join(dir, "skill.json")),
+    exists(path.join(dir, "built-automation.json")),
   ]);
 
   return {
@@ -59,6 +60,7 @@ async function summarize(root: string, name: string): Promise<SessionSummary | n
     processed,
     hasVideo,
     hasSkill,
+    hasAutomation,
     analysis: analysis
       ? {
           revision: analysis.revision,

@@ -12,22 +12,12 @@ import type { SkillArchitecture } from "../../common/skill";
  */
 export const SCOUT_CATALOGUE_VERSION = "2026-07-25";
 
-const SCOUT_CATALOGUE = `
-# Target: Microsoft Scout — native capability catalogue (built-ins only)
-
-A Scout **skill** is a \`SKILL.md\` file: optional YAML frontmatter followed by a
-markdown **instructions body**. Scout auto-loads user skills from
-\`~/.copilot/skills/<name>/SKILL.md\`.
-
-Frontmatter fields:
-- \`name\` — kebab-case, \`^[a-z0-9-]+$\`.
-- \`description\` — one line of trigger keywords (when Scout should reach for this skill).
-- \`allowed-tools\` (optional) — a YAML list of tool patterns the skill may use, e.g.
-  \`Bash(git *)\`, \`Read\`, \`Write\`, \`Grep\`, \`Glob\`. Omit it to allow the default set.
-
-The body is plain instructions written TO the Scout agent (imperative voice): when
-to use the skill, the procedure to follow, and how to handle inputs and edge cases.
-
+/**
+ * The reusable core of the Scout catalogue: the native tools, built-in skills, and
+ * recorded-action→capability mapping. Shared by the Skill Builder and the Automation
+ * Builder (their preambles/tails differ, but both prefer these same capabilities).
+ */
+export const SCOUT_NATIVE_CAPABILITIES = `
 ## Native tools, in the order to PREFER them
 
 Prefer a real native tool/API over replaying UI clicks. Only fall back down this list.
@@ -83,6 +73,25 @@ skill being installed.
 | Reading a public web page | \`web_fetch\` |
 | Editing a spreadsheet / doc / deck | the \`xlsx\` / \`docx\` / \`pptx\` built-in skill |
 | Filling a form on a web app with no API | \`browser_navigate\` + \`browser_snapshot\` + \`browser_fill_form\`/\`browser_type\`/\`browser_click\` |
+`.trim();
+
+const SCOUT_CATALOGUE = `
+# Target: Microsoft Scout — native capability catalogue (built-ins only)
+
+A Scout **skill** is a \`SKILL.md\` file: optional YAML frontmatter followed by a
+markdown **instructions body**. Scout auto-loads user skills from
+\`~/.copilot/skills/<name>/SKILL.md\`.
+
+Frontmatter fields:
+- \`name\` — kebab-case, \`^[a-z0-9-]+$\`.
+- \`description\` — one line of trigger keywords (when Scout should reach for this skill).
+- \`allowed-tools\` (optional) — a YAML list of tool patterns the skill may use, e.g.
+  \`Bash(git *)\`, \`Read\`, \`Write\`, \`Grep\`, \`Glob\`. Omit it to allow the default set.
+
+The body is plain instructions written TO the Scout agent (imperative voice): when
+to use the skill, the procedure to follow, and how to handle inputs and edge cases.
+
+${SCOUT_NATIVE_CAPABILITIES}
 
 ## Writing the SKILL.md body
 

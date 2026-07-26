@@ -32,6 +32,59 @@ export const ARCHITECTURES: readonly ArchitectureOption[] = [
 ] as const;
 
 /**
+ * The kind of artifact the builder produces from an approved analysis. A **skill**
+ * is an on-demand, description-triggered `SKILL.md`; an **automation** is a
+ * scheduled/condition-triggered, multi-step procedure. The two are built by
+ * separate final-stage agents because their plans have different shapes.
+ */
+export const BuildKind = z.enum(["skill", "automation"]);
+export type BuildKind = z.infer<typeof BuildKind>;
+
+/** One selectable option in the "What do you want to build?" target picker. */
+export interface BuildTarget {
+  kind: BuildKind;
+  architecture: SkillArchitecture;
+  /** Card label, e.g. "Scout automation". */
+  label: string;
+  /** Enabled targets can be built today; the rest are shown greyed out. */
+  enabled: boolean;
+  /** One-line note shown under the option. */
+  note: string;
+}
+
+/**
+ * The build targets shown up front, in order. Only Scout is wired today, so its
+ * skill and automation targets are enabled; the other architectures are shown as
+ * a single greyed "coming soon" card each (their `kind` is nominal — they can't be
+ * selected). Automations are deeply platform-specific, so the target — not just the
+ * architecture — is chosen before the builder plans.
+ */
+export const TARGETS: readonly BuildTarget[] = [
+  {
+    kind: "skill",
+    architecture: "scout",
+    label: "Scout skill",
+    enabled: true,
+    note: "An on-demand skill Scout runs when its description matches the task.",
+  },
+  {
+    kind: "automation",
+    architecture: "scout",
+    label: "Scout automation",
+    enabled: true,
+    note: "A scheduled, multi-step automation Scout runs on a trigger.",
+  },
+  { kind: "skill", architecture: "cowork", label: "Cowork", enabled: false, note: "Coming soon." },
+  {
+    kind: "skill",
+    architecture: "copilot-studio",
+    label: "Copilot Studio",
+    enabled: false,
+    note: "Coming soon.",
+  },
+] as const;
+
+/**
  * Where a skill's input comes from at run time. Kept deliberately small:
  * - **ask** — the skill asks the user for it when it runs (a path, URL, value).
  * - **discover** — the agent finds it on the local OS with native file tools

@@ -1,4 +1,5 @@
 import type { Analysis, AnalysisFeedback, Confidence } from "./analysis";
+import type { AutomationPlan, BuiltAutomation } from "./automation";
 import type { BuiltSkill, SkillArchitecture, SkillPlan } from "./skill";
 import type { RecorderState } from "./types";
 
@@ -20,6 +21,8 @@ export interface SessionSummary {
   hasVideo: boolean;
   /** True once a skill has been built and persisted for this session. */
   hasSkill: boolean;
+  /** True once an automation has been built and persisted for this session. */
+  hasAutomation: boolean;
   /** Present once the describer has produced an analysis for this session. */
   analysis: {
     revision: number;
@@ -97,6 +100,40 @@ export interface SkillCreateResult {
   ok: boolean;
   skill?: BuiltSkill;
   /** Absolute path of the exported SKILL.md. */
+  path?: string;
+  error?: string;
+}
+
+/* --- Automation Builder --------------------------------------------------- */
+
+/** Streamed to the renderer while the automation-builder agent works. */
+export interface AutomationBuildProgress {
+  sessionId: string;
+  phase: "start" | "working" | "drafting" | "done" | "error";
+  message: string;
+}
+
+/** Start an automation build (or refine one) for a session's analysis. */
+export interface AutomationBuildInput {
+  sessionId: string;
+  /** Target architecture (only "scout" is enabled today). */
+  architecture: SkillArchitecture;
+  /** Natural-language refinement for the current plan; omit for the first pass. */
+  feedback?: string;
+}
+
+/** Result of a propose/refine round: the automation plan to show the user. */
+export interface AutomationPlanResult {
+  ok: boolean;
+  plan?: AutomationPlan;
+  error?: string;
+}
+
+/** Result of finalizing + exporting an automation bundle. */
+export interface AutomationCreateResult {
+  ok: boolean;
+  automation?: BuiltAutomation;
+  /** Absolute path of the exported automation.json. */
   path?: string;
   error?: string;
 }
@@ -193,6 +230,12 @@ export const IPC = {
   cancelSkill: "skill:cancel",
   revealSkill: "skill:reveal",
   skillProgress: "skill:progress",
+  buildAutomation: "automation:build",
+  createAutomation: "automation:create",
+  getAutomation: "automation:get",
+  cancelAutomation: "automation:cancel",
+  revealAutomation: "automation:reveal",
+  automationProgress: "automation:progress",
   openLibrary: "ui:open-library",
   closeLibrary: "ui:close-library",
 } as const;
@@ -235,6 +278,20 @@ export interface SkillRecorderApi {
   /** Reveal a session's exported SKILL.md in the OS file manager. */
   revealSkill(sessionId: string): Promise<{ ok: boolean }>;
   onSkillProgress(cb: (progress: SkillBuildProgress) => void): () => void;
+  /**
+   * Propose (or refine) an automation from a recording's analysis. Pass `feedback`
+   * to revise the current plan in the same multi-turn conversation.
+   */
+  buildAutomation(input: AutomationBuildInput): Promise<AutomationPlanResult>;
+  /** Finalize the proposed automation and export its importable bundle. */
+  createAutomation(sessionId: string): Promise<AutomationCreateResult>;
+  /** Load a previously built automation for a session, if any. */
+  getAutomation(sessionId: string): Promise<BuiltAutomation | null>;
+  /** Abort an in-flight automation build. */
+  cancelAutomation(sessionId: string): Promise<{ ok: boolean }>;
+  /** Reveal a session's exported automation bundle in the OS file manager. */
+  revealAutomation(sessionId: string): Promise<{ ok: boolean }>;
+  onAutomationProgress(cb: (progress: AutomationBuildProgress) => void): () => void;
   /** Open (and focus) the Sessions library window, docked to the recorder. */
   openLibrary(): Promise<void>;
   /** Close the Sessions library window from within it. */

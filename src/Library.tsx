@@ -1,9 +1,21 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { Analysis } from "../common/analysis";
-import type { AnalyzeProgress, SessionSummary, SkillBuildProgress } from "../common/ipc";
-import type { BuiltSkill, SkillArchitecture, SkillPlan } from "../common/skill";
-import { ARCHITECTURES } from "../common/skill";
+import type {
+  AnalyzeProgress,
+  AutomationBuildProgress,
+  SessionSummary,
+  SkillBuildProgress,
+} from "../common/ipc";
+import type {
+  BuildTarget,
+  BuiltSkill,
+  SkillArchitecture,
+  SkillPlan,
+} from "../common/skill";
+import { ARCHITECTURES, TARGETS } from "../common/skill";
+import type { AutomationPlan, BuiltAutomation } from "../common/automation";
+import { describeSchedule } from "../common/automation";
 import { formatDur, formatMs, formatWhen, shortLabel } from "./format";
 
 export function Library() {
@@ -138,15 +150,19 @@ function SessionsList({
               >
                 <div className="sess-top">
                   <span className="sess-when">{formatWhen(s.startedAt)}</span>
-                  {s.hasSkill ? (
-                    <span className="tag ok">skill</span>
-                  ) : s.analysis ? (
-                    <span className="tag an">analyzed</span>
-                  ) : !s.processed ? (
-                    <span className="tag warn">processing</span>
-                  ) : (
-                    <span className="tag recorded">recorded</span>
-                  )}
+                  <span className="sess-tags">
+                    {s.hasSkill && <span className="tag ok">skill</span>}
+                    {s.hasAutomation && <span className="tag auto">automation</span>}
+                    {!s.hasSkill && !s.hasAutomation && s.analysis && (
+                      <span className="tag an">analyzed</span>
+                    )}
+                    {!s.hasSkill && !s.hasAutomation && !s.analysis && !s.processed && (
+                      <span className="tag warn">processing</span>
+                    )}
+                    {!s.hasSkill && !s.hasAutomation && !s.analysis && s.processed && (
+                      <span className="tag recorded">recorded</span>
+                    )}
+                  </span>
                 </div>
                 <div className="sess-intent">
                   {s.analysis
@@ -210,9 +226,17 @@ function AnalysisWorkspace({
   const [editing, setEditing] = useState(false);
   const [draftTitle, setDraftTitle] = useState("");
   const [draftIntent, setDraftIntent] = useState("");
-  // A recording that's already a skill opens straight to the skill; otherwise
-  // it opens to the analysis, where "Create skill" starts the builder.
-  const [building, setBuilding] = useState(summary.hasSkill);
+  // The final stage: pick a target, then build a skill or an automation. A recording
+  // that is already exactly one kind opens straight to it; otherwise it opens to the
+  // analysis, where "Create…" starts the target picker.
+  const initialLaunch: LaunchTarget =
+    summary.hasSkill && !summary.hasAutomation
+      ? "skill"
+      : summary.hasAutomation && !summary.hasSkill
+        ? "automation"
+        : "none";
+  const [launch, setLaunch] = useState<LaunchTarget>(initialLaunch);
+  const [chosenArch, setChosenArch] = useState<SkillArchitecture>("scout");
   // Set while the user is deliberately canceling, so the aborted run's rejection
   // doesn't surface as an error toast.
   const canceled = useRef(false);
@@ -311,14 +335,43 @@ function AnalysisWorkspace({
     setNotes((prev) => ({ ...prev, [stepId]: note }));
   }, []);
 
-  if (building) {
+  if (launch === "picker") {
+    return (
+      <TargetPicker
+        startedAt={summary.startedAt}
+        onPick={(t) => {
+          setChosenArch(t.architecture);
+          setLaunch(t.kind);
+        }}
+        onClose={() => setLaunch("none")}
+      />
+    );
+  }
+
+  if (launch === "skill") {
     return (
       <SkillBuilderView
         sessionId={sessionId}
+        architecture={chosenArch}
         startedAt={summary.startedAt}
         hasSkill={summary.hasSkill}
         onClose={() => {
-          setBuilding(false);
+          setLaunch("none");
+          void onChanged();
+        }}
+      />
+    );
+  }
+
+  if (launch === "automation") {
+    return (
+      <AutomationBuilderView
+        sessionId={sessionId}
+        architecture={chosenArch}
+        startedAt={summary.startedAt}
+        hasAutomation={summary.hasAutomation}
+        onClose={() => {
+          setLaunch("none");
           void onChanged();
         }}
       />
@@ -459,26 +512,38 @@ function AnalysisWorkspace({
 
       {analysis && !analyzing && (
         <div className="ws-foot">
-          <span className="foot-status">{summary.hasSkill ? "Skill created" : ""}</span>
+          <span className="foot-status">{launchFootStatus(summary)}</span>
           <div className="ws-foot-actions">
             {hasFeedback && (
               <button className="secondary" onClick={sendFeedback}>
                 Send feedback &amp; re-analyze
               </button>
             )}
+            {summary.hasSkill && (
+              <button className="secondary" onClick={() => setLaunch("skill")} title="Open the skill built from this recording">
+                Open skill →
+              </button>
+            )}
+            {summary.hasAutomation && (
+              <button
+                className="secondary"
+                onClick={() => setLaunch("automation")}
+                title="Open the automation built from this recording"
+              >
+                Open automation →
+              </button>
+            )}
             <button
               className="record-cta"
-              onClick={() => setBuilding(true)}
+              onClick={() => setLaunch("picker")}
               disabled={hasFeedback}
               title={
                 hasFeedback
                   ? "Send or clear your feedback first"
-                  : summary.hasSkill
-                    ? "Open the skill built from this recording"
-                    : "Turn this recording into a reusable skill"
+                  : "Turn this recording into a skill or an automation"
               }
             >
-              {summary.hasSkill ? "Open skill →" : "Create skill →"}
+              {summary.hasSkill || summary.hasAutomation ? "Create another →" : "Create…"}
             </button>
           </div>
         </div>
@@ -487,9 +552,64 @@ function AnalysisWorkspace({
   );
 }
 
+/* --- Final stage: target picker + builders -------------------------------- */
+
+/** Which final-stage surface the analysis workspace is showing. */
+type LaunchTarget = "none" | "picker" | "skill" | "automation";
+
+function launchFootStatus(summary: SessionSummary): string {
+  if (summary.hasSkill && summary.hasAutomation) return "Skill & automation created";
+  if (summary.hasSkill) return "Skill created";
+  if (summary.hasAutomation) return "Automation created";
+  return "";
+}
+
+/** "What do you want to build?" — picks both kind and architecture up front. */
+function TargetPicker({
+  startedAt,
+  onPick,
+  onClose,
+}: {
+  startedAt: number | null;
+  onPick: (target: BuildTarget) => void;
+  onClose: () => void;
+}) {
+  return (
+    <section className="ws">
+      <div className="ws-head">
+        <div className="ws-titles">
+          <span className="eyebrow">Create</span>
+          <span className="ws-when">{formatWhen(startedAt)}</span>
+        </div>
+        <button className="ghost" onClick={onClose} title="Back to the analysis">
+          Close
+        </button>
+      </div>
+      <div className="ws-body">
+        <div className="sb-arch">
+          <p className="sb-lead">What do you want to build from this recording?</p>
+          <div className="arch-grid">
+            {TARGETS.map((t) => (
+              <button
+                key={`${t.kind}:${t.architecture}`}
+                className="arch-card"
+                disabled={!t.enabled}
+                onClick={() => t.enabled && onPick(t)}
+              >
+                <span className="arch-name">{t.label}</span>
+                <span className="arch-note">{t.enabled ? t.note : "Coming soon"}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 /* --- Skill builder ------------------------------------------------------- */
 
-type BuildPhase = "loading" | "arch" | "planning" | "plan" | "creating" | "done";
+type BuildPhase = "loading" | "ready" | "planning" | "plan" | "creating" | "done";
 
 const SOURCE_LABEL: Record<SkillPlan["inputs"][number]["source"], string> = {
   ask: "You provide it",
@@ -499,19 +619,21 @@ const SOURCE_LABEL: Record<SkillPlan["inputs"][number]["source"], string> = {
 
 function SkillBuilderView({
   sessionId,
+  architecture: initialArch,
   startedAt,
   hasSkill,
   onClose,
 }: {
   sessionId: string;
+  architecture: SkillArchitecture;
   startedAt: number | null;
   hasSkill: boolean;
   onClose: () => void;
 }) {
-  // If this recording is already a skill, hold on a spinner until we've loaded
-  // it, so we never flash the architecture picker before jumping to the skill.
-  const [phase, setPhase] = useState<BuildPhase>(hasSkill ? "loading" : "arch");
-  const [architecture, setArchitecture] = useState<SkillArchitecture>("scout");
+  // If this recording is already a skill, hold on a spinner until we've loaded it,
+  // so we never flash the planning state before jumping to the skill.
+  const [phase, setPhase] = useState<BuildPhase>(hasSkill ? "loading" : "ready");
+  const [architecture, setArchitecture] = useState<SkillArchitecture>(initialArch);
   const [plan, setPlan] = useState<SkillPlan | null>(null);
   const [statusLine, setStatusLine] = useState("");
   const [feedback, setFeedback] = useState("");
@@ -541,8 +663,8 @@ function SkillBuilderView({
         if (s.plan) setPlan(s.plan);
         setPhase("done");
       } else if (hasSkill) {
-        // We expected a skill but couldn't load it; fall back to the picker.
-        setPhase("arch");
+        // We expected a skill but couldn't load it; fall back to the ready screen.
+        setPhase("ready");
       }
     });
     return () => {
@@ -571,7 +693,7 @@ function SkillBuilderView({
         setPhase("plan");
       } else if (!canceled.current) {
         setError(res.error ?? "Planning failed");
-        setPhase(note ? "plan" : "arch");
+        setPhase(note ? "plan" : "ready");
       }
     },
     [sessionId, architecture],
@@ -600,7 +722,7 @@ function SkillBuilderView({
     inFlight.current = false;
     setStatusLine("Stopping…");
     await window.skillRecorder.cancelSkill(sessionId);
-    setPhase(plan ? "plan" : "arch");
+    setPhase(plan ? "plan" : "ready");
   }, [sessionId, plan]);
 
   const busy = phase === "planning" || phase === "creating";
@@ -632,22 +754,9 @@ function SkillBuilderView({
           </div>
         )}
 
-        {phase === "arch" && (
+        {phase === "ready" && (
           <div className="sb-arch">
-            <p className="sb-lead">Which agent should run this skill?</p>
-            <div className="arch-grid">
-              {ARCHITECTURES.map((a) => (
-                <button
-                  key={a.id}
-                  className={`arch-card ${architecture === a.id ? "on" : ""}`}
-                  disabled={!a.enabled}
-                  onClick={() => a.enabled && setArchitecture(a.id)}
-                >
-                  <span className="arch-name">{a.label}</span>
-                  <span className="arch-note">{a.enabled ? a.note : "Coming soon"}</span>
-                </button>
-              ))}
-            </div>
+            <p className="sb-lead">Build a {archLabel(architecture)} skill from this recording.</p>
             <button className="record-cta" onClick={() => void runPlan()}>
               Plan the skill →
             </button>
@@ -797,6 +906,297 @@ function SkillBuilderView({
 
 function archLabel(id: SkillArchitecture): string {
   return ARCHITECTURES.find((a) => a.id === id)?.label ?? id;
+}
+
+/* --- Automation builder --------------------------------------------------- */
+
+function AutomationBuilderView({
+  sessionId,
+  architecture: initialArch,
+  startedAt,
+  hasAutomation,
+  onClose,
+}: {
+  sessionId: string;
+  architecture: SkillArchitecture;
+  startedAt: number | null;
+  hasAutomation: boolean;
+  onClose: () => void;
+}) {
+  const [phase, setPhase] = useState<BuildPhase>(hasAutomation ? "loading" : "ready");
+  const [architecture, setArchitecture] = useState<SkillArchitecture>(initialArch);
+  const [plan, setPlan] = useState<AutomationPlan | null>(null);
+  const [statusLine, setStatusLine] = useState("");
+  const [feedback, setFeedback] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [exportedPath, setExportedPath] = useState("");
+  const [builtName, setBuiltName] = useState("");
+  const canceled = useRef(false);
+  const inFlight = useRef(false);
+
+  useEffect(() => {
+    return () => {
+      if (inFlight.current) void window.skillRecorder.cancelAutomation(sessionId);
+    };
+  }, [sessionId]);
+
+  // Reopen straight to the exported state if this recording already has one.
+  useEffect(() => {
+    let live = true;
+    void window.skillRecorder.getAutomation(sessionId).then((a: BuiltAutomation | null) => {
+      if (!live) return;
+      if (a?.exportedPath) {
+        setBuiltName(a.name);
+        setExportedPath(a.exportedPath);
+        setArchitecture(a.architecture);
+        if (a.plan) setPlan(a.plan);
+        setPhase("done");
+      } else if (hasAutomation) {
+        setPhase("ready");
+      }
+    });
+    return () => {
+      live = false;
+    };
+  }, [sessionId, hasAutomation]);
+
+  useEffect(() => {
+    return window.skillRecorder.onAutomationProgress((p: AutomationBuildProgress) => {
+      if (p.sessionId === sessionId) setStatusLine(p.message);
+    });
+  }, [sessionId]);
+
+  const runPlan = useCallback(
+    async (note?: string) => {
+      canceled.current = false;
+      inFlight.current = true;
+      setError(null);
+      setStatusLine(note ? "Refining the plan…" : "Planning the automation…");
+      setPhase("planning");
+      const res = await window.skillRecorder.buildAutomation({ sessionId, architecture, feedback: note });
+      inFlight.current = false;
+      if (res.ok && res.plan) {
+        setPlan(res.plan);
+        setFeedback("");
+        setPhase("plan");
+      } else if (!canceled.current) {
+        setError(res.error ?? "Planning failed");
+        setPhase(note ? "plan" : "ready");
+      }
+    },
+    [sessionId, architecture],
+  );
+
+  const create = useCallback(async () => {
+    canceled.current = false;
+    inFlight.current = true;
+    setError(null);
+    setStatusLine("Writing the automation…");
+    setPhase("creating");
+    const res = await window.skillRecorder.createAutomation(sessionId);
+    inFlight.current = false;
+    if (res.ok && res.automation) {
+      setBuiltName(res.automation.name);
+      setExportedPath(res.path ?? res.automation.exportedPath ?? "");
+      setPhase("done");
+    } else if (!canceled.current) {
+      setError(res.error ?? "Could not create the automation");
+      setPhase("plan");
+    }
+  }, [sessionId]);
+
+  const cancelRun = useCallback(async () => {
+    canceled.current = true;
+    inFlight.current = false;
+    setStatusLine("Stopping…");
+    await window.skillRecorder.cancelAutomation(sessionId);
+    setPhase(plan ? "plan" : "ready");
+  }, [sessionId, plan]);
+
+  const busy = phase === "planning" || phase === "creating";
+
+  return (
+    <section className="ws">
+      <div className="ws-head">
+        <div className="ws-titles">
+          <span className="eyebrow">{phase === "done" ? "Automation" : "Create automation"}</span>
+          <span className="ws-when">{formatWhen(startedAt)}</span>
+        </div>
+        <button
+          className="ghost"
+          onClick={onClose}
+          disabled={busy}
+          title={phase === "done" ? "View this recording's analysis" : "Back to the analysis"}
+        >
+          {phase === "done" ? "Analysis" : "Close"}
+        </button>
+      </div>
+
+      <div className="ws-body">
+        {error && <div className="analysis-error">{error}</div>}
+
+        {phase === "loading" && (
+          <div className="status-line">
+            <span className="spinner" />
+            <span className="status-text">Opening the automation…</span>
+          </div>
+        )}
+
+        {phase === "ready" && (
+          <div className="sb-arch">
+            <p className="sb-lead">Build a {archLabel(architecture)} automation from this recording.</p>
+            <button className="record-cta" onClick={() => void runPlan()}>
+              Plan the automation →
+            </button>
+          </div>
+        )}
+
+        {busy && (
+          <div className="status-line">
+            <span className="spinner" />
+            <span className="status-text">{statusLine || "Working…"}</span>
+            <button className="linky status-cancel" onClick={cancelRun}>
+              Cancel
+            </button>
+          </div>
+        )}
+
+        {phase === "plan" && plan && (
+          <div className="sb-plan">
+            <div className="sb-planhead">
+              <h2 className="sb-title">{plan.title}</h2>
+              <code className="sb-slug">{plan.name}</code>
+            </div>
+            <p className="sb-desc">{plan.description}</p>
+
+            <div className="sb-sec">
+              <span className="eyebrow">When it runs</span>
+              <div className="sb-trigger">
+                <span className="trigger-when">{describeSchedule(plan.trigger.schedule)}</span>
+                {plan.trigger.type === "condition" && plan.trigger.condition && (
+                  <span className="trigger-cond">Only when: {plan.trigger.condition}</span>
+                )}
+              </div>
+              <p className="sb-refine-hint">
+                A recording has no schedule of its own — this is a suggestion. Say e.g. “every
+                weekday at 8am” below to change it.
+              </p>
+            </div>
+
+            {(plan.summary || plan.generalization) && (
+              <div className="sb-sec">
+                <span className="eyebrow">How it generalizes</span>
+                {plan.summary && <p>{plan.summary}</p>}
+                {plan.generalization && <p className="sb-muted">{plan.generalization}</p>}
+              </div>
+            )}
+
+            {plan.inputs.length > 0 && (
+              <div className="sb-sec">
+                <span className="eyebrow">Inputs</span>
+                <ul className="sb-inputs">
+                  {plan.inputs.map((inp, i) => (
+                    <li key={i} className="input-row">
+                      <div className="input-main">
+                        <span className="input-name">{inp.name}</span>
+                        <span className={`src-badge src-${inp.source}`}>{SOURCE_LABEL[inp.source]}</span>
+                      </div>
+                      {(inp.detail || inp.description) && (
+                        <span className="input-detail">{inp.detail || inp.description}</span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {plan.steps.length > 0 && (
+              <div className="sb-sec">
+                <span className="eyebrow">What the automation will do</span>
+                <ol className="sb-steps">
+                  {plan.steps.map((s, i) => (
+                    <li key={i}>
+                      {s.label && <span className="sb-step-label">{s.label}</span>}
+                      <span className="sb-step-prompt">{s.prompt}</span>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            )}
+
+            <div className="sb-sec sb-refine">
+              <span className="eyebrow">Adjust the plan</span>
+              <p className="sb-refine-hint">
+                Describe any change in plain language — the schedule, the steps, anything — then
+                Refine to re-plan before you export.
+              </p>
+              <textarea
+                className="overall-fb"
+                placeholder="e.g. 'run every weekday at 8am', or 'add a step that emails me the summary'…"
+                value={feedback}
+                onChange={(e) => setFeedback(e.target.value)}
+              />
+            </div>
+          </div>
+        )}
+
+        {phase === "done" && (
+          <div className="sb-done">
+            <div className="sb-check" aria-hidden>
+              ✓
+            </div>
+            <h2 className="sb-title">Automation ready</h2>
+            <p>
+              <code className="sb-slug">{builtName}</code> is built for {archLabel(architecture)}.
+            </p>
+            {exportedPath && <p className="sb-path">{exportedPath}</p>}
+            <p className="sb-import-hint">
+              Import it into Scout: open Scout → Automations → Import, and choose this bundle folder.
+            </p>
+          </div>
+        )}
+      </div>
+
+      {phase === "plan" && plan && (
+        <div className="ws-foot">
+          <span className="foot-status" />
+          <div className="ws-foot-actions">
+            <button
+              className="secondary"
+              onClick={() => void runPlan(feedback.trim())}
+              disabled={!feedback.trim()}
+              title={feedback.trim() ? "Apply your changes and re-plan" : "Type a change above to refine"}
+            >
+              Refine plan
+            </button>
+            <button
+              className="record-cta"
+              onClick={() => void create()}
+              title="Create and export the automation bundle"
+            >
+              Create &amp; export automation
+            </button>
+          </div>
+        </div>
+      )}
+
+      {phase === "done" && (
+        <div className="ws-foot">
+          <span className="foot-status">Automation created</span>
+          <div className="ws-foot-actions">
+            {exportedPath && (
+              <button
+                className="record-cta"
+                onClick={() => void window.skillRecorder.revealAutomation(sessionId)}
+              >
+                Reveal bundle
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+    </section>
+  );
 }
 
 /* --- One step, told as plain language ------------------------------------- */

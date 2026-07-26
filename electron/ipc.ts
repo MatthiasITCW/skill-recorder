@@ -5,12 +5,16 @@ import type {
   AnalysisEditInput,
   AnalysisFeedbackInput,
   AnalyzeResult,
+  AutomationBuildInput,
+  AutomationCreateResult,
+  AutomationPlanResult,
   DeleteSessionResult,
   SkillBuildInput,
   SkillCreateResult,
   SkillPlanResult,
 } from "../common/ipc";
 import { IPC } from "../common/ipc";
+import { AutomationBuilder, loadPersistedAutomation } from "./automationbuilder/builder";
 import { Describer, loadPersistedAnalysis } from "./describer/describer";
 import { runDoctor } from "./doctor";
 import { createLogger } from "./logger";
@@ -21,11 +25,12 @@ import { loadPersistedSkill, SkillBuilder } from "./skillbuilder/builder";
 
 const log = createLogger("IPC");
 
-/** Wire the renderer-facing invoke channels to the recorder, describer, builder + doctor. */
+/** Wire the renderer-facing invoke channels to the recorder, describer, builders + doctor. */
 export function registerIpc(
   recorder: RecorderController,
   describer: Describer,
   builder: SkillBuilder,
+  automationBuilder: AutomationBuilder,
 ): void {
   ipcMain.handle(IPC.start, () => recorder.start());
   ipcMain.handle(IPC.stop, () => recorder.stop());
@@ -108,9 +113,16 @@ export function registerIpc(
     if (builder.isBuilding(sessionId)) {
       return { ok: false, error: "This recording is being turned into a skill. Cancel that first, then delete." };
     }
+    if (automationBuilder.isBuilding(sessionId)) {
+      return {
+        ok: false,
+        error: "This recording is being turned into an automation. Cancel that first, then delete.",
+      };
+    }
     try {
       await describer.forget(sessionId); // release any idle agent holding the folder
       await builder.forget(sessionId);
+      await automationBuilder.forget(sessionId);
       await deleteSession(sessionId);
       recorder.forgetSession(sessionId); // clear the "last completed" pointer if it was this one
       return { ok: true };
@@ -158,6 +170,49 @@ export function registerIpc(
     if (!isValidSessionId(sessionId)) return { ok: false };
     const skill = loadPersistedSkill(sessionId);
     if (skill?.exportedPath) shell.showItemInFolder(skill.exportedPath);
+    return { ok: true };
+  });
+
+  ipcMain.handle(
+    IPC.buildAutomation,
+    async (_event, input: AutomationBuildInput): Promise<AutomationPlanResult> => {
+      if (!isValidSessionId(input?.sessionId)) return { ok: false, error: "Unknown session." };
+      try {
+        const plan = await automationBuilder.build(input);
+        return { ok: true, plan };
+      } catch (err) {
+        const error = err instanceof Error ? err.message : String(err);
+        log.warn("build automation failed:", error);
+        return { ok: false, error };
+      }
+    },
+  );
+
+  ipcMain.handle(IPC.createAutomation, async (_event, sessionId: string): Promise<AutomationCreateResult> => {
+    if (!isValidSessionId(sessionId)) return { ok: false, error: "Unknown session." };
+    try {
+      const { automation, path: file } = await automationBuilder.create(sessionId);
+      return { ok: true, automation, path: file };
+    } catch (err) {
+      const error = err instanceof Error ? err.message : String(err);
+      log.warn("create automation failed:", error);
+      return { ok: false, error };
+    }
+  });
+
+  ipcMain.handle(IPC.getAutomation, (_event, sessionId: string) =>
+    isValidSessionId(sessionId) ? loadPersistedAutomation(sessionId) : null,
+  );
+
+  ipcMain.handle(IPC.cancelAutomation, async (_event, sessionId: string) => {
+    if (isValidSessionId(sessionId)) await automationBuilder.cancel(sessionId);
+    return { ok: true };
+  });
+
+  ipcMain.handle(IPC.revealAutomation, (_event, sessionId: string) => {
+    if (!isValidSessionId(sessionId)) return { ok: false };
+    const automation = loadPersistedAutomation(sessionId);
+    if (automation?.exportedPath) shell.showItemInFolder(automation.exportedPath);
     return { ok: true };
   });
 }

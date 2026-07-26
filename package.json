@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "description": "Records a user's on-screen work session and derives a structured description for building AI-agent skills.",
   "author": "Skill Recorder",
+  "license": "MIT",
   "private": true,
   "type": "module",
   "main": "dist-electron/main.js",

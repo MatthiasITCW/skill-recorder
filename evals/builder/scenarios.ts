@@ -7,6 +7,7 @@
 // preferred the browser for GitHub work, and guard against it regressing.
 
 import type { BuilderScenario } from "./scenario";
+import { nativeToolScenarios } from "./native-tool-scenarios";
 
 /** Triage bug issues — recorded in the browser, should generalize to `gh issue`. */
 const githubIssueTriage: BuilderScenario = {
@@ -147,4 +148,8 @@ const githubStalePrNudge: BuilderScenario = {
   },
 };
 
-export const builderScenarios: BuilderScenario[] = [githubIssueTriage, githubStalePrNudge];
+export const builderScenarios: BuilderScenario[] = [
+  githubIssueTriage,
+  githubStalePrNudge,
+  ...nativeToolScenarios,
+];

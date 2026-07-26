@@ -139,14 +139,40 @@ generalization prose are intentionally excluded, so the builder isn't penalized
 for *explaining* which tool it avoided.
 
 **Rubric** (`score.ts`): a scenario passes only if the steps satisfy every
-`mustUseAny` group (e.g. mentions `gh ` and a concrete `gh issue`/`gh pr`/`gh api`
-command) and contain **none** of the `forbidden` tokens (`playwright`, `browser_`,
-`click`, `navigate to github`, hard-coded `github.com/...` URLs). The two seed
-scenarios cover GitHub issue triage (darwin) and stale-PR nudging (win32); both
-start from a browser-based recording, so a correct build must *re-map* the work
-onto the device CLI. This is the eval that drove the catalogue fix in
+`mustUseAny` group (each group is a set of synonyms; at least one must appear) and
+contain **none** of the `forbidden` tokens — all case-insensitive substring
+matches over the step `label` + `prompt` text. A forbidden hit fails the scenario
+outright.
+
+**Coverage.** Ten scenarios (`scenarios.ts` + `native-tool-scenarios.ts`), spanning
+macOS and Windows. Two guard the original **gh-vs-browser** regression directly
+(GitHub issue triage · darwin, stale-PR nudge · win32); the other eight mirror the
+describer eval set (`evals/scenarios/*`) so the generalization stage is guarded for
+every task type. Each rubric encodes the right native capability for its task, in
+one of two flavours:
+
+- **Native-tool-wins, browser forbidden** — the task maps to an unambiguous
+  first-class CLI/tool, so the browser is a genuine wrong answer. `release-notes`
+  and the two GitHub scenarios require `gh` (merged PRs, issues, PRs) and forbid
+  `browser_`/`playwright`; `windows-deploy` requires the `az` CLI (+ the `xlsx`
+  skill for the log) and forbids the browser. These are the strong "prefer the
+  device CLI over the UI" guards.
+- **Assert the native path, don't forbid a legitimate browser** — for web-read
+  tasks (`web-to-spreadsheet`, `invoice-extract`, `research-compile`) the rubric
+  requires `web_fetch` (and the `xlsx`/`docx` skill for the output) but does **not**
+  forbid the browser: preferring `web_fetch` while documenting a browser fallback
+  for a page that may need a login is exactly what we want, and a pure-browser
+  regression is still caught because `web_fetch` would be absent. Genuinely
+  browser-driven tasks (`expense-report` → Amex/Expensify, `lead-to-crm` →
+  Salesforce/LinkedIn have no CLI/API) don't forbid the browser at all; instead
+  they pin the one sub-step that *is* native — reading the local PDF receipts
+  (`view`/pdf), and reading the mailbox via `workiq_*` rather than the Mail UI.
+
+This is the suite that drove the catalogue fix in
 `electron/skillbuilder/scout-catalog.ts` (prefer first-class device CLIs — above
-all `gh` — over the browser, platform-aware for zsh/bash vs PowerShell).
+all `gh` — over the browser, platform-aware for zsh/bash vs PowerShell). When you
+add a describer scenario, add the matching builder scenario so the pair stays in
+lockstep.
 
 ## Mock pages (`evals/mocks/`)
 

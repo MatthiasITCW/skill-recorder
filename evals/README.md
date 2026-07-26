@@ -113,6 +113,41 @@ export const myScenario: Scenario = {
 };
 ```
 
+## Builder evals (`evals/builder/`)
+
+A second, smaller harness that guards the **final stage** — the builder that
+generalizes an approved analysis into a Scout artifact — rather than the
+describer. It exists because of a real regression: when generalizing GitHub work,
+the builder preferred driving the **browser (Playwright)** instead of the **`gh`
+CLI**, even though Scout runs on the user's own Mac/Windows device where `gh` is
+installed and authenticated.
+
+```bash
+npm run eval:builder                       # all builder scenarios
+npm run eval:builder -- --only=github-issue-triage
+npm run eval:builder -- --keep             # print the temp sessions dir
+npm run eval:builder -- --model=<model-id> # override the builder model
+```
+
+**How it isolates the builder.** Each scenario seeds a **fixed, approved
+`Analysis`** (plus a minimal valid `bundle.json`) into a temp sessions dir, then
+runs the real `AutomationBuilder.build()` for a chosen `architecture` and
+`platform` (macOS or Windows). Seeding a frozen analysis removes describer
+variance, so a failure points squarely at the builder's instructions/catalogue.
+Only the plan's **steps** (`label` + `prompt`) are scored — the summary and
+generalization prose are intentionally excluded, so the builder isn't penalized
+for *explaining* which tool it avoided.
+
+**Rubric** (`score.ts`): a scenario passes only if the steps satisfy every
+`mustUseAny` group (e.g. mentions `gh ` and a concrete `gh issue`/`gh pr`/`gh api`
+command) and contain **none** of the `forbidden` tokens (`playwright`, `browser_`,
+`click`, `navigate to github`, hard-coded `github.com/...` URLs). The two seed
+scenarios cover GitHub issue triage (darwin) and stale-PR nudging (win32); both
+start from a browser-based recording, so a correct build must *re-map* the work
+onto the device CLI. This is the eval that drove the catalogue fix in
+`electron/skillbuilder/scout-catalog.ts` (prefer first-class device CLIs — above
+all `gh` — over the browser, platform-aware for zsh/bash vs PowerShell).
+
 ## Mock pages (`evals/mocks/`)
 
 Static, self-contained HTML fixtures matching the scenarios (`pricing.html`,

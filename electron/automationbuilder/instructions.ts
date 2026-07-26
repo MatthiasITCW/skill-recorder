@@ -65,8 +65,12 @@ Each step has a short **label** and a **prompt** — an imperative instruction t
   collection and the SHAPE of the data, never the specific values from the recording.
 - **Prefer native tools, and say why.** Map each recorded action to the target's native
   capability (see the catalogue): searching Teams becomes a WorkIQ call, reading a local
-  file becomes the file tools, editing a spreadsheet becomes the built-in skill. Only fall
-  back to the browser for genuine UI-only steps, and the shell as a last resort.
+  file becomes the file tools, editing a spreadsheet becomes the built-in skill. When a
+  service has a first-class CLI on the device, PREFER it over the browser — above all
+  **GitHub → the \`gh\` CLI** (\`gh issue\`/\`gh pr\`/\`gh release\`/\`gh api\`), plus \`git\`
+  and cloud CLIs. Only fall back to the browser for genuine UI-only steps (a web app with
+  no API and no CLI). Write shell commands for the device OS (zsh/bash on macOS,
+  PowerShell on Windows).
 - **Resolve inputs inside the prompt.** An automation runs unattended and can't stop to ask
   a human, so tell the agent to DISCOVER inputs on the local OS / read them from M365, or
   bake in a genuinely fixed value. Avoid "ask the user" inputs.

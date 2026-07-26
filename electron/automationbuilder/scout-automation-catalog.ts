@@ -9,7 +9,7 @@ import { SCOUT_NATIVE_CAPABILITIES } from "../skillbuilder/scout-catalog";
  * Authored by inspecting `~/projects/m` (electron/automations/*). Refresh when
  * Scout's automation model or native tools change.
  */
-export const SCOUT_AUTOMATION_CATALOGUE_VERSION = "2026-07-25";
+export const SCOUT_AUTOMATION_CATALOGUE_VERSION = "2026-07-26";
 
 const SCOUT_AUTOMATION_CATALOGUE = `
 # Target: Microsoft Scout — automation catalogue (built-ins only)
@@ -52,7 +52,8 @@ ${SCOUT_NATIVE_CAPABILITIES}
 ## Writing the automation
 
 - Propose a trigger (a schedule by default) and 2–6 generalized, native-tool-first steps.
-- Prefer the native tools above; only use the browser for genuine UI-only steps.
+- Prefer the native tools above; use the device's CLI (e.g. \`gh\` for GitHub) over the
+  browser, and only use the browser for genuine UI-only steps (no API and no CLI).
 - Give the automation a clear \`description\` of what it does and when it runs.
 `.trim();
 

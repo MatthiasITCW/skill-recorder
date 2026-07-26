@@ -58,8 +58,12 @@ user can override any of them in plain language.
 - Map each recorded action to the target's native capability. Searching Teams becomes
   a WorkIQ call, not simulated clicks; reading a local file becomes the file tools;
   editing a spreadsheet becomes the built-in spreadsheet skill.
-- Only fall back to browser automation for genuine UI-only steps with no API, and to
-  the shell as a last resort (gated by \`allowed-tools\`).
+- When a service ships a first-class CLI on the device, prefer it over the browser —
+  above all **GitHub → the \`gh\` CLI**, plus \`git\` and cloud CLIs (Scout runs on the
+  user's Mac or Windows machine). Only fall back to browser automation for genuine
+  UI-only steps (a web app with no API and no CLI). Gate the shell with \`allowed-tools\`
+  (e.g. \`Bash(gh *)\`) and write commands for the device OS (zsh/bash on macOS,
+  PowerShell on Windows).
 - Record your choices in the plan's \`toolMapping\`, and set \`allowedTools\` to the
   patterns the skill actually needs.
 - Rely ONLY on the built-in tools and skills in the catalogue — never on a skill the

@@ -10,7 +10,7 @@ import type { SkillArchitecture } from "../../common/skill";
  * generated skill can only rely on what every Scout install ships with. Refresh
  * this when Scout's native tools/skills change.
  */
-export const SCOUT_CATALOGUE_VERSION = "2026-07-25";
+export const SCOUT_CATALOGUE_VERSION = "2026-07-26";
 
 /**
  * The reusable core of the Scout catalogue: the native tools, built-in skills, and
@@ -18,9 +18,12 @@ export const SCOUT_CATALOGUE_VERSION = "2026-07-25";
  * Builder (their preambles/tails differ, but both prefer these same capabilities).
  */
 export const SCOUT_NATIVE_CAPABILITIES = `
-## Native tools, in the order to PREFER them
+## Where this runs, and the native tools to PREFER
 
-Prefer a real native tool/API over replaying UI clicks. Only fall back down this list.
+Scout runs on the user's own **device — macOS or Windows**, not a sandbox: it has a real
+shell and whatever command-line tools the user has installed (e.g. the \`gh\` GitHub CLI,
+\`git\`, cloud CLIs). Prefer a real native tool, API, or first-class **CLI** over replaying
+a web UI. Reach for these in order:
 
 1. **WorkIQ (\`workiq_*\`) — Microsoft 365.** Use for anything in Teams, Outlook mail,
    Calendar, SharePoint/OneDrive, or the org directory. Read tools are auto-approved;
@@ -38,13 +41,21 @@ Prefer a real native tool/API over replaying UI clicks. Only fall back down this
 2. **SDK built-ins — local files, code, and the web.** \`view\` (read a file), \`glob\`
    (find files by pattern), \`grep\` (search file contents), \`web_fetch\` (fetch a URL).
    These are how a skill DISCOVERS inputs on the local OS instead of asking the user.
-3. **Browser automation (\`browser_*\`, Playwright).** Only when there is no API/WorkIQ
-   equivalent — a web app you must drive through its UI. Key tools: \`browser_navigate\`,
-   \`browser_snapshot\` (always snapshot before you act — it returns the element refs),
-   \`browser_click\`, \`browser_type\`, \`browser_fill_form\`, \`browser_select_option\`,
-   \`browser_press_key\`, \`browser_wait_for\`, \`browser_take_screenshot\`.
-4. **Shell (\`bash\`) — last resort.** Gate it with an \`allowed-tools\` pattern such as
-   \`Bash(git *)\` so only the needed commands are permitted.
+3. **The device shell + installed CLIs (\`bash\`).** Scout runs on a real Mac or Windows
+   machine, so when a service ships a first-class CLI, that CLI IS its native tool —
+   prefer it over the browser. Above all: **GitHub → the \`gh\` CLI** (\`gh issue\`,
+   \`gh pr\`, \`gh release\`, \`gh repo\`, \`gh api\`), already signed in on the device —
+   never drive github.com through the browser. Likewise \`git\`, and the cloud/service
+   CLIs the task used (\`az\`, \`aws\`, \`gcloud\`, \`kubectl\`, \`npm\`, \`docker\`). Write
+   commands for the target OS — POSIX shell (zsh/bash) on **macOS**, **PowerShell** on
+   **Windows** (mind path and quoting differences). Gate the shell with an
+   \`allowed-tools\` pattern scoped to the tool, e.g. \`Bash(gh *)\` or \`Bash(git *)\`.
+4. **Browser automation (\`browser_*\`, Playwright) — the UI fallback.** ONLY for a web app
+   with no API and no CLI, that you must drive through its UI. (GitHub is NOT such a case —
+   use \`gh\`.) Key tools: \`browser_navigate\`, \`browser_snapshot\` (always snapshot before
+   you act — it returns the element refs), \`browser_click\`, \`browser_type\`,
+   \`browser_fill_form\`, \`browser_select_option\`, \`browser_press_key\`, \`browser_wait_for\`,
+   \`browser_take_screenshot\`.
 
 ## Built-in skills you can lean on
 
@@ -71,8 +82,10 @@ skill being installed.
 | Sending a message, email, or invite | \`workiq_send_chat_message\` / \`workiq_send_email\` / \`workiq_create_event\` (approval) |
 | Opening / reading a local file or folder | \`view\` / \`glob\` / \`grep\` |
 | Reading a public web page | \`web_fetch\` |
+| Acting on GitHub — issues, PRs, releases, repos, gists, Actions | the \`gh\` CLI via \`Bash(gh *)\` (\`gh issue\`, \`gh pr\`, \`gh release\`, \`gh api\`) — never the browser |
+| Running git, cloud, or package operations | the matching CLI via the shell (\`git\`, \`az\`/\`aws\`/\`gcloud\`, \`npm\`, \`docker\`) |
 | Editing a spreadsheet / doc / deck | the \`xlsx\` / \`docx\` / \`pptx\` built-in skill |
-| Filling a form on a web app with no API | \`browser_navigate\` + \`browser_snapshot\` + \`browser_fill_form\`/\`browser_type\`/\`browser_click\` |
+| Filling a form on a web app with no API or CLI | \`browser_navigate\` + \`browser_snapshot\` + \`browser_fill_form\`/\`browser_type\`/\`browser_click\` |
 `.trim();
 
 const SCOUT_CATALOGUE = `

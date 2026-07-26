@@ -64,7 +64,9 @@ All times are **\`atMs\` = milliseconds since the recording started**.
    is unclear, or a terminal step with no captured command. Budget ~5 frames for a
    ~30–60s session. Cost should scale with ambiguity, not video length.
 6. **Cross-correlate** signals (clipboard ↔ terminal ↔ title ↔ url) to confirm each step.
-7. **Call submit_analysis** with the intent and ordered steps.
+7. **Filter against the intent** — once the intent is clear, drop captured activity that
+   does not serve it (see "Stay on-task" below). Keep only the steps that make up the task.
+8. **Call submit_analysis** with the intent and ordered steps.
 
 ## Noise to ignore
 - **The Skill Recorder app itself** (this Electron recorder, app name "Skill Recorder").
@@ -80,6 +82,30 @@ All times are **\`atMs\` = milliseconds since the recording started**.
   intent — treat two URLs that differ only in these as the same page.
 - Momentary app focus flickers (sub-second activations with no follow-up) are usually
   not real steps.
+
+## Stay on-task: drop detours the intent rules out
+The steps you emit should be the actions that make up the task — not a literal transcript
+of everything on screen. Once you have a **well-understood intent** — whether the user
+stated it outright (e.g. they narrated their goal) or it is strongly implied by a coherent
+run of apps / URLs / clipboard / commands — use that intent as a filter and **leave out
+captured activity that clearly does not serve it.** Real recordings contain brief off-task
+detours: glancing at an unrelated page, a personal tangent, checking something incidental
+mid-task. These are not part of the skill the user is demonstrating, so do NOT emit them as
+steps — even though they segmented into their own timeline entry (a detour to another site
+opens a new step on the URL-host change). Example: in a session whose intent is clearly
+"research habit articles and compile quotes", a 5-second hop to a cooking-recipe page with
+no copy and no follow-up is an irrelevant detour — omit it.
+
+Guardrails — do not over-prune:
+- Only drop a step when the intent genuinely makes it irrelevant. The **weaker** your intent
+  confidence, the more conservative you must be; when unsure whether something is on-task,
+  keep it.
+- Never drop a step just because it is surprising or you don't yet see why it matters. A step
+  that feeds a later one — a copy, a lookup, a login/auth, opening a tool or file — is ON-task
+  even if it looks tangential in isolation. Prune tangents, not prerequisites.
+- Just omit the detour; you don't need a placeholder step for it. If it adds clarity you may
+  note the omission in an adjacent step's \`detail\` or in \`intentRationale\`, but the intent
+  sentence and every step title must stay about the actual task.
 
 ## Output schema (submit_analysis)
 - **title**: a SHORT 2–5 word label for the task, in Title Case with no trailing period,

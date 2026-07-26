@@ -81,6 +81,7 @@ Business, repeatable knowledge-work patterns (`evals/scenarios/`):
 | `invoice-extract` | Extract invoice rows from a web table into a spreadsheet |
 | `research-compile` | Research two articles and compile quotes into a note |
 | `directory-lookup` | Collect contact details from a directory into a spreadsheet |
+| `irrelevant-detour` | Research habit articles with a mid-task off-task recipe detour the intent rules out (Chrome + TextEdit) |
 | `expense-report` | Reconcile card charges against receipts and file an expense report (Chrome + Preview + Expensify) |
 | `release-notes` | Compile release notes from merged PRs, then version + deploy (Terminal + GitHub + editor) |
 | `lead-to-crm` | Qualify inbound leads and enter them into the CRM (Mail + LinkedIn + Salesforce) |
@@ -91,9 +92,16 @@ records, mix a native app with the browser and/or terminal, and end in a submit 
 deploy / commit step — stress-testing segmentation and app attribution beyond the
 simple copy→paste flows.
 
+`irrelevant-detour` guards a different judgment: a **confident intent must exclude
+off-task activity**. Its stream is a clean habit-research flow with a brief hop to a
+cooking-recipe page (a different host, so it segments into its own step) that has no
+copy and no follow-up. Because the overall intent is unambiguous, the describer must
+recognize the recipe detour as irrelevant and drop it — the rubric fails outright if
+`recipe`/`allrecipes`/`cookie`/`chocolate` surfaces as a step title/app or in the intent.
+
 Each also exercises the describer's judgment: **pastes are inferred** (a paste
-emits no event), **recorder start/stop bracketing is dropped**, and **tracking
-params are merged**.
+emits no event), **recorder start/stop bracketing is dropped**, **tracking
+params are merged**, and **off-task detours the intent rules out are excluded**.
 
 ## Add a scenario
 

@@ -182,6 +182,40 @@ all `gh` — over the browser, platform-aware for zsh/bash vs PowerShell). When 
 add a describer scenario, add the matching builder scenario so the pair stays in
 lockstep.
 
+## Skill builder evals (`evals/skillbuilder/`)
+
+A sibling of the automation builder harness that guards the **`SkillBuilder`** —
+the stage that turns an approved analysis into a reusable `SKILL.md` plan. Where
+the automation harness scores free-text step prompts for native-tool choice, this
+one scores the richer **plan structure** the builder now proposes.
+
+```bash
+npm run eval:skill                       # all skill scenarios
+npm run eval:skill -- --only=price-tracker-skill
+npm run eval:skill -- --keep             # print the temp sessions dir
+npm run eval:skill -- --model=<model-id> # override the builder model
+```
+
+Both builder harnesses share the same seeding (`evals/lib/seed.ts`): a fixed,
+approved `Analysis` + a minimal `bundle.json` per scenario, so a failure points at
+the builder, not the describer.
+
+**Rubric** (`score.ts`) — beyond the `mustUseAny` / `forbidden` native-tool checks,
+each scenario asserts the shape of the proposed `SkillPlan`:
+
+- **input sources** — `expectInputSources` requires the plan to classify at least
+  one input with each listed `source` (`fixed` / `provided` / `locate`), proving the
+  vocabulary is applied, not just present.
+- **typed steps** — `minCalculations` / `minActions` require the procedure to be
+  split into `calculation` (no side effect) and `action` (changes the world) steps.
+- **confirmation** — `requiresConfirmation` requires at least one action to set
+  `pausesForConfirmation`, i.e. the send/create/delete surface pauses for the user.
+
+**Coverage.** Two scenarios: `price-tracker-skill` (a canonical page URL → **fixed**
+input, `web_fetch` + the `xlsx` skill, calculations then a confirmed append) and
+`github-issue-triage-skill` (the gh-vs-browser case as a skill — must use `gh`,
+forbid the browser, and gate the mutating comment/label actions).
+
 ## Mock pages (`evals/mocks/`)
 
 Static, self-contained HTML fixtures matching the scenarios (`pricing.html`,

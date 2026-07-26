@@ -1,4 +1,4 @@
-import type { Analysis, AnalysisFeedback, Confidence } from "./analysis";
+import type { Analysis, AnalysisFeedback, AnalysisStep, Confidence } from "./analysis";
 import type { AutomationPlan, BuiltAutomation } from "./automation";
 import type { BuiltSkill, SkillArchitecture, SkillPlan } from "./skill";
 import type { RecorderState } from "./types";
@@ -61,13 +61,16 @@ export interface AnalysisFeedbackInput extends AnalysisFeedback {
   sessionId: string;
 }
 
-/** A direct text edit to the intent/title, applied without re-running the agent. */
+/** A direct edit to the analysis, applied without re-running the agent. Any subset
+ *  of fields may be sent; the rest are left untouched. */
 export interface AnalysisEditInput {
   sessionId: string;
   /** New short label; empty string clears it (list falls back to the intent). */
   title?: string;
   /** New one-sentence goal; blank/whitespace is ignored (intent can't be emptied). */
   intent?: string;
+  /** The full, user-edited ordered steps; replaces the current steps when present. */
+  steps?: AnalysisStep[];
 }
 
 /* --- Skill Builder -------------------------------------------------------- */
@@ -274,8 +277,12 @@ export interface SkillRecorderApi {
    * revise the current plan in the same multi-turn conversation.
    */
   buildSkill(input: SkillBuildInput): Promise<SkillPlanResult>;
-  /** Finalize the proposed skill and export its SKILL.md into the target agent. */
-  createSkill(sessionId: string): Promise<SkillCreateResult>;
+  /**
+   * Finalize the (user-edited) skill plan and export its SKILL.md into the target
+   * agent. The edited plan the user sees is authoritative — the body is written
+   * from exactly these inputs and steps.
+   */
+  createSkill(sessionId: string, plan: SkillPlan): Promise<SkillCreateResult>;
   /** Load a previously built skill for a session, if any. */
   getSkill(sessionId: string): Promise<BuiltSkill | null>;
   /** Abort an in-flight build. */
@@ -289,8 +296,9 @@ export interface SkillRecorderApi {
    * to revise the current plan in the same multi-turn conversation.
    */
   buildAutomation(input: AutomationBuildInput): Promise<AutomationPlanResult>;
-  /** Finalize the proposed automation and export its importable bundle. */
-  createAutomation(sessionId: string): Promise<AutomationCreateResult>;
+  /** Finalize the (user-edited) automation plan and export its importable bundle.
+   *  The edited plan is authoritative — the bundle is built from it verbatim. */
+  createAutomation(sessionId: string, plan: AutomationPlan): Promise<AutomationCreateResult>;
   /** Load a previously built automation for a session, if any. */
   getAutomation(sessionId: string): Promise<BuiltAutomation | null>;
   /** Abort an in-flight automation build. */

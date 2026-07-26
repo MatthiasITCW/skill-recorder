@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import type { Analysis } from "../common/analysis";
+import type { Analysis, AnalysisStep } from "../common/analysis";
 import type {
   AnalyzeProgress,
   AutomationBuildProgress,
@@ -15,8 +15,15 @@ import type {
 } from "../common/skill";
 import { ARCHITECTURES, TARGETS } from "../common/skill";
 import type { AutomationPlan, BuiltAutomation } from "../common/automation";
-import { describeSchedule } from "../common/automation";
-import { formatDur, formatMs, formatWhen, shortLabel } from "./format";
+import {
+  AnalysisStepTiles,
+  AutomationStepTiles,
+  EditableText,
+  InputTiles,
+  ScheduleEditor,
+  SkillStepTiles,
+} from "./plan-edit";
+import { formatDur, formatWhen, shortLabel } from "./format";
 
 export function Library() {
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
@@ -201,12 +208,6 @@ function SessionsList({
 
 /* --- Analysis workspace --------------------------------------------------- */
 
-const STEP_CHIPS = ["Not accurate", "Not needed"] as const;
-const CHIP_NOTE: Record<(typeof STEP_CHIPS)[number], string> = {
-  "Not accurate": "This isn't accurate.",
-  "Not needed": "This step isn't needed.",
-};
-
 function AnalysisWorkspace({
   summary,
   onChanged,
@@ -220,12 +221,16 @@ function AnalysisWorkspace({
   const [analyzing, setAnalyzing] = useState(false);
   const [statusLine, setStatusLine] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [overall, setOverall] = useState("");
-  const [overallOpen, setOverallOpen] = useState(false);
-  const [notes, setNotes] = useState<Record<string, string>>({});
   const [editing, setEditing] = useState(false);
   const [draftTitle, setDraftTitle] = useState("");
   const [draftIntent, setDraftIntent] = useState("");
+  // Directly-editable steps (the source of truth downstream); persisted on a short
+  // debounce so typing stays instant. `stepsDirty` gates the persist so seeding from
+  // a freshly loaded analysis never writes back.
+  const [steps, setSteps] = useState<AnalysisStep[]>([]);
+  const stepsDirty = useRef(false);
+  const stepsRef = useRef<AnalysisStep[]>([]);
+  stepsRef.current = steps;
   // The final stage: pick a target, then build a skill or an automation. A recording
   // that is already exactly one kind opens straight to it; otherwise it opens to the
   // analysis, where "Create…" starts the target picker.
@@ -244,12 +249,43 @@ function AnalysisWorkspace({
   useEffect(() => {
     let live = true;
     void window.skillRecorder.getAnalysis(sessionId).then((a) => {
-      if (live) setAnalysis(a);
+      if (!live) return;
+      setAnalysis(a);
+      setSteps(a?.steps ?? []);
+      stepsDirty.current = false;
     });
     return () => {
       live = false;
     };
   }, [sessionId]);
+
+  // Persist directly-edited steps on a short debounce (no agent, no re-analysis).
+  useEffect(() => {
+    if (!stepsDirty.current) return;
+    const t = setTimeout(() => {
+      stepsDirty.current = false;
+      void window.skillRecorder.updateAnalysis({ sessionId, steps: stepsRef.current }).then((res) => {
+        if (res.ok && res.analysis) setAnalysis(res.analysis);
+        void onChanged();
+      });
+    }, 500);
+    return () => clearTimeout(t);
+  }, [steps, sessionId, onChanged]);
+
+  // Flush any pending step edits when leaving this session, so nothing is lost.
+  useEffect(() => {
+    return () => {
+      if (stepsDirty.current) {
+        void window.skillRecorder.updateAnalysis({ sessionId, steps: stepsRef.current });
+        stepsDirty.current = false;
+      }
+    };
+  }, [sessionId]);
+
+  const onStepsChange = useCallback((next: AnalysisStep[]) => {
+    stepsDirty.current = true;
+    setSteps(next);
+  }, []);
 
   // Single latest status line (no growing log).
   useEffect(() => {
@@ -266,8 +302,11 @@ function AnalysisWorkspace({
     setError(null);
     setStatusLine("Starting…");
     const res = await window.skillRecorder.analyze(sessionId);
-    if (res.ok && res.analysis) setAnalysis(res.analysis);
-    else if (!canceled.current) setError(res.error ?? "Analysis failed");
+    if (res.ok && res.analysis) {
+      setAnalysis(res.analysis);
+      setSteps(res.analysis.steps);
+      stepsDirty.current = false;
+    } else if (!canceled.current) setError(res.error ?? "Analysis failed");
     setAnalyzing(false);
     void onChanged();
   }, [sessionId, onChanged]);
@@ -278,35 +317,6 @@ function AnalysisWorkspace({
     await window.skillRecorder.cancelAnalysis(sessionId);
     setAnalyzing(false);
   }, [sessionId]);
-
-  const hasFeedback =
-    overall.trim().length > 0 || Object.values(notes).some((n) => n.trim().length > 0);
-
-  const sendFeedback = useCallback(async () => {
-    const steps = Object.entries(notes)
-      .filter(([, note]) => note.trim())
-      .map(([stepId, note]) => ({ stepId, note: note.trim() }));
-    if (!overall.trim() && steps.length === 0) return;
-    canceled.current = false;
-    setAnalyzing(true);
-    setError(null);
-    setStatusLine("Re-analyzing with your feedback…");
-    const res = await window.skillRecorder.analyzeFeedback({
-      sessionId,
-      overall: overall.trim() || undefined,
-      steps,
-    });
-    if (res.ok && res.analysis) {
-      setAnalysis(res.analysis);
-      setOverall("");
-      setOverallOpen(false);
-      setNotes({});
-    } else if (!canceled.current) {
-      setError(res.error ?? "Re-analysis failed");
-    }
-    setAnalyzing(false);
-    void onChanged();
-  }, [notes, overall, sessionId, onChanged]);
 
   const startEdit = useCallback(() => {
     if (!analysis) return;
@@ -330,10 +340,6 @@ function AnalysisWorkspace({
     }
     void onChanged();
   }, [sessionId, draftTitle, draftIntent, onChanged]);
-
-  const setNote = useCallback((stepId: string, note: string) => {
-    setNotes((prev) => ({ ...prev, [stepId]: note }));
-  }, []);
 
   if (launch === "picker") {
     return (
@@ -385,11 +391,6 @@ function AnalysisWorkspace({
           <span className="eyebrow">Analysis</span>
           <span className="ws-when">{formatWhen(summary.startedAt)}</span>
         </div>
-        {analysis && !analyzing && (
-          <button className="ghost" onClick={run} title="Analyze this recording again from scratch">
-            Start over
-          </button>
-        )}
       </div>
 
       <div className="ws-body">
@@ -480,31 +481,12 @@ function AnalysisWorkspace({
               )}
             </div>
 
-            <ol className="story">
-              {analysis.steps.map((s, i) => (
-                <StepCard
-                  key={s.id}
-                  index={i}
-                  step={s}
-                  note={notes[s.id] ?? ""}
-                  onNote={(v) => setNote(s.id, v)}
-                />
-              ))}
-            </ol>
-
-            <div className="overall-zone">
-              {overallOpen || overall.trim() ? (
-                <textarea
-                  className="overall-fb"
-                  placeholder="Tell us what's off, or describe a step we missed…"
-                  value={overall}
-                  onChange={(e) => setOverall(e.target.value)}
-                />
-              ) : (
-                <button className="linky" onClick={() => setOverallOpen(true)}>
-                  Something off, or did we miss a step?
-                </button>
-              )}
+            <div className="story-edit">
+              <div className="summary-head">
+                <span className="eyebrow">Steps</span>
+                <span className="edit-hint">Click any step to edit · reorder, add or remove — saved automatically</span>
+              </div>
+              <AnalysisStepTiles steps={steps} onChange={onStepsChange} />
             </div>
           </div>
         )}
@@ -514,11 +496,6 @@ function AnalysisWorkspace({
         <div className="ws-foot">
           <span className="foot-status">{launchFootStatus(summary)}</span>
           <div className="ws-foot-actions">
-            {hasFeedback && (
-              <button className="secondary" onClick={sendFeedback}>
-                Send feedback &amp; re-analyze
-              </button>
-            )}
             {summary.hasSkill && (
               <button className="secondary" onClick={() => setLaunch("skill")} title="Open the skill built from this recording">
                 Open skill →
@@ -536,12 +513,7 @@ function AnalysisWorkspace({
             <button
               className="record-cta"
               onClick={() => setLaunch("picker")}
-              disabled={hasFeedback}
-              title={
-                hasFeedback
-                  ? "Send or clear your feedback first"
-                  : "Turn this recording into a skill or an automation"
-              }
+              title="Turn this recording into a skill or an automation"
             >
               {summary.hasSkill || summary.hasAutomation ? "Create another →" : "Create…"}
             </button>
@@ -611,12 +583,6 @@ function TargetPicker({
 
 type BuildPhase = "loading" | "ready" | "planning" | "plan" | "creating" | "done";
 
-const SOURCE_LABEL: Record<SkillPlan["inputs"][number]["source"], string> = {
-  ask: "You provide it",
-  discover: "Found on this device",
-  constant: "Fixed value",
-};
-
 function SkillBuilderView({
   sessionId,
   architecture: initialArch,
@@ -636,12 +602,15 @@ function SkillBuilderView({
   const [architecture, setArchitecture] = useState<SkillArchitecture>(initialArch);
   const [plan, setPlan] = useState<SkillPlan | null>(null);
   const [statusLine, setStatusLine] = useState("");
-  const [feedback, setFeedback] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [exportedPath, setExportedPath] = useState("");
   const [builtName, setBuiltName] = useState("");
   const canceled = useRef(false);
   const inFlight = useRef(false);
+
+  const updatePlan = useCallback((part: Partial<SkillPlan>) => {
+    setPlan((prev) => (prev ? { ...prev, ...part } : prev));
+  }, []);
 
   // Leaving the builder (session switch or Close) discards an in-progress plan —
   // we don't save drafts — so stop any run that's still going in the background.
@@ -678,34 +647,31 @@ function SkillBuilderView({
     });
   }, [sessionId]);
 
-  const runPlan = useCallback(
-    async (note?: string) => {
-      canceled.current = false;
-      inFlight.current = true;
-      setError(null);
-      setStatusLine(note ? "Refining the plan…" : "Planning the skill…");
-      setPhase("planning");
-      const res = await window.skillRecorder.buildSkill({ sessionId, architecture, feedback: note });
-      inFlight.current = false;
-      if (res.ok && res.plan) {
-        setPlan(res.plan);
-        setFeedback("");
-        setPhase("plan");
-      } else if (!canceled.current) {
-        setError(res.error ?? "Planning failed");
-        setPhase(note ? "plan" : "ready");
-      }
-    },
-    [sessionId, architecture],
-  );
+  const runPlan = useCallback(async () => {
+    canceled.current = false;
+    inFlight.current = true;
+    setError(null);
+    setStatusLine("Planning the skill…");
+    setPhase("planning");
+    const res = await window.skillRecorder.buildSkill({ sessionId, architecture });
+    inFlight.current = false;
+    if (res.ok && res.plan) {
+      setPlan(res.plan);
+      setPhase("plan");
+    } else if (!canceled.current) {
+      setError(res.error ?? "Planning failed");
+      setPhase("ready");
+    }
+  }, [sessionId, architecture]);
 
   const create = useCallback(async () => {
+    if (!plan) return;
     canceled.current = false;
     inFlight.current = true;
     setError(null);
     setStatusLine("Writing the skill…");
     setPhase("creating");
-    const res = await window.skillRecorder.createSkill(sessionId);
+    const res = await window.skillRecorder.createSkill(sessionId, plan);
     inFlight.current = false;
     if (res.ok && res.skill) {
       setBuiltName(res.skill.name);
@@ -715,7 +681,7 @@ function SkillBuilderView({
       setError(res.error ?? "Could not create the skill");
       setPhase("plan");
     }
-  }, [sessionId]);
+  }, [sessionId, plan]);
 
   const cancelRun = useCallback(async () => {
     canceled.current = true;
@@ -776,77 +742,40 @@ function SkillBuilderView({
         {phase === "plan" && plan && (
           <div className="sb-plan">
             <div className="sb-planhead">
-              <h2 className="sb-title">{plan.title}</h2>
+              <EditableText
+                as="div"
+                className="sb-title ed-title"
+                value={plan.title}
+                placeholder="Skill title"
+                ariaLabel="Skill title"
+                onChange={(v) => updatePlan({ title: v })}
+              />
               <code className="sb-slug">{plan.name}</code>
             </div>
-            <p className="sb-desc">{plan.description}</p>
+            <EditableText
+              as="p"
+              multiline
+              className="sb-desc ed-desc"
+              value={plan.description}
+              placeholder="One-line description of what this skill does"
+              ariaLabel="Skill description"
+              onChange={(v) => updatePlan({ description: v })}
+            />
 
-            {(plan.summary || plan.generalization) && (
-              <div className="sb-sec">
-                <span className="eyebrow">How it generalizes</span>
-                {plan.summary && <p>{plan.summary}</p>}
-                {plan.generalization && <p className="sb-muted">{plan.generalization}</p>}
-              </div>
-            )}
-
-            {plan.inputs.length > 0 && (
-              <div className="sb-sec">
-                <span className="eyebrow">Inputs</span>
-                <ul className="sb-inputs">
-                  {plan.inputs.map((inp, i) => (
-                    <li key={i} className="input-row">
-                      <div className="input-main">
-                        <span className="input-name">{inp.name}</span>
-                        <span className={`src-badge src-${inp.source}`}>{SOURCE_LABEL[inp.source]}</span>
-                      </div>
-                      {(inp.detail || inp.description) && (
-                        <span className="input-detail">{inp.detail || inp.description}</span>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {plan.steps.length > 0 && (
-              <div className="sb-sec">
-                <span className="eyebrow">What the skill will do</span>
-                <ol className="sb-steps">
-                  {plan.steps.map((s, i) => (
-                    <li key={i}>{s}</li>
-                  ))}
-                </ol>
-              </div>
-            )}
-
-            {plan.toolMapping.length > 0 && (
-              <div className="sb-sec">
-                <span className="eyebrow">Native tools it will use</span>
-                <ul className="sb-map">
-                  {plan.toolMapping.map((m, i) => (
-                    <li key={i} className="map-row">
-                      <span className="map-action">{m.action}</span>
-                      <span className="map-arrow" aria-hidden>
-                        →
-                      </span>
-                      <code className="map-tool">{m.tool}</code>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            <div className="sb-sec sb-refine">
-              <span className="eyebrow">Adjust the plan</span>
+            <div className="sb-sec">
+              <span className="eyebrow">Inputs</span>
               <p className="sb-refine-hint">
-                Describe any change in plain language, then Refine to re-plan before you export.
+                What the skill needs each run. Click a field to edit; set each as fixed, provided by you, or found by the agent.
               </p>
-              <textarea
-                className="overall-fb"
-                placeholder="e.g. 'read the spreadsheet from Downloads instead of asking', or 'also fill in the Phone field'…"
-                value={feedback}
-                onChange={(e) => setFeedback(e.target.value)}
-              />
+              <InputTiles inputs={plan.inputs} onChange={(inputs) => updatePlan({ inputs })} />
+            </div>
+
+            <div className="sb-sec">
+              <span className="eyebrow">What the skill will do</span>
+              <p className="sb-refine-hint">
+                Click any step to edit. Reorder, add or remove as needed.
+              </p>
+              <SkillStepTiles steps={plan.steps} onChange={(steps) => updatePlan({ steps })} />
             </div>
           </div>
         )}
@@ -869,14 +798,6 @@ function SkillBuilderView({
         <div className="ws-foot">
           <span className="foot-status" />
           <div className="ws-foot-actions">
-            <button
-              className="secondary"
-              onClick={() => void runPlan(feedback.trim())}
-              disabled={!feedback.trim()}
-              title={feedback.trim() ? "Apply your changes and re-plan" : "Type a change above to refine"}
-            >
-              Refine plan
-            </button>
             <button
               className="record-cta"
               onClick={() => void create()}
@@ -927,12 +848,15 @@ function AutomationBuilderView({
   const [architecture, setArchitecture] = useState<SkillArchitecture>(initialArch);
   const [plan, setPlan] = useState<AutomationPlan | null>(null);
   const [statusLine, setStatusLine] = useState("");
-  const [feedback, setFeedback] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [exportedPath, setExportedPath] = useState("");
   const [builtName, setBuiltName] = useState("");
   const canceled = useRef(false);
   const inFlight = useRef(false);
+
+  const updatePlan = useCallback((part: Partial<AutomationPlan>) => {
+    setPlan((prev) => (prev ? { ...prev, ...part } : prev));
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -966,34 +890,31 @@ function AutomationBuilderView({
     });
   }, [sessionId]);
 
-  const runPlan = useCallback(
-    async (note?: string) => {
-      canceled.current = false;
-      inFlight.current = true;
-      setError(null);
-      setStatusLine(note ? "Refining the plan…" : "Planning the automation…");
-      setPhase("planning");
-      const res = await window.skillRecorder.buildAutomation({ sessionId, architecture, feedback: note });
-      inFlight.current = false;
-      if (res.ok && res.plan) {
-        setPlan(res.plan);
-        setFeedback("");
-        setPhase("plan");
-      } else if (!canceled.current) {
-        setError(res.error ?? "Planning failed");
-        setPhase(note ? "plan" : "ready");
-      }
-    },
-    [sessionId, architecture],
-  );
+  const runPlan = useCallback(async () => {
+    canceled.current = false;
+    inFlight.current = true;
+    setError(null);
+    setStatusLine("Planning the automation…");
+    setPhase("planning");
+    const res = await window.skillRecorder.buildAutomation({ sessionId, architecture });
+    inFlight.current = false;
+    if (res.ok && res.plan) {
+      setPlan(res.plan);
+      setPhase("plan");
+    } else if (!canceled.current) {
+      setError(res.error ?? "Planning failed");
+      setPhase("ready");
+    }
+  }, [sessionId, architecture]);
 
   const create = useCallback(async () => {
+    if (!plan) return;
     canceled.current = false;
     inFlight.current = true;
     setError(null);
     setStatusLine("Writing the automation…");
     setPhase("creating");
-    const res = await window.skillRecorder.createAutomation(sessionId);
+    const res = await window.skillRecorder.createAutomation(sessionId, plan);
     inFlight.current = false;
     if (res.ok && res.automation) {
       setBuiltName(res.automation.name);
@@ -1003,7 +924,7 @@ function AutomationBuilderView({
       setError(res.error ?? "Could not create the automation");
       setPhase("plan");
     }
-  }, [sessionId]);
+  }, [sessionId, plan]);
 
   const cancelRun = useCallback(async () => {
     canceled.current = true;
@@ -1064,78 +985,54 @@ function AutomationBuilderView({
         {phase === "plan" && plan && (
           <div className="sb-plan">
             <div className="sb-planhead">
-              <h2 className="sb-title">{plan.title}</h2>
+              <EditableText
+                as="div"
+                className="sb-title ed-title"
+                value={plan.title}
+                placeholder="Automation title"
+                ariaLabel="Automation title"
+                onChange={(v) => updatePlan({ title: v })}
+              />
               <code className="sb-slug">{plan.name}</code>
             </div>
-            <p className="sb-desc">{plan.description}</p>
+            <EditableText
+              as="p"
+              multiline
+              className="sb-desc ed-desc"
+              value={plan.description}
+              placeholder="One-line description of what this automation does"
+              ariaLabel="Automation description"
+              onChange={(v) => updatePlan({ description: v })}
+            />
 
             <div className="sb-sec">
               <span className="eyebrow">When it runs</span>
-              <div className="sb-trigger">
-                <span className="trigger-when">{describeSchedule(plan.trigger.schedule)}</span>
-                {plan.trigger.type === "condition" && plan.trigger.condition && (
-                  <span className="trigger-cond">Only when: {plan.trigger.condition}</span>
-                )}
-              </div>
               <p className="sb-refine-hint">
-                A recording has no schedule of its own — this is a suggestion. Say e.g. “every
-                weekday at 8am” below to change it.
+                A recording has no schedule of its own — set when this automation should run.
               </p>
+              <ScheduleEditor
+                schedule={plan.trigger.schedule}
+                onChange={(schedule) => updatePlan({ trigger: { ...plan.trigger, schedule } })}
+              />
+              {plan.trigger.type === "condition" && plan.trigger.condition && (
+                <span className="trigger-cond">Only when: {plan.trigger.condition}</span>
+              )}
             </div>
 
-            {(plan.summary || plan.generalization) && (
-              <div className="sb-sec">
-                <span className="eyebrow">How it generalizes</span>
-                {plan.summary && <p>{plan.summary}</p>}
-                {plan.generalization && <p className="sb-muted">{plan.generalization}</p>}
-              </div>
-            )}
-
-            {plan.inputs.length > 0 && (
-              <div className="sb-sec">
-                <span className="eyebrow">Inputs</span>
-                <ul className="sb-inputs">
-                  {plan.inputs.map((inp, i) => (
-                    <li key={i} className="input-row">
-                      <div className="input-main">
-                        <span className="input-name">{inp.name}</span>
-                        <span className={`src-badge src-${inp.source}`}>{SOURCE_LABEL[inp.source]}</span>
-                      </div>
-                      {(inp.detail || inp.description) && (
-                        <span className="input-detail">{inp.detail || inp.description}</span>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {plan.steps.length > 0 && (
-              <div className="sb-sec">
-                <span className="eyebrow">What the automation will do</span>
-                <ol className="sb-steps">
-                  {plan.steps.map((s, i) => (
-                    <li key={i}>
-                      {s.label && <span className="sb-step-label">{s.label}</span>}
-                      <span className="sb-step-prompt">{s.prompt}</span>
-                    </li>
-                  ))}
-                </ol>
-              </div>
-            )}
-
-            <div className="sb-sec sb-refine">
-              <span className="eyebrow">Adjust the plan</span>
+            <div className="sb-sec">
+              <span className="eyebrow">Inputs</span>
               <p className="sb-refine-hint">
-                Describe any change in plain language — the schedule, the steps, anything — then
-                Refine to re-plan before you export.
+                What the automation needs each run. Click a field to edit; set each as fixed, provided by you, or found by the agent.
               </p>
-              <textarea
-                className="overall-fb"
-                placeholder="e.g. 'run every weekday at 8am', or 'add a step that emails me the summary'…"
-                value={feedback}
-                onChange={(e) => setFeedback(e.target.value)}
-              />
+              <InputTiles inputs={plan.inputs} onChange={(inputs) => updatePlan({ inputs })} />
+            </div>
+
+            <div className="sb-sec">
+              <span className="eyebrow">What the automation will do</span>
+              <p className="sb-refine-hint">
+                Click any step to edit. Reorder, add or remove as needed.
+              </p>
+              <AutomationStepTiles steps={plan.steps} onChange={(steps) => updatePlan({ steps })} />
             </div>
           </div>
         )}
@@ -1161,14 +1058,6 @@ function AutomationBuilderView({
         <div className="ws-foot">
           <span className="foot-status" />
           <div className="ws-foot-actions">
-            <button
-              className="secondary"
-              onClick={() => void runPlan(feedback.trim())}
-              disabled={!feedback.trim()}
-              title={feedback.trim() ? "Apply your changes and re-plan" : "Type a change above to refine"}
-            >
-              Refine plan
-            </button>
             <button
               className="record-cta"
               onClick={() => void create()}
@@ -1196,96 +1085,5 @@ function AutomationBuilderView({
         </div>
       )}
     </section>
-  );
-}
-
-/* --- One step, told as plain language ------------------------------------- */
-
-function StepCard({
-  index,
-  step,
-  note,
-  onNote,
-}: {
-  index: number;
-  step: Analysis["steps"][number];
-  note: string;
-  onNote: (value: string) => void;
-}) {
-  const [showDetails, setShowDetails] = useState(false);
-  const [commenting, setCommenting] = useState(false);
-  const open = commenting || note.trim().length > 0;
-  const hasMeta = step.apps.length > 0 || step.startMs != null || step.evidence.length > 0;
-
-  return (
-    <li className="story-step">
-      <div className="sstep-num">{index + 1}</div>
-      <div className="sstep-body">
-        <div className="sstep-title">{step.title}</div>
-        <p className="sstep-detail">{step.detail}</p>
-
-        {step.confidence === "low" && (
-          <div className="sstep-flag">We&apos;re not fully sure about this one. Worth a check.</div>
-        )}
-
-        <div className="sstep-tools">
-          {hasMeta && (
-            <button className="linky" onClick={() => setShowDetails((v) => !v)}>
-              {showDetails ? "Hide details" : "Details"}
-            </button>
-          )}
-          <button className="linky" onClick={() => setCommenting((v) => !v)}>
-            {open ? "Done" : "Suggest a change"}
-          </button>
-        </div>
-
-        {showDetails && hasMeta && (
-          <div className="sstep-details">
-            {step.apps.length > 0 && (
-              <div className="drow">
-                <span className="dkey">App</span>
-                <span>{step.apps.join(", ")}</span>
-              </div>
-            )}
-            {step.startMs != null && (
-              <div className="drow">
-                <span className="dkey">At</span>
-                <span>{formatMs(step.startMs)}</span>
-              </div>
-            )}
-            {step.evidence.length > 0 && (
-              <div className="drow">
-                <span className="dkey">Signals</span>
-                <span className="dsignals">
-                  {step.evidence.map((e, i) => (
-                    <span className="sig" key={i}>
-                      {e}
-                    </span>
-                  ))}
-                </span>
-              </div>
-            )}
-          </div>
-        )}
-
-        {open && (
-          <div className="sstep-fb">
-            <div className="fb-chips">
-              {STEP_CHIPS.map((c) => (
-                <button key={c} className="fb-chip" onClick={() => onNote(CHIP_NOTE[c])}>
-                  {c}
-                </button>
-              ))}
-            </div>
-            <input
-              className="fb-input"
-              placeholder="What should this say instead?"
-              value={note}
-              onChange={(e) => onNote(e.target.value)}
-            />
-          </div>
-        )}
-      </div>
-    </li>
   );
 }

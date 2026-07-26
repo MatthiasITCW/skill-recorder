@@ -33,7 +33,7 @@ export function createSkillBuilderTools(ctx: SkillToolContext): Tool[] {
   const proposePlan: Tool = {
     name: "propose_plan",
     description:
-      "Propose your reviewable plan for the skill: how you'll generalize the task, the inputs it needs and where each comes from, the native tools you'll use, the generalized steps, and the allowed-tools. Call this once per turn, then STOP so the user can review or refine it. Do NOT write the skill body yet.",
+      "Propose your reviewable plan for the skill: how you'll generalize the task, the inputs it needs and where each comes from (fixed / provided / locate), the ordered steps tagged as calculations or actions (each with the native tool it uses), and the allowed-tools. Call this once per turn, then STOP so the user can review or refine it. Do NOT write the skill body yet.",
     parameters: {
       type: "object",
       properties: {
@@ -58,36 +58,50 @@ export function createSkillBuilderTools(ctx: SkillToolContext): Tool[] {
               description: { type: "string" },
               source: {
                 type: "string",
-                enum: ["ask", "discover", "constant"],
-                description: "ask the user / discover on the local OS / a baked-in constant.",
+                enum: ["fixed", "provided", "locate"],
+                description:
+                  "fixed = a URL/path/value that's the SAME every run; provided = ask the user at run time; locate = the agent finds it on the device (varies run-to-run).",
               },
               detail: {
                 type: "string",
                 description:
-                  "For discover: how to find it. For constant: the value. For ask: what to ask for.",
+                  "For fixed: the value/path. For provided: what to ask for. For locate: how to find it.",
               },
             },
             required: ["name", "source"],
             additionalProperties: false,
           },
         },
-        toolMapping: {
+        steps: {
           type: "array",
+          description:
+            "The generalized procedure as ordered, typed steps. Tag each as a calculation (reads/derives/decides/formats — no external side effect) or an action (changes the world: submit/send/create/delete).",
           items: {
             type: "object",
             properties: {
-              action: { type: "string", description: "What the recording showed." },
-              tool: { type: "string", description: "The native tool/skill chosen." },
-              note: { type: "string" },
+              kind: {
+                type: "string",
+                enum: ["calculation", "action"],
+                description: "calculation = no external effect; action = a side effect.",
+              },
+              text: {
+                type: "string",
+                description: "Imperative, generalized description of the step.",
+              },
+              tool: {
+                type: "string",
+                description:
+                  "The native tool/skill this step uses, e.g. \"workiq_search_chats\" or \"Bash(gh *)\".",
+              },
+              pausesForConfirmation: {
+                type: "boolean",
+                description:
+                  "For actions that send/create/delete: pause for the user's OK before running.",
+              },
             },
-            required: ["action", "tool"],
+            required: ["kind", "text"],
             additionalProperties: false,
           },
-        },
-        steps: {
-          type: "array",
-          items: { type: "string" },
-          description: "The generalized procedure as ordered plain-language steps.",
         },
         allowedTools: {
           type: "array",

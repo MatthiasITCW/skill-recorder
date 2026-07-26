@@ -15,6 +15,8 @@ import type {
   StartOptions,
 } from "../common/ipc";
 import { IPC } from "../common/ipc";
+import type { AutomationPlan } from "../common/automation";
+import type { SkillPlan } from "../common/skill";
 import { AutomationBuilder, loadPersistedAutomation } from "./automationbuilder/builder";
 import { Describer, loadPersistedAnalysis } from "./describer/describer";
 import { runDoctor } from "./doctor";
@@ -87,6 +89,7 @@ export function registerIpc(
       const analysis = await describer.edit(input.sessionId, {
         title: input.title,
         intent: input.intent,
+        steps: input.steps,
       });
       return { ok: true, analysis };
     } catch (err) {
@@ -146,10 +149,10 @@ export function registerIpc(
     }
   });
 
-  ipcMain.handle(IPC.createSkill, async (_event, sessionId: string): Promise<SkillCreateResult> => {
+  ipcMain.handle(IPC.createSkill, async (_event, sessionId: string, plan?: SkillPlan): Promise<SkillCreateResult> => {
     if (!isValidSessionId(sessionId)) return { ok: false, error: "Unknown session." };
     try {
-      const { skill, path: file } = await builder.create(sessionId);
+      const { skill, path: file } = await builder.create(sessionId, plan);
       return { ok: true, skill, path: file };
     } catch (err) {
       const error = err instanceof Error ? err.message : String(err);
@@ -189,10 +192,10 @@ export function registerIpc(
     },
   );
 
-  ipcMain.handle(IPC.createAutomation, async (_event, sessionId: string): Promise<AutomationCreateResult> => {
+  ipcMain.handle(IPC.createAutomation, async (_event, sessionId: string, plan?: AutomationPlan): Promise<AutomationCreateResult> => {
     if (!isValidSessionId(sessionId)) return { ok: false, error: "Unknown session." };
     try {
-      const { automation, path: file } = await automationBuilder.create(sessionId);
+      const { automation, path: file } = await automationBuilder.create(sessionId, plan);
       return { ok: true, automation, path: file };
     } catch (err) {
       const error = err instanceof Error ? err.message : String(err);

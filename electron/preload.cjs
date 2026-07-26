@@ -57,7 +57,7 @@ contextBridge.exposeInMainWorld("skillRecorder", {
   listSessions: () => ipcRenderer.invoke(IPC.listSessions),
   deleteSession: (sessionId) => ipcRenderer.invoke(IPC.deleteSession, sessionId),
   buildSkill: (input) => ipcRenderer.invoke(IPC.buildSkill, input),
-  createSkill: (sessionId) => ipcRenderer.invoke(IPC.createSkill, sessionId),
+  createSkill: (sessionId, plan) => ipcRenderer.invoke(IPC.createSkill, sessionId, plan),
   getSkill: (sessionId) => ipcRenderer.invoke(IPC.getSkill, sessionId),
   cancelSkill: (sessionId) => ipcRenderer.invoke(IPC.cancelSkill, sessionId),
   revealSkill: (sessionId) => ipcRenderer.invoke(IPC.revealSkill, sessionId),
@@ -67,7 +67,7 @@ contextBridge.exposeInMainWorld("skillRecorder", {
     return () => ipcRenderer.removeListener(IPC.skillProgress, listener);
   },
   buildAutomation: (input) => ipcRenderer.invoke(IPC.buildAutomation, input),
-  createAutomation: (sessionId) => ipcRenderer.invoke(IPC.createAutomation, sessionId),
+  createAutomation: (sessionId, plan) => ipcRenderer.invoke(IPC.createAutomation, sessionId, plan),
   getAutomation: (sessionId) => ipcRenderer.invoke(IPC.getAutomation, sessionId),
   cancelAutomation: (sessionId) => ipcRenderer.invoke(IPC.cancelAutomation, sessionId),
   revealAutomation: (sessionId) => ipcRenderer.invoke(IPC.revealAutomation, sessionId),

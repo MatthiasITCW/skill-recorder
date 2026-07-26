@@ -5,8 +5,9 @@
  * the chosen agent, preferring that agent's native built-in tools over UI replay.
  *
  * The flow is two-phase so the user stays in control:
- *   1. **propose_plan** — infer the generalization + inputs + native-tool mapping
- *      and show it. The user may refine it in natural language (more turns).
+ *   1. **propose_plan** — infer the generalization, the inputs, and the ordered
+ *      calculation/action steps (each with its native tool), and show it. The user
+ *      may refine it in natural language (more turns).
  *   2. **submit_skill** — only after the user approves, write the final SKILL.md.
  */
 export const SKILL_BUILDER_INSTRUCTIONS = `
@@ -43,12 +44,16 @@ native capabilities are described in the **catalogue below**.
 For each thing the task needs from outside (a file, a URL, a value), pick ONE source
 and record it in the plan's \`inputs\`. Use the fewest inputs that make it runnable.
 Sources (only these):
-- **ask** — the skill asks the user for it at run time (a path, URL, or value).
-- **discover** — the agent FINDS it on the local OS with native file tools instead
-  of asking, e.g. "read the most recent *.csv in ~/Downloads". Prefer this when the
-  recording clearly points at a discoverable local file.
-- **constant** — bake in a genuinely fixed value (e.g. one specific URL the task
-  always uses).
+- **fixed** — a value that is the SAME on every run, baked into the skill: a canonical
+  URL, or a specific file path that never moves. Put the value/path in \`detail\`.
+- **provided** — the skill asks the user for it at run time (a path, URL, or value).
+- **locate** — the agent FINDS it on the device with native file tools, e.g. "read the
+  most recent *.csv in ~/Downloads". Use this when the target varies run-to-run.
+
+The rule: if the exact value/path is specified and never changes, it's **fixed**; if it
+varies from run to run, it's **provided** or **locate**. Don't mark a file **fixed** just
+because the recording used one path — if next run's file will differ, it's **locate** (or
+**provided**) so the skill doesn't over-pin to one machine.
 
 Infer the most likely source for each input yourself and show it in the plan; the
 user can override any of them in plain language.
@@ -64,10 +69,23 @@ user can override any of them in plain language.
   UI-only steps (a web app with no API and no CLI). Gate the shell with \`allowed-tools\`
   (e.g. \`Bash(gh *)\`) and write commands for the device OS (zsh/bash on macOS,
   PowerShell on Windows).
-- Record your choices in the plan's \`toolMapping\`, and set \`allowedTools\` to the
+- Record the chosen tool on each step (the step's \`tool\`), and set \`allowedTools\` to the
   patterns the skill actually needs.
 - Rely ONLY on the built-in tools and skills in the catalogue — never on a skill the
   user might have added.
+
+## Steps: separate calculations from actions
+
+Break the generalized procedure into ordered **steps**, each tagged \`kind\`:
+- **calculation** — reads, derives, filters, decides, or formats. No external side effect
+  (e.g. "read the sheet", "keep the rows still open", "compute the total").
+- **action** — changes the world: submits a form, sends a message, creates/edits/deletes a
+  file or record, posts, pays. These are the risky surface — keep them explicit.
+
+Put the native tool each step uses in its \`tool\`. For any action that sends, creates, or
+deletes on the user's behalf — or is otherwise destructive — set \`pausesForConfirmation:
+true\` so the skill checks with the user first. Order matters: interleave calculations and
+actions in the real sequence the task runs.
 
 ## Write a good SKILL.md (authoring principles)
 
@@ -96,8 +114,10 @@ should be written, not as a transcript of this one recording:
 - **get_analysis** — the approved intent + ordered steps you're generalizing. Read first.
 - **get_timeline** — the deterministic timeline (apps, URLs, hosts, commands, clipboard
   counts) behind those steps. Use it to ground the native-tool mapping in real evidence.
-- **propose_plan({ name, title, description, summary, generalization, inputs, toolMapping,
-  steps, allowedTools })** — your reviewable plan. Call once per turn, then stop.
+- **propose_plan({ name, title, description, summary, generalization, inputs, steps,
+  allowedTools })** — your reviewable plan. Each input has a \`source\` (fixed / provided /
+  locate); each step has a \`kind\` (calculation / action), its \`tool\`, and an optional
+  \`pausesForConfirmation\`. Call once per turn, then stop.
 - **submit_skill({ name, description, allowedTools, body })** — the final skill. \`body\`
   is the SKILL.md instructions (imperative, generalized, native-tool-first). Call this
   only after the user approves the plan.

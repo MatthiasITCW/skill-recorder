@@ -110,7 +110,7 @@ ${SCOUT_NATIVE_CAPABILITIES}
 
 - Write a GENERALIZED procedure: if the recording acted on N specific items, the body
   loops over ALL items of that kind, not the specific examples that were recorded.
-- Resolve each input via the plan (ask the user / discover on the local OS / constant).
+- Resolve each input via the plan (a fixed value / the user provides it / the agent locates it on the device).
 - Prefer the native tools above; only use the browser for genuine UI-only steps.
 - Keep it concise and imperative. Include a short "When to use" and the ordered steps.
 `.trim();

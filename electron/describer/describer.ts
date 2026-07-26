@@ -121,17 +121,22 @@ export class Describer {
   }
 
   /**
-   * Apply a direct text edit to the title and/or intent — a user correction, NOT a
-   * re-analysis. Steps and evidence are untouched; the agent is not invoked. Blank
-   * intent is ignored (a session always keeps a goal); the title may be cleared.
+   * Apply a direct edit to the analysis — a user correction, NOT a re-analysis: the
+   * agent is not invoked. Any subset of {title, intent, steps} may be patched; the
+   * rest are untouched. Blank intent is ignored (a session always keeps a goal); the
+   * title may be cleared. The edited steps become the source of truth downstream.
    */
-  async edit(sessionId: string, patch: { title?: string; intent?: string }): Promise<Analysis> {
+  async edit(
+    sessionId: string,
+    patch: { title?: string; intent?: string; steps?: Analysis["steps"] },
+  ): Promise<Analysis> {
     if (this.active.has(sessionId)) throw new Error("Wait for the current analysis to finish before editing.");
     const prior = loadPersistedAnalysis(sessionId);
     if (!prior) throw new Error("There is no analysis to edit yet.");
     const next: Analysis = { ...prior };
     if (patch.title !== undefined) next.title = patch.title.trim();
     if (patch.intent !== undefined && patch.intent.trim()) next.intent = patch.intent.trim();
+    if (patch.steps !== undefined) next.steps = patch.steps;
     this.persist(sessionDir(sessionId), next);
     return next;
   }

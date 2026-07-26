@@ -15,6 +15,7 @@
     "typecheck:evals": "tsc --noEmit -p evals/tsconfig.json",
     "eval": "node --experimental-transform-types --no-warnings --import ./evals/register.mjs evals/run.ts",
     "eval:builder": "node --experimental-transform-types --no-warnings --import ./evals/register.mjs evals/builder/run.ts",
+    "eval:skill": "node --experimental-transform-types --no-warnings --import ./evals/register.mjs evals/skillbuilder/run.ts",
     "dist": "vite build && electron-builder",
     "start": "electron ."
   },

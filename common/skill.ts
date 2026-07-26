@@ -85,39 +85,67 @@ export const TARGETS: readonly BuildTarget[] = [
 ] as const;
 
 /**
- * Where a skill's input comes from at run time. Kept deliberately small:
- * - **ask** — the skill asks the user for it when it runs (a path, URL, value).
- * - **discover** — the agent finds it on the local OS with native file tools
- *   (e.g. "the most recent *.csv in ~/Downloads") instead of asking.
- * - **constant** — a genuinely fixed value baked into the skill (e.g. one URL).
+ * Where a skill's input comes from at run time — a small spectrum of "known now /
+ * known at run time / found by the agent":
+ * - **fixed** — a genuinely constant value baked into the skill: a canonical URL or
+ *   a specific file path that is the SAME on every run.
+ * - **provided** — the skill asks the user for it when it runs (a path, URL, value).
+ * - **locate** — the agent finds it on the device with native file tools (e.g. "the
+ *   most recent *.csv in ~/Downloads") because it varies run-to-run.
  */
-export const SkillInputSource = z.enum(["ask", "discover", "constant"]);
+export const SkillInputSource = z.enum(["fixed", "provided", "locate"]);
 export type SkillInputSource = z.infer<typeof SkillInputSource>;
+
+/** Source values from earlier builds (`ask/discover/constant`), mapped to current names. */
+const LEGACY_INPUT_SOURCE: Record<string, SkillInputSource> = {
+  ask: "provided",
+  discover: "locate",
+  constant: "fixed",
+};
+
+/** Accepts both current and legacy source strings, so older persisted plans/skills load. */
+export const SkillInputSourceCompat = z.preprocess(
+  (v) => (typeof v === "string" && v in LEGACY_INPUT_SOURCE ? LEGACY_INPUT_SOURCE[v] : v),
+  SkillInputSource,
+);
 
 export const SkillInputSchema = z.object({
   /** Short name for the input, e.g. "records spreadsheet". */
   name: z.string(),
   /** What it is and how it's used in the task. */
   description: z.string().default(""),
-  source: SkillInputSource,
+  source: SkillInputSourceCompat,
   /**
-   * Source-specific detail: the discovery instruction (for `discover`), the
-   * fixed value (for `constant`), or what to ask the user for (for `ask`).
+   * Source-specific detail: the fixed value or path (for `fixed`), what to ask the
+   * user for (for `provided`), or how to find it on the device (for `locate`).
    */
   detail: z.string().default(""),
 });
 export type SkillInput = z.infer<typeof SkillInputSchema>;
 
-/** One recorded action mapped to the native capability that will perform it. */
-export const ToolMappingSchema = z.object({
-  /** What the recording showed, e.g. "Search a Teams chat". */
-  action: z.string(),
-  /** The native tool/skill chosen, e.g. "workiq_search_chats". */
-  tool: z.string(),
-  /** Why this tool (or how it replaces the UI step). */
-  note: z.string().default(""),
-});
-export type ToolMapping = z.infer<typeof ToolMappingSchema>;
+/**
+ * A generalized step is either a **calculation** (reads, derives, decides, or formats
+ * — no external side effect) or an **action** (changes the world: submit, send, create,
+ * delete). Splitting them keeps the plan honest about side effects; the actions are the
+ * risky surface, and destructive/sending ones set {@link PlanStep.pausesForConfirmation}.
+ */
+export const PlanStepKind = z.enum(["calculation", "action"]);
+export type PlanStepKind = z.infer<typeof PlanStepKind>;
+
+export const PlanStepSchema = z.preprocess(
+  // Earlier plans stored steps as bare strings; surface those as (visible) actions.
+  (v) => (typeof v === "string" ? { kind: "action", text: v } : v),
+  z.object({
+    kind: PlanStepKind,
+    /** Imperative, generalized description of the step. */
+    text: z.string(),
+    /** The native tool/skill this step uses, if any (e.g. "workiq_search_chats"). */
+    tool: z.string().default(""),
+    /** Actions that send/create/delete should pause for the user's OK before running. */
+    pausesForConfirmation: z.boolean().default(false),
+  }),
+);
+export type PlanStep = z.infer<typeof PlanStepSchema>;
 
 /**
  * The agent's proposed plan, shown to the user before any skill is written.
@@ -137,9 +165,8 @@ export const SkillPlanSchema = z.object({
   /** How the recorded specifics are generalized (the loop/collection insight). */
   generalization: z.string().default(""),
   inputs: z.array(SkillInputSchema).default([]),
-  toolMapping: z.array(ToolMappingSchema).default([]),
-  /** The generalized procedure, as ordered plain-language steps. */
-  steps: z.array(z.string()).default([]),
+  /** The generalized procedure as ordered, typed steps (calculations + actions). */
+  steps: z.array(PlanStepSchema).default([]),
   /** Proposed `allowed-tools` frontmatter patterns, e.g. "Bash(git *)". */
   allowedTools: z.array(z.string()).default([]),
 });

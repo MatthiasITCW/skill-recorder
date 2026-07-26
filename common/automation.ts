@@ -189,6 +189,22 @@ export function toBuiltAutomation(
   });
 }
 
+/** Build an {@link AutomationSubmission} directly from a (user-edited) plan. The plan
+ *  fully determines the bundle, so create can skip a second agent turn and honor the
+ *  reviewed tiles exactly. Throws if the plan has no steps (a bundle needs ≥1). */
+export function planToAutomationSubmission(plan: AutomationPlan): AutomationSubmission {
+  return AutomationSubmissionSchema.parse({
+    name: plan.name,
+    description: plan.description,
+    triggerType: plan.trigger.type,
+    schedule: plan.trigger.schedule,
+    condition: plan.trigger.condition,
+    conditionCheckInterval: plan.trigger.conditionCheckInterval,
+    model: plan.model,
+    steps: plan.steps,
+  });
+}
+
 /** The primary time of day for a schedule — the value Scout mirrors into the
  *  schedule's top-level `hour`/`minute`. */
 function primaryTime(schedule: AutomationSchedule): TimeOfDay {

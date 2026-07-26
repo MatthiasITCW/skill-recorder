@@ -154,12 +154,12 @@ export function createAutomationBuilderTools(ctx: AutomationToolContext): Tool[]
               description: { type: "string" },
               source: {
                 type: "string",
-                enum: ["ask", "discover", "constant"],
-                description: "Prefer discover/constant — an automation runs unattended and can't ask.",
+                enum: ["fixed", "provided", "locate"],
+                description: "Prefer locate/fixed — an automation runs unattended and can't ask the user.",
               },
               detail: {
                 type: "string",
-                description: "For discover: how to find it. For constant: the value.",
+                description: "For fixed: the value/path. For locate: how to find it.",
               },
             },
             required: ["name", "source"],

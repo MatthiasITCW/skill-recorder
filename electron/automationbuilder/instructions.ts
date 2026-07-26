@@ -72,8 +72,8 @@ Each step has a short **label** and a **prompt** — an imperative instruction t
   no API and no CLI). Write shell commands for the device OS (zsh/bash on macOS,
   PowerShell on Windows).
 - **Resolve inputs inside the prompt.** An automation runs unattended and can't stop to ask
-  a human, so tell the agent to DISCOVER inputs on the local OS / read them from M365, or
-  bake in a genuinely fixed value. Avoid "ask the user" inputs.
+  a human, so tell the agent to LOCATE inputs on the device / read them from M365, or use a
+  genuinely fixed value. Avoid inputs the user must provide at run time.
 - **No surprises.** Keep destructive or send/create actions explicit in their step so the
   user sees them in the plan. The automation must do exactly what its description says.
 - Keep it to a few ordered steps (roughly 2–6); each prompt tight and imperative.
@@ -81,7 +81,7 @@ Each step has a short **label** and a **prompt** — an imperative instruction t
 ## Inputs (informational)
 
 List the things the task needs from outside in the plan's \`inputs\` with a likely source
-(discover / constant / — avoid ask). These are for the user's awareness; the automation
+(locate / fixed — avoid provided). These are for the user's awareness; the automation
 resolves them inside the step prompts.
 
 ## Your tools

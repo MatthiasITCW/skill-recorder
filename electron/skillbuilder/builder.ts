@@ -7,6 +7,7 @@ import { approveAll, type CopilotSession } from "@github/copilot-sdk";
 import {
   BuiltSkillSchema,
   renderSkillMarkdown,
+  SkillPlanSchema,
   slugifySkillName,
   toBuiltSkill,
   type BuiltSkill,
@@ -30,12 +31,15 @@ const TURN_TIMEOUT_MS = 180_000;
 
 const KICKOFF_PROMPT =
   "Read get_analysis (and get_timeline where the tool mapping needs evidence), then call " +
-  "propose_plan with how you'll generalize this task, its inputs, and the native tools you'll use. " +
+  "propose_plan with how you'll generalize this task, its inputs (fixed / provided / locate), and its " +
+  "ordered calculation and action steps (each with the native tool it uses). " +
   "Stop after propose_plan so the user can review it.";
 
 const CREATE_PROMPT =
-  "The user approved the plan. Now call submit_skill with the final SKILL.md name, description, " +
-  "allowed-tools, and a generalized, native-tool-first instructions body.";
+  "The user reviewed and edited the plan below. Build the SKILL.md from EXACTLY this plan — do not " +
+  "add, drop, reorder, or rename its inputs or steps. Call submit_skill with a generalized, " +
+  "native-tool-first instructions body that follows these inputs and steps faithfully (the name and " +
+  "description are already decided — you may echo them).";
 
 const msg = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
@@ -111,26 +115,44 @@ export class SkillBuilder extends AgentBuilder<LiveBuild> {
     }
   }
 
-  /** Finalize the proposed plan into a SKILL.md and export it. */
-  async create(sessionId: string): Promise<{ skill: BuiltSkill; path: string }> {
+  /** Finalize the user-edited plan into a SKILL.md and export it. The edited plan is
+   *  authoritative: its name/description/inputs/steps are used verbatim and only the
+   *  markdown body is written by the agent. */
+  async create(sessionId: string, editedPlan?: SkillPlan): Promise<{ skill: BuiltSkill; path: string }> {
     if (this.active.has(sessionId)) throw new Error("Wait for the current step to finish.");
-    const live = this.live.get(sessionId);
-    if (!live) throw new Error("Propose a plan first, then create the skill.");
-    if (!live.lastPlan) throw new Error("There is no proposed plan to build from yet.");
+    let held = this.live.get(sessionId);
+    // Prefer the user's edited plan from the review tiles; fall back to the last
+    // proposed plan for older callers that don't pass one.
+    const plan = editedPlan ? SkillPlanSchema.parse(editedPlan) : held?.lastPlan ?? null;
+    if (!plan) throw new Error("There is no plan to build from yet.");
+    // The pool may have evicted the live conversation while the user edited the plan;
+    // recreate one so export always works.
+    if (!held) held = await this.createLive(sessionId, plan.architecture);
+    const live = held;
+    live.lastPlan = plan;
 
     this.active.add(sessionId);
     try {
       this.emit(sessionId, "drafting", "Writing the skill…");
       live.holder.submission = undefined;
       try {
-        await live.copilot.sendAndWait(CREATE_PROMPT, TURN_TIMEOUT_MS);
+        await live.copilot.sendAndWait(`${CREATE_PROMPT}\n\n${renderPlanForPrompt(plan)}`, TURN_TIMEOUT_MS);
       } catch (err) {
         await live.copilot.abort().catch(() => undefined);
         throw new Error(`Skill build failed: ${msg(err)}`);
       }
-      const submission = live.holder.submission;
+      const submission = live.holder.submission as SkillSubmission | undefined;
       if (!submission) throw new Error("The agent finished without submitting a skill.");
-      const built = toBuiltSkill(sessionId, live.architecture, submission, live.lastPlan);
+      // The frontmatter comes from the edited plan (authoritative); only the body is
+      // the agent's generated prose. allowed-tools may be tightened by the agent to the
+      // final steps, but never emptied below what the plan declared.
+      const finalSubmission: SkillSubmission = {
+        name: plan.name,
+        description: plan.description,
+        allowedTools: submission.allowedTools.length ? submission.allowedTools : plan.allowedTools,
+        body: submission.body,
+      };
+      const built = toBuiltSkill(sessionId, plan.architecture, finalSubmission, plan);
       const exportPath = this.exportSkill(built);
       const finalSkill: BuiltSkill = { ...built, exportedPath: exportPath, exportedAt: Date.now() };
       this.persist(live.sessionDir, finalSkill);
@@ -240,6 +262,27 @@ export class SkillBuilder extends AgentBuilder<LiveBuild> {
       log.warn("failed to persist skill:", msg(err));
     }
   }
+}
+
+/** Render the final, user-edited plan into a compact spec the create turn builds from. */
+function renderPlanForPrompt(plan: SkillPlan): string {
+  const lines = [`Title: ${plan.title}`, `Name: ${plan.name}`, `Description: ${plan.description}`];
+  if (plan.generalization) lines.push(`Generalization: ${plan.generalization}`);
+  if (plan.inputs.length) {
+    lines.push("", "Inputs:");
+    for (const i of plan.inputs) lines.push(`- ${i.name} [${i.source}]${i.detail ? `: ${i.detail}` : ""}`);
+  }
+  if (plan.steps.length) {
+    lines.push("", "Steps (in order):");
+    plan.steps.forEach((s, idx) => {
+      const bits = [`${idx + 1}. (${s.kind}) ${s.text}`];
+      if (s.tool) bits.push(`[tool: ${s.tool}]`);
+      if (s.pausesForConfirmation) bits.push("[pause for confirmation]");
+      lines.push(bits.join(" "));
+    });
+  }
+  if (plan.allowedTools.length) lines.push("", `allowed-tools: ${plan.allowedTools.join(", ")}`);
+  return lines.join("\n");
 }
 
 function renderRefinePrompt(feedback: string, prior: SkillPlan | null): string {

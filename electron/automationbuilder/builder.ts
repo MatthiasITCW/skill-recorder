@@ -5,7 +5,9 @@ import path from "node:path";
 import { approveAll, type CopilotSession } from "@github/copilot-sdk";
 
 import {
+  AutomationPlanSchema,
   BuiltAutomationSchema,
+  planToAutomationSubmission,
   renderAutomationJson,
   toBuiltAutomation,
   type AutomationPlan,
@@ -31,10 +33,6 @@ const KICKOFF_PROMPT =
   "Read get_analysis (and get_timeline where the tool mapping or schedule needs evidence), then call " +
   "propose_automation_plan with how you'll generalize this task, a sensible default schedule, and the " +
   "generalized prompt-steps. Stop after propose_automation_plan so the user can review it.";
-
-const CREATE_PROMPT =
-  "The user approved the plan. Now call submit_automation with the final name, description, trigger " +
-  "(triggerType + schedule), and the generalized ordered prompt-steps.";
 
 const msg = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
@@ -110,29 +108,29 @@ export class AutomationBuilder extends AgentBuilder<LiveBuild> {
     }
   }
 
-  /** Finalize the proposed plan into an automation bundle and export it. */
-  async create(sessionId: string): Promise<{ automation: BuiltAutomation; path: string }> {
+  /** Finalize the user-edited plan into an automation bundle and export it. The plan
+   *  fully determines the bundle (trigger + ordered prompt-steps), so this builds it
+   *  directly — no extra agent turn — and the export matches the reviewed tiles exactly. */
+  async create(sessionId: string, editedPlan?: AutomationPlan): Promise<{ automation: BuiltAutomation; path: string }> {
     if (this.active.has(sessionId)) throw new Error("Wait for the current step to finish.");
-    const live = this.live.get(sessionId);
-    if (!live) throw new Error("Propose a plan first, then create the automation.");
-    if (!live.lastPlan) throw new Error("There is no proposed plan to build from yet.");
+    // Prefer the user's edited plan from the review tiles; fall back to the last
+    // proposed plan for older callers that don't pass one.
+    const plan = editedPlan ? AutomationPlanSchema.parse(editedPlan) : this.live.get(sessionId)?.lastPlan ?? null;
+    if (!plan) throw new Error("There is no plan to build from yet.");
 
     this.active.add(sessionId);
     try {
       this.emit(sessionId, "drafting", "Writing the automation…");
-      live.holder.submission = undefined;
+      let submission: AutomationSubmission;
       try {
-        await live.copilot.sendAndWait(CREATE_PROMPT, TURN_TIMEOUT_MS);
-      } catch (err) {
-        await live.copilot.abort().catch(() => undefined);
-        throw new Error(`Automation build failed: ${msg(err)}`);
+        submission = planToAutomationSubmission(plan);
+      } catch {
+        throw new Error("Add at least one step before you create the automation.");
       }
-      const submission = live.holder.submission;
-      if (!submission) throw new Error("The agent finished without submitting an automation.");
-      const built = toBuiltAutomation(sessionId, live.architecture, submission, live.lastPlan);
+      const built = toBuiltAutomation(sessionId, plan.architecture, submission, plan);
       const exportPath = this.exportAutomation(built);
       const finalAutomation: BuiltAutomation = { ...built, exportedPath: exportPath, exportedAt: Date.now() };
-      this.persist(live.sessionDir, finalAutomation);
+      this.persist(sessionDir(sessionId), finalAutomation);
       this.emit(sessionId, "done", `Automation exported to ${exportPath}`);
       return { automation: finalAutomation, path: exportPath };
     } finally {

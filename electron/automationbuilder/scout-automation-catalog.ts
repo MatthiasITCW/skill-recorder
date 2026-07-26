@@ -42,9 +42,9 @@ in plain language.
 - Write prompts that GENERALIZE: if the recording acted on N specific items, the prompt tells
   the agent to handle every item of that kind, not the specific examples recorded.
 - Prompts should prefer Scout's native tools (below) over UI replay, and say briefly why.
-- Resolve inputs inside the prompts: tell the agent to discover them on the local OS, read
+- Resolve inputs inside the prompts: tell the agent to locate them on the device, read
   them from M365, or (only if unavoidable) that they're fixed values. An unattended automation
-  can't stop to ask a human, so avoid "ask the user" inputs — discover or fix them instead.
+  can't stop to ask a human, so avoid user-provided inputs — locate or fix them instead.
 - Keep destructive or send/create actions explicit so the user sees them in the plan.
 
 ${SCOUT_NATIVE_CAPABILITIES}

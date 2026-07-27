@@ -19,6 +19,12 @@ export interface SessionSummary {
   /** True once post-processing produced a bundle. */
   processed: boolean;
   hasVideo: boolean;
+  /** True when the user opted into narration and usable audio was saved. */
+  hasAudio: boolean;
+  /** True once transcription completed, including recordings with no detected speech. */
+  hasNarration: boolean;
+  narrationSegmentCount: number | null;
+  narrationUpdatedAt: number | null;
   /** True once a skill has been built and persisted for this session. */
   hasSkill: boolean;
   /** True once an automation has been built and persisted for this session. */
@@ -26,11 +32,33 @@ export interface SessionSummary {
   /** Present once the describer has produced an analysis for this session. */
   analysis: {
     revision: number;
+    createdAt: number;
+    narrationSourceUpdatedAt: number | null;
     title: string;
     intent: string;
     intentConfidence: Confidence;
     stepCount: number;
   } | null;
+}
+
+export type NarrationModelState = "missing" | "downloading" | "ready" | "error";
+export type NarrationPhase = "idle" | "loading" | "downloading" | "transcribing";
+
+/** Shared model/job state shown in the HUD and Sessions library. */
+export interface NarrationStatus {
+  model: NarrationModelState;
+  phase: NarrationPhase;
+  progress: number | null;
+  loadedBytes: number | null;
+  totalBytes: number | null;
+  activeSessionId: string | null;
+  error: string | null;
+}
+
+export interface NarrationActionResult {
+  ok: boolean;
+  outcome?: "ready" | "transcribed" | "no-speech" | "already-transcribed" | "model-missing";
+  error?: string;
 }
 
 export interface RecorderStatus {
@@ -225,6 +253,10 @@ export const IPC = {
   marker: "recorder:marker",
   doctor: "doctor:check",
   statusChanged: "recorder:status-changed",
+  narrationStatus: "narration:status",
+  narrationDownload: "narration:download",
+  narrationTranscribe: "narration:transcribe",
+  narrationStatusChanged: "narration:status-changed",
   analyze: "analyze:start",
   analyzeFeedback: "analyze:feedback",
   getAnalysis: "analyze:get",
@@ -257,6 +289,10 @@ export interface SkillRecorderApi {
   marker(note: string): Promise<MarkerResult>;
   doctor(): Promise<DoctorReport>;
   onStatusChanged(cb: (status: RecorderStatus) => void): () => void;
+  narrationStatus(): Promise<NarrationStatus>;
+  downloadNarrationModel(): Promise<NarrationActionResult>;
+  transcribeNarration(sessionId: string): Promise<NarrationActionResult>;
+  onNarrationStatusChanged(cb: (status: NarrationStatus) => void): () => void;
   /** Run the Copilot describer on a session (defaults to the last completed one). */
   analyze(sessionId?: string): Promise<AnalyzeResult>;
   /** Send NL feedback and re-analyze in the same multi-turn session. */

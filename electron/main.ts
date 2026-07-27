@@ -7,6 +7,7 @@ import { Describer } from "./describer/describer";
 import { processSession } from "./pipeline";
 import { registerIpc } from "./ipc";
 import { createLogger } from "./logger";
+import { NarrationManager } from "./narration/manager";
 import { RecorderController } from "./recorder/controller";
 import { SkillBuilder } from "./skillbuilder/builder";
 import { AutomationBuilder } from "./automationbuilder/builder";
@@ -20,12 +21,20 @@ const log = createLogger("Main");
 let recorderWindow: BrowserWindow | null = null;
 let libraryWindow: BrowserWindow | null = null;
 let recorderHome: Electron.Rectangle | null = null;
+const narration = new NarrationManager((status) =>
+  broadcast(IPC.narrationStatusChanged, status),
+);
 const recorder = new RecorderController({
   resolveConfig: () => ({ ...FULL_CAPTURE }),
   buildCollectors: createCollectors,
   createVideoRecorder: () => new VideoRecorder(),
   createAudioRecorder: () => new AudioRecorder(),
-  postProcess: processSession,
+  postProcess: async (dir) => {
+    await processSession(dir);
+    void narration.transcribeIfCached(dir).catch((err) =>
+      log.warn("Cached narration processing failed:", err),
+    );
+  },
 });
 
 /** Send an event to every live window (recorder HUD + library, if open). */
@@ -67,7 +76,8 @@ function openLibrary(): void {
 }
 
 app.whenReady().then(() => {
-  registerIpc(recorder, describer, builder, automationBuilder);
+  narration.initialize();
+  registerIpc(recorder, describer, builder, automationBuilder, narration);
   log.info("Capture: recording all sources");
 
   ipcMain.handle(IPC.openLibrary, () => openLibrary());
@@ -113,6 +123,4 @@ app.on("will-quit", () => {
   void builder.dispose();
   void automationBuilder.dispose();
 });
-
-
 

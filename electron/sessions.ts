@@ -3,6 +3,7 @@ import path from "node:path";
 
 import { AnalysisSchema, type Analysis } from "../common/analysis";
 import type { SessionSummary } from "../common/ipc";
+import { NARRATION_FILE, type NarrationTranscript } from "../common/narration";
 import type { SessionMeta } from "../common/types";
 import { isValidSessionId, sessionDir, sessionsRoot } from "./recorder/session-store";
 
@@ -27,6 +28,20 @@ async function loadAnalysis(dir: string): Promise<Analysis | null> {
   }
 }
 
+async function loadNarration(
+  dir: string,
+): Promise<{ segmentCount: number; updatedAt: number } | null> {
+  const file = path.join(dir, NARRATION_FILE);
+  try {
+    const raw = JSON.parse(await readFile(file, "utf8")) as NarrationTranscript;
+    if (!Array.isArray(raw?.segments)) return null;
+    const info = await stat(file);
+    return { segmentCount: raw.segments.length, updatedAt: info.mtimeMs };
+  } catch {
+    return null;
+  }
+}
+
 /** Build the library summary for a single session dir, or null if it isn't one. */
 async function summarize(root: string, name: string): Promise<SessionSummary | null> {
   const dir = path.join(root, name);
@@ -44,10 +59,12 @@ async function summarize(root: string, name: string): Promise<SessionSummary | n
   }
   if (!meta?.id) return null;
 
-  const [analysis, processed, hasVideo, hasSkill, hasAutomation] = await Promise.all([
+  const [analysis, processed, hasVideo, hasAudio, narration, hasSkill, hasAutomation] = await Promise.all([
     loadAnalysis(dir),
     exists(path.join(dir, "bundle.json")),
     exists(path.join(dir, "video.json")),
+    exists(path.join(dir, "audio.json")),
+    loadNarration(dir),
     exists(path.join(dir, "skill.json")),
     exists(path.join(dir, "built-automation.json")),
   ]);
@@ -59,11 +76,17 @@ async function summarize(root: string, name: string): Promise<SessionSummary | n
     durationMs: meta.startedAt && meta.stoppedAt ? meta.stoppedAt - meta.startedAt : null,
     processed,
     hasVideo,
+    hasAudio,
+    hasNarration: narration !== null,
+    narrationSegmentCount: narration?.segmentCount ?? null,
+    narrationUpdatedAt: narration?.updatedAt ?? null,
     hasSkill,
     hasAutomation,
     analysis: analysis
       ? {
           revision: analysis.revision,
+          createdAt: analysis.createdAt,
+          narrationSourceUpdatedAt: analysis.narrationSourceUpdatedAt,
           title: analysis.title ?? "",
           intent: analysis.intent,
           intentConfidence: analysis.intentConfidence,

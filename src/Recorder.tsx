@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 
-import type { DoctorReport, RecorderStatus } from "../common/ipc";
+import type { DoctorReport, NarrationStatus, RecorderStatus } from "../common/ipc";
 import { formatMs } from "./format";
 import { WhatsRecorded } from "./WhatsRecorded";
 
@@ -11,6 +11,7 @@ const TOGGLE_SHORTCUT = IS_MAC ? "⌘⇧R" : "Ctrl+Shift+R";
 export function Recorder() {
   const [status, setStatus] = useState<RecorderStatus | null>(null);
   const [doctor, setDoctor] = useState<DoctorReport | null>(null);
+  const [narrationStatus, setNarrationStatus] = useState<NarrationStatus | null>(null);
   const [showPrivacy, setShowPrivacy] = useState(false);
   const [narrate, setNarrate] = useState(false);
   const [elapsed, setElapsed] = useState(0);
@@ -26,8 +27,14 @@ export function Recorder() {
   useEffect(() => {
     void window.skillRecorder.status().then(setStatus);
     void window.skillRecorder.doctor().then(setDoctor);
+    void window.skillRecorder.narrationStatus().then(setNarrationStatus);
     void refreshCount();
-    return window.skillRecorder.onStatusChanged(setStatus);
+    const offRecorder = window.skillRecorder.onStatusChanged(setStatus);
+    const offNarration = window.skillRecorder.onNarrationStatusChanged(setNarrationStatus);
+    return () => {
+      offRecorder();
+      offNarration();
+    };
   }, [refreshCount]);
 
   // The analyze step happens in the library window, so re-check how many
@@ -66,6 +73,11 @@ export function Recorder() {
 
   const openLibrary = useCallback(() => {
     void window.skillRecorder.openLibrary();
+  }, []);
+
+  const downloadNarrationModel = useCallback(async () => {
+    const res = await window.skillRecorder.downloadNarrationModel();
+    if (!res.ok) window.alert(res.error ?? "Could not download the voice transcription model.");
   }, []);
 
   return (
@@ -128,7 +140,9 @@ export function Recorder() {
                 ? "Listening to your voice"
                 : "Voice off for this recording"
               : narrate
-                ? "Your voice will be included"
+                ? narrationStatus?.model === "ready"
+                  ? "Your voice will be included"
+                  : "Voice saved · transcription needs ~250 MB later"
                 : "Explain out loud (optional)"}
           </span>
         </span>
@@ -237,22 +251,33 @@ export function Recorder() {
         <div className="doctor">
           <Row
             label="window tracking"
-            ok={doctor.activeWindow.ok}
+            status={doctor.activeWindow.ok ? "good" : "bad"}
             note={doctor.activeWindow.ok ? "native" : "addon missing"}
           />
           {doctor.activeSources.some((s) => s.key === "browserUrls") && (
             <Row
               label="browser URLs"
-              ok={doctor.browserUrl.supported}
+              status={doctor.browserUrl.supported ? "good" : "bad"}
               note={doctor.browserUrl.supported ? doctor.browserUrl.kind : "not on this OS"}
             />
           )}
           <Row
             label="ffmpeg"
-            ok={doctor.ffmpeg.ok}
+            status={doctor.ffmpeg.ok ? "good" : "bad"}
             note={doctor.ffmpeg.ok ? doctor.ffmpeg.source : "missing"}
           />
-          <Row label="copilot CLI" ok={doctor.copilotCli.ok} note={doctor.copilotCli.ok ? "found" : "missing"} />
+          <Row
+            label="copilot CLI"
+            status={doctor.copilotCli.ok ? "good" : "bad"}
+            note={doctor.copilotCli.ok ? "found" : "missing"}
+          />
+          {narrationStatus && (
+            <VoiceModelRow
+              status={narrationStatus}
+              recording={recording}
+              onDownload={downloadNarrationModel}
+            />
+          )}
         </div>
       )}
 
@@ -263,12 +288,63 @@ export function Recorder() {
   );
 }
 
-function Row({ label, ok, note }: { label: string; ok: boolean; note: string }) {
+type RowStatus = "good" | "warn" | "bad";
+
+function Row({
+  label,
+  status,
+  note,
+  action,
+}: {
+  label: string;
+  status: RowStatus;
+  note: string;
+  action?: { label: string; disabled?: boolean; onClick: () => void };
+}) {
+  const symbol = status === "good" ? "✓" : status === "warn" ? "!" : "✕";
   return (
     <div className="row">
-      <span className={`badge ${ok ? "good" : "bad"}`}>{ok ? "✓" : "✕"}</span>
+      <span className={`badge ${status}`}>{symbol}</span>
       <span className="row-label">{label}</span>
       <span className="row-note">{note}</span>
+      {action && (
+        <button className="row-action" disabled={action.disabled} onClick={action.onClick}>
+          {action.label}
+        </button>
+      )}
     </div>
+  );
+}
+
+function VoiceModelRow({
+  status,
+  recording,
+  onDownload,
+}: {
+  status: NarrationStatus;
+  recording: boolean;
+  onDownload: () => void;
+}) {
+  if (status.phase === "downloading") {
+    const progress = status.progress == null ? "downloading" : `${status.progress}%`;
+    return <Row label="voice transcription" status="warn" note={progress} />;
+  }
+  if (status.phase === "loading") {
+    return <Row label="voice transcription" status="warn" note="preparing" />;
+  }
+  if (status.model === "ready") {
+    return <Row label="voice transcription" status="good" note="offline" />;
+  }
+  return (
+    <Row
+      label="voice transcription"
+      status="warn"
+      note={status.model === "error" ? "download failed" : "~250 MB"}
+      action={{
+        label: status.model === "error" ? "retry" : "download",
+        disabled: recording,
+        onClick: onDownload,
+      }}
+    />
   );
 }

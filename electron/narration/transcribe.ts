@@ -4,7 +4,7 @@ import { promisify } from "node:util";
 
 import type { NarrationSegment } from "../../common/narration";
 import { createLogger } from "../logger";
-import { getAsrPipeline, narrationModelId } from "./whisper";
+import { narrationModelId, type AsrPipeline } from "./whisper";
 
 const log = createLogger("Narration/transcribe");
 const require = createRequire(import.meta.url);
@@ -35,37 +35,22 @@ export async function transcribeNarration(
   audioPath: string,
   anchorDeltaMs: number,
   durationMs: number,
-): Promise<{ model: string; segments: NarrationSegment[] } | null> {
-  const pipe = await getAsrPipeline();
-  if (!pipe) return null;
-
-  let samples: Float32Array;
-  try {
-    samples = await decodePcm(audioPath);
-  } catch (err) {
-    log.warn("failed to decode narration audio:", err instanceof Error ? err.message : err);
-    return null;
-  }
+  pipe: AsrPipeline,
+): Promise<{ model: string; segments: NarrationSegment[] }> {
+  const samples = await decodePcm(audioPath);
   if (samples.length === 0) {
-    log.warn("narration audio decoded to zero samples");
-    return null;
+    throw new Error("Narration audio decoded to zero samples.");
   }
 
   // Silence detection runs on the same file and only reads the audio, so its
   // intervals line up with the decoded samples and never shift timestamps.
   const silences = await detectSilence(audioPath);
 
-  let result: { text: string; chunks?: Array<{ timestamp: [number, number | null]; text: string }> };
-  try {
-    result = await pipe(samples, {
-      return_timestamps: true,
-      chunk_length_s: 30,
-      stride_length_s: 5,
-    });
-  } catch (err) {
-    log.warn("whisper transcription failed:", err instanceof Error ? err.message : err);
-    return null;
-  }
+  const result = await pipe(samples, {
+    return_timestamps: true,
+    chunk_length_s: 30,
+    stride_length_s: 5,
+  });
 
   const durationSec = durationMs > 0 ? durationMs / 1000 : samples.length / SAMPLE_RATE;
   const raw = result.chunks?.length

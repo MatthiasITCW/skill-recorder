@@ -68,6 +68,8 @@ export const AnalysisSchema = z.object({
   /** Bumped on every (re)analysis; revision 1 is the first pass. */
   revision: z.number().int(),
   createdAt: z.number(),
+  /** Narration file version available when this analysis turn started. */
+  narrationSourceUpdatedAt: z.number().nullable().default(null),
   /** Short 2–5 word label for lists/menus. Empty on analyses saved before titles existed. */
   title: z.string().default(""),
   intent: z.string(),
@@ -97,12 +99,14 @@ export function toAnalysis(
   revision: number,
   submission: AnalysisSubmission,
   feedbackLog: FeedbackEntry[],
+  narrationSourceUpdatedAt: number | null,
 ): Analysis {
   return AnalysisSchema.parse({
     version: 1,
     sessionId,
     revision,
     createdAt: Date.now(),
+    narrationSourceUpdatedAt,
     title: submission.title,
     intent: submission.intent,
     intentConfidence: submission.intentConfidence,

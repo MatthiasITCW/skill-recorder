@@ -4,6 +4,7 @@ import type { Analysis, AnalysisStep } from "../common/analysis";
 import type {
   AnalyzeProgress,
   AutomationBuildProgress,
+  NarrationStatus,
   SessionSummary,
   SkillBuildProgress,
 } from "../common/ipc";
@@ -30,6 +31,7 @@ export function Library() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [narrationStatus, setNarrationStatus] = useState<NarrationStatus | null>(null);
 
   const loadSessions = useCallback(async () => {
     const list = await window.skillRecorder.listSessions();
@@ -42,6 +44,14 @@ export function Library() {
     void loadSessions();
     return window.skillRecorder.onStatusChanged((s) => {
       if (s.state !== "recording") void loadSessions();
+    });
+  }, [loadSessions]);
+
+  useEffect(() => {
+    void window.skillRecorder.narrationStatus().then(setNarrationStatus);
+    return window.skillRecorder.onNarrationStatusChanged((next) => {
+      setNarrationStatus(next);
+      if (next.phase === "idle") void loadSessions();
     });
   }, [loadSessions]);
 
@@ -90,7 +100,12 @@ export function Library() {
       </aside>
       <main className="lib-detail">
         {selected ? (
-          <AnalysisWorkspace key={selected.id} summary={selected} onChanged={loadSessions} />
+          <AnalysisWorkspace
+            key={selected.id}
+            summary={selected}
+            narrationStatus={narrationStatus}
+            onChanged={loadSessions}
+          />
         ) : (
           <div className="detail-empty">
             <span className="eyebrow">No session selected</span>
@@ -180,6 +195,8 @@ function SessionsList({
                   {s.durationMs != null && <span>{formatDur(s.durationMs)}</span>}
                   {s.analysis && <span>{s.analysis.stepCount} steps</span>}
                   {s.hasVideo && <span>video</span>}
+                  {s.hasAudio && !s.hasNarration && <span>voice pending</span>}
+                  {s.hasNarration && <span>voice</span>}
                 </div>
               </button>
               <button
@@ -210,12 +227,30 @@ function SessionsList({
 
 function AnalysisWorkspace({
   summary,
+  narrationStatus,
   onChanged,
 }: {
   summary: SessionSummary;
+  narrationStatus: NarrationStatus | null;
   onChanged: () => void | Promise<void>;
 }) {
   const sessionId = summary.id;
+  const voicePending = summary.hasAudio && !summary.hasNarration;
+  const voiceEmpty = summary.hasNarration && summary.narrationSegmentCount === 0;
+  const voiceBusy =
+    narrationStatus?.activeSessionId === sessionId && narrationStatus.phase !== "idle";
+  const modelBusy =
+    narrationStatus?.phase === "downloading" || narrationStatus?.phase === "loading";
+  const voiceError =
+    narrationStatus?.activeSessionId == null || narrationStatus.activeSessionId === sessionId
+      ? narrationStatus?.error
+      : null;
+  const voiceStale =
+    summary.analysis != null &&
+    (summary.narrationSegmentCount ?? 0) > 0 &&
+    summary.narrationUpdatedAt != null &&
+    (summary.analysis.narrationSourceUpdatedAt == null ||
+      summary.narrationUpdatedAt > summary.analysis.narrationSourceUpdatedAt);
 
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
@@ -224,6 +259,7 @@ function AnalysisWorkspace({
   const [editing, setEditing] = useState(false);
   const [draftTitle, setDraftTitle] = useState("");
   const [draftIntent, setDraftIntent] = useState("");
+  const [confirmReanalysis, setConfirmReanalysis] = useState(false);
   // Directly-editable steps (the source of truth downstream); persisted on a short
   // debounce so typing stays instant. `stepsDirty` gates the persist so seeding from
   // a freshly loaded analysis never writes back.
@@ -298,6 +334,9 @@ function AnalysisWorkspace({
 
   const run = useCallback(async () => {
     canceled.current = false;
+    setEditing(false);
+    setDraftTitle("");
+    setDraftIntent("");
     setAnalyzing(true);
     setError(null);
     setStatusLine("Starting…");
@@ -317,6 +356,13 @@ function AnalysisWorkspace({
     await window.skillRecorder.cancelAnalysis(sessionId);
     setAnalyzing(false);
   }, [sessionId]);
+
+  const transcribeVoice = useCallback(async () => {
+    setError(null);
+    const res = await window.skillRecorder.transcribeNarration(sessionId);
+    if (!res.ok) setError(res.error ?? "Could not transcribe this recording.");
+    await onChanged();
+  }, [sessionId, onChanged]);
 
   const startEdit = useCallback(() => {
     if (!analysis) return;
@@ -394,6 +440,76 @@ function AnalysisWorkspace({
       </div>
 
       <div className="ws-body">
+        {voicePending && (
+          <div className="voice-card">
+            <div className="voice-card-copy">
+              <strong>Voice not transcribed yet</strong>
+              <span>
+                {voiceBusy
+                  ? narrationWorkLabel(narrationStatus)
+                  : "Your audio is saved. Transcription runs locally and can be done later."}
+              </span>
+              {!voiceBusy && narrationStatus?.model !== "ready" && (
+                <span>The first use requires a one-time ~250 MB download.</span>
+              )}
+              {!voiceBusy && voiceError && (
+                <span className="voice-card-error">{voiceError}</span>
+              )}
+            </div>
+            <button
+              className="secondary"
+              disabled={voiceBusy || modelBusy}
+              onClick={() => void transcribeVoice()}
+            >
+              {voiceBusy || modelBusy
+                ? narrationWorkLabel(narrationStatus)
+                : narrationStatus?.model === "ready"
+                  ? "Transcribe voice"
+                  : narrationStatus?.model === "error"
+                    ? "Try again"
+                    : "Download & transcribe"}
+            </button>
+          </div>
+        )}
+
+        {voiceEmpty && (
+          <div className="voice-card quiet">
+            <div className="voice-card-copy">
+              <strong>No speech detected</strong>
+              <span>The saved voice recording was transcribed, but it contained no usable speech.</span>
+            </div>
+          </div>
+        )}
+
+        {voiceStale && !analyzing && (
+          <div className="voice-card">
+            <div className="voice-card-copy">
+              <strong>Voice transcript added after this analysis</strong>
+              <span>Re-analyze to include it. This replaces the current summary and any edits.</span>
+            </div>
+            {confirmReanalysis ? (
+              <div className="voice-card-actions">
+                <button className="linky" onClick={() => setConfirmReanalysis(false)}>
+                  Cancel
+                </button>
+                <button
+                  className="secondary"
+                  onClick={() => {
+                    setConfirmReanalysis(false);
+                    void run();
+                  }}
+                >
+                  Replace analysis
+                </button>
+              </div>
+            ) : (
+              <button className="secondary" onClick={() => setConfirmReanalysis(true)}>
+                Re-analyze with voice
+              </button>
+            )}
+          </div>
+        )}
+
         {!summary.processed && (
           <p className="ws-note">Still processing this recording… try again in a moment.</p>
         )}
@@ -401,6 +517,11 @@ function AnalysisWorkspace({
         {summary.processed && !analysis && !analyzing && (
           <div className="ws-empty">
             <p>See what you did in this recording, step by step.</p>
+            {voicePending && (
+              <p className="voice-analysis-note">
+                Voice is not transcribed yet. Analyzing now will not include it, but your audio will be kept.
+              </p>
+            )}
             <button className="record-cta" onClick={run}>
               Analyze recording
             </button>
@@ -522,6 +643,18 @@ function AnalysisWorkspace({
       )}
     </section>
   );
+}
+
+function narrationWorkLabel(status: NarrationStatus | null): string {
+  if (!status) return "Working…";
+  if (status.phase === "transcribing") return "Transcribing voice…";
+  if (status.phase === "loading") return "Preparing voice model…";
+  if (status.phase === "downloading") {
+    return status.progress == null
+      ? "Downloading voice model…"
+      : `Downloading voice model… ${status.progress}%`;
+  }
+  return "Working…";
 }
 
 /* --- Final stage: target picker + builders -------------------------------- */

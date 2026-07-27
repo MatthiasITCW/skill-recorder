@@ -74,7 +74,10 @@ export function WhatsRecorded({ onClose }: { onClose: () => void }) {
           <p className="sheet-note">Off by default. The Narrate switch is your choice, per recording.</p>
           <ul>
             <li>Your microphone is used only while Narrate is on and a recording is running.</li>
-            <li>The recording is turned into text on this computer, using an offline model.</li>
+            <li>
+              The recording can be turned into text on this computer using an offline model. The
+              first transcription needs a one-time ~250 MB download that you choose when to start.
+            </li>
             <li>Turn Narrate off and your microphone is never touched.</li>
           </ul>
         </section>

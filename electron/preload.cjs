@@ -9,6 +9,10 @@ const IPC = {
   marker: "recorder:marker",
   doctor: "doctor:check",
   statusChanged: "recorder:status-changed",
+  narrationStatus: "narration:status",
+  narrationDownload: "narration:download",
+  narrationTranscribe: "narration:transcribe",
+  narrationStatusChanged: "narration:status-changed",
   analyze: "analyze:start",
   analyzeFeedback: "analyze:feedback",
   getAnalysis: "analyze:get",
@@ -43,6 +47,14 @@ contextBridge.exposeInMainWorld("skillRecorder", {
     const listener = (_event, status) => cb(status);
     ipcRenderer.on(IPC.statusChanged, listener);
     return () => ipcRenderer.removeListener(IPC.statusChanged, listener);
+  },
+  narrationStatus: () => ipcRenderer.invoke(IPC.narrationStatus),
+  downloadNarrationModel: () => ipcRenderer.invoke(IPC.narrationDownload),
+  transcribeNarration: (sessionId) => ipcRenderer.invoke(IPC.narrationTranscribe, sessionId),
+  onNarrationStatusChanged: (cb) => {
+    const listener = (_event, status) => cb(status);
+    ipcRenderer.on(IPC.narrationStatusChanged, listener);
+    return () => ipcRenderer.removeListener(IPC.narrationStatusChanged, listener);
   },
   analyze: (sessionId) => ipcRenderer.invoke(IPC.analyze, sessionId),
   analyzeFeedback: (input) => ipcRenderer.invoke(IPC.analyzeFeedback, input),

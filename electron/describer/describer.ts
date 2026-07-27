@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 import { approveAll, CopilotClient, type CopilotSession } from "@github/copilot-sdk";
@@ -304,6 +304,10 @@ export class Describer {
     prompt: string,
     pendingFeedback?: AnalysisFeedback,
   ): Promise<Analysis> {
+    const narrationFile = path.join(live.sessionDir, "narration.json");
+    const narrationSourceUpdatedAt = existsSync(narrationFile)
+      ? statSync(narrationFile).mtimeMs
+      : null;
     live.holder.submission = undefined;
     this.emit(live.sessionId, "working", "Thinking…");
     try {
@@ -335,7 +339,13 @@ export class Describer {
       ];
     }
     this.emit(live.sessionId, "drafting", "Finalizing analysis…");
-    const analysis = toAnalysis(live.sessionId, live.revision, submission, [...live.feedbackLog]);
+    const analysis = toAnalysis(
+      live.sessionId,
+      live.revision,
+      submission,
+      [...live.feedbackLog],
+      narrationSourceUpdatedAt,
+    );
     this.persist(live.sessionDir, analysis);
     this.emit(live.sessionId, "done", `Analysis ready (revision ${analysis.revision}).`);
     return analysis;

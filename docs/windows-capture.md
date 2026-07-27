@@ -15,7 +15,7 @@ before trusting a Windows build.
 | Browser URLs | UI Automation address bar read (`powershell.exe` host) | Functional, not byte exact | None |
 | Clipboard | Electron clipboard | Full | None |
 | Screen video + frames | `desktopCapturer` + ffmpeg + sharp | Full | Screen capture |
-| Voice narration (opt-in) | hidden-window `getUserMedia` mic + `MediaRecorder`, transcribed offline (Whisper via transformers.js) | Should work, unverified here | Microphone |
+| Voice narration (opt-in) | hidden-window `getUserMedia` mic + `MediaRecorder`, transcribed offline (Whisper via transformers.js) | Verified on Windows 11 ARM64 with the x64 Electron build | Microphone |
 
 Notes:
 
@@ -65,10 +65,11 @@ Run a real recording on Windows and verify each source lands in the session's
 5. **Video.** Confirm a `.webm` is written and `frame.captured` events appear.
 6. **Voice narration.** Turn on the **Narrate** switch before starting, then speak
    a sentence or two during the recording. After Stop, confirm `audio.webm` +
-   `audio.json` are written and, once processing finishes, `narration.json`
-   contains your words with `atMs` offsets. First run downloads the ~250 MB
-   Whisper model once (needs network); later runs are offline. On Windows the mic
-   grant is requested by the OS on first use.
+   `audio.json` are written. If the model is not installed, use **Download &
+   transcribe** in Sessions (or the actionable HUD readiness row) to approve the
+   one-time ~250 MB Whisper download. Confirm `narration.json` then contains your
+   words with `atMs` offsets. Later runs are offline. On Windows the mic grant is
+   requested by the OS on first use.
 7. **Stop.** The recording should show up in the library as `recorded`, and
    analysis should produce a coherent intent + ordered steps.
 
@@ -82,8 +83,9 @@ unavailable on this platform", or a reduced-capture notice).
 (nsis x64). Native modules (`get-windows`, `sharp`, `@img/*`, `ffmpeg-static`,
 `@huggingface/transformers`, `onnxruntime-node`) are listed under `asarUnpack` so
 their binaries load from disk rather than from inside the asar archive. The
-Whisper model itself is not bundled; it downloads once to the app's user-data
-`models` folder on first narrated session.
+Whisper model itself is not bundled. It downloads to the app's user-data
+`models` folder only after the user approves the one-time ~250 MB download from
+the HUD or Sessions; recording and core session processing do not wait for it.
 
 Build the Windows installer on Windows (or a Windows CI runner) so the native
 binaries for `win32-x64` are present:
@@ -103,12 +105,15 @@ binaries and is not supported here.
   approach is tracked in issue #7.
 - Semantic UI events (focus/invoke/value via UI Automation) are not implemented
   on either platform yet.
-- Voice narration is verified end to end on macOS (mic capture -> `audio.webm` ->
-  offline Whisper transcription -> `narration.json`). The Windows mic-capture path
-  is written the same way but has not been run on a real Windows machine; verify it
-  with step 6 of the checklist above. `onnxruntime-node` ships prebuilt binaries for
-  `win32-x64`/`win32-arm64`, so no compiler is needed there.
-- The Windows paths above are validated by typecheck, a PowerShell parse check of
-  the UIA script, and a `win32` describer eval (`evals/scenarios/windows-deploy.ts`).
-  Live capture must still be verified on a real Windows machine using the checklist
-  above.
+- Voice narration is verified end to end on macOS and Windows 11 ARM64 running the
+  supported x64 Electron build (mic capture -> `audio.webm` -> offline Whisper
+  transcription -> `narration.json`). `onnxruntime-node` ships prebuilt binaries
+  for `win32-x64`/`win32-arm64`, so no compiler is needed there.
+- A live smoke test on Windows 11 ARM64 covered the supported x64 Electron build,
+  `get-windows` native-addon loading, ffmpeg-backed video and frames, microphone
+  audio persistence, explicit Whisper download and offline transcription, and
+  Copilot analysis. Browser URL and clipboard capture were not re-verified in
+  that test; use the checklist above when validating those sources.
+- The Windows paths are also validated by typecheck, a PowerShell parse check of
+  the UIA script, and a `win32` describer eval
+  (`evals/scenarios/windows-deploy.ts`).

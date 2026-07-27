@@ -38,7 +38,8 @@ activity" panel shows exactly what's collected:
   meaningful moments to disambiguate the steps.
 - **Clipboard** — copy/paste content that ties steps together.
 - **Narration** *(optional)* — turn on **Narrate** to explain out loud; audio is
-  transcribed **on-device** (Whisper via transformers.js) and never leaves your machine.
+  saved immediately and can be transcribed **on-device** (Whisper via transformers.js).
+  The first transcription uses an explicit, one-time ~250 MB model download.
 
 ## Requirements
 

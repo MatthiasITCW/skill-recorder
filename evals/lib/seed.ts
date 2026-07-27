@@ -27,7 +27,7 @@ export function seedScenario(root: string, scenario: SeedInput): void {
   const dir = path.join(root, scenario.id);
   mkdirSync(dir, { recursive: true });
   const analysis: Analysis = {
-    ...toAnalysis(scenario.id, 1, scenario.analysis, []),
+    ...toAnalysis(scenario.id, 1, scenario.analysis, [], null),
     approved: true,
     approvedAt: Date.now(),
   };

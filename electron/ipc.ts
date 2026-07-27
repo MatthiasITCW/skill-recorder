@@ -21,6 +21,7 @@ import { AutomationBuilder, loadPersistedAutomation } from "./automationbuilder/
 import { Describer, loadPersistedAnalysis } from "./describer/describer";
 import { runDoctor } from "./doctor";
 import { createLogger } from "./logger";
+import type { NarrationManager } from "./narration/manager";
 import type { RecorderController } from "./recorder/controller";
 import { isValidSessionId } from "./recorder/session-store";
 import { deleteSession, listSessions } from "./sessions";
@@ -34,12 +35,18 @@ export function registerIpc(
   describer: Describer,
   builder: SkillBuilder,
   automationBuilder: AutomationBuilder,
+  narration: NarrationManager,
 ): void {
   ipcMain.handle(IPC.start, (_event, options?: StartOptions) => recorder.start(options));
   ipcMain.handle(IPC.stop, () => recorder.stop());
   ipcMain.handle(IPC.status, () => recorder.status());
   ipcMain.handle(IPC.marker, (_event, note: string) => recorder.marker(note));
   ipcMain.handle(IPC.doctor, () => runDoctor());
+  ipcMain.handle(IPC.narrationStatus, () => narration.status());
+  ipcMain.handle(IPC.narrationDownload, () => narration.downloadModel());
+  ipcMain.handle(IPC.narrationTranscribe, (_event, sessionId: string) =>
+    narration.transcribeSession(sessionId),
+  );
 
   const resolveSessionId = (sessionId?: string): string | null => {
     if (sessionId) return sessionId;
@@ -113,6 +120,9 @@ export function registerIpc(
     }
     if (describer.isAnalyzing(sessionId)) {
       return { ok: false, error: "This recording is being analyzed. Cancel that first, then delete." };
+    }
+    if (narration.isBusyWith(sessionId)) {
+      return { ok: false, error: "This recording is being transcribed. Wait for that to finish before deleting it." };
     }
     if (builder.isBuilding(sessionId)) {
       return { ok: false, error: "This recording is being turned into a skill. Cancel that first, then delete." };
@@ -220,4 +230,3 @@ export function registerIpc(
     return { ok: true };
   });
 }
-

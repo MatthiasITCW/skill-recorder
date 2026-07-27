@@ -1,0 +1,37 @@
+name: Non-Windows
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - macos-latest
+          - ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+      - name: Verify optional window provider
+        run: >-
+          node --input-type=module -e
+          "const m = await import('get-windows');
+          if (typeof m.activeWindow !== 'function')
+          throw new Error('get-windows activeWindow export is unavailable')"
+      - run: npm test
+      - run: npm run build

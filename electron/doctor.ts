@@ -1,7 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
-import path from "node:path";
 
 import { CAPTURE_SOURCES, FULL_CAPTURE } from "../common/config";
 import type {
@@ -10,7 +9,6 @@ import type {
   CopilotInfo,
   DoctorReport,
   DoctorSource,
-  FfmpegInfo,
 } from "../common/ipc";
 import { browserUrlProviderKind } from "./collectors/url-provider";
 import { sessionsRoot } from "./recorder/session-store";
@@ -29,43 +27,27 @@ function which(cmd: string): string | null {
   }
 }
 
-function checkFfmpeg(): FfmpegInfo {
-  let bundled: string | null = null;
-  try {
-    // ffmpeg-static's default export is the absolute path to a bundled binary.
-    bundled = require("ffmpeg-static") as string;
-  } catch {
-    bundled = null;
-  }
-  if (bundled && existsSync(bundled)) return { ok: true, path: bundled, source: "bundled" };
-  const sys = which("ffmpeg");
-  if (sys) return { ok: true, path: sys, source: "system" };
-  return { ok: false, path: null, source: "missing" };
-}
-
 function checkCopilot(): CopilotInfo {
   const p = which("copilot");
   return { ok: Boolean(p), path: p };
 }
 
-/**
- * Verify the get-windows native addon is actually present for this platform.
- * get-windows silently falls back to no-op stubs when its prebuilt `.node` is
- * missing (e.g. a packaging miss), which would make app-switch tracking die
- * with no error — so we resolve the exact binding path and check it exists.
- */
 function checkActiveWindow(): ActiveWindowInfo {
   try {
-    const gwIndex = require.resolve("get-windows");
-    // Resolve node-pre-gyp from get-windows's own scope so we find the exact copy
-    // it uses, whether the dependency is hoisted or nested.
-    const gwRequire = createRequire(gwIndex);
-    const preGyp = gwRequire("@mapbox/node-pre-gyp") as { find(pkg: string): string };
-    const pkgJson = path.join(path.dirname(gwIndex), "package.json");
-    const bindingPath = preGyp.find(pkgJson);
-    return { ok: existsSync(bindingPath), bindingPath };
+    if (process.platform === "win32") {
+      const modulePath = require.resolve("koffi");
+      require("koffi");
+      return { ok: true, provider: "koffi", path: modulePath };
+    }
+    const modulePath = require.resolve("get-windows");
+    return { ok: existsSync(modulePath), provider: "get-windows", path: modulePath };
   } catch (err) {
-    return { ok: false, bindingPath: null, error: err instanceof Error ? err.message : String(err) };
+    return {
+      ok: false,
+      provider: "missing",
+      path: null,
+      error: err instanceof Error ? err.message : String(err),
+    };
   }
 }
 
@@ -94,7 +76,6 @@ export function runDoctor(): DoctorReport {
 
   return {
     platform: process.platform,
-    ffmpeg: checkFfmpeg(),
     copilotCli: checkCopilot(),
     activeWindow: checkActiveWindow(),
     browserUrl,

@@ -4,6 +4,7 @@
 // chunks back to the main process, which writes them to disk. Channel names
 // mirror electron/audio/recorder.ts.
 const { ipcRenderer } = require("electron");
+const { readFile } = require("node:fs/promises");
 
 /** @type {MediaRecorder | null} */
 let recorder = null;
@@ -82,5 +83,66 @@ ipcRenderer.on("audio:stop", () => {
   } catch (err) {
     ipcRenderer.send("audio:error", err instanceof Error ? err.message : String(err));
     ipcRenderer.send("audio:stopped");
+  }
+});
+
+ipcRenderer.on("audio:decode", async (_event, opts) => {
+  const { id, audioPath, sampleRate, chunkSamples } = opts || {};
+  let context = null;
+  try {
+    if (
+      typeof id !== "string" ||
+      typeof audioPath !== "string" ||
+      !Number.isSafeInteger(sampleRate) ||
+      !Number.isSafeInteger(chunkSamples)
+    ) {
+      throw new Error("Invalid audio decode request.");
+    }
+    const encoded = await readFile(audioPath);
+    const input = encoded.buffer.slice(
+      encoded.byteOffset,
+      encoded.byteOffset + encoded.byteLength,
+    );
+    const AudioContextClass = globalThis.AudioContext || globalThis.webkitAudioContext;
+    if (!AudioContextClass) throw new Error("Chromium AudioContext is unavailable.");
+    // Let Chromium's audio pipeline perform the band-limited resample. Linear
+    // interpolation here would alias frequencies above the 8 kHz Nyquist limit.
+    context = new AudioContextClass({ sampleRate });
+    const decoded = await context.decodeAudioData(input);
+    if (decoded.sampleRate !== sampleRate) {
+      throw new Error(
+        `Chromium decoded narration at ${decoded.sampleRate} Hz instead of ${sampleRate} Hz.`,
+      );
+    }
+    const outputLength = decoded.length;
+    if (outputLength <= 0) throw new Error("Narration audio decoded to zero samples.");
+
+    const channels = Array.from(
+      { length: decoded.numberOfChannels },
+      (_unused, index) => decoded.getChannelData(index),
+    );
+    ipcRenderer.send("audio:decode-meta", id, outputLength);
+    for (let offset = 0; offset < outputLength; offset += chunkSamples) {
+      const length = Math.min(chunkSamples, outputLength - offset);
+      const output = new Float32Array(length);
+      for (let index = 0; index < length; index++) {
+        let value = 0;
+        for (const channel of channels) {
+          value += channel[offset + index];
+        }
+        output[index] = value / channels.length;
+      }
+      ipcRenderer.send("audio:decode-chunk", id, offset, output);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    ipcRenderer.send("audio:decode-done", id);
+  } catch (err) {
+    ipcRenderer.send(
+      "audio:decode-error",
+      id,
+      err instanceof Error ? err.message : String(err),
+    );
+  } finally {
+    if (context) await context.close().catch(() => undefined);
   }
 });

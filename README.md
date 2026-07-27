@@ -32,10 +32,11 @@ can repeat.
 Everything is captured and processed **locally**. The in-app "Records your screen and
 activity" panel shows exactly what's collected:
 
-- **Window tracking** — active-app / window switches (native, via `get-windows`).
+- **Window tracking** — active-app / window switches (Koffi/Win32 on Windows,
+  `get-windows` elsewhere).
 - **Browser URLs** — the page you're on (macOS, via AppleScript).
-- **Screen video** — recorded with a bundled `ffmpeg`; frames are pulled only at
-  meaningful moments to disambiguate the steps.
+- **Screen video** — recorded by Chromium; low-rate snapshots are captured alongside
+  it and retained only when the screen changes or a heartbeat is due.
 - **Clipboard** — copy/paste content that ties steps together.
 - **Narration** *(optional)* — turn on **Narrate** to explain out loud; audio is
   saved immediately and can be transcribed **on-device** (Whisper via transformers.js).
@@ -43,12 +44,14 @@ activity" panel shows exactly what's collected:
 
 ## Requirements
 
-- **macOS** (primary target). Core recording is also validated on Windows 11; see
+- **macOS** (primary target). Windows 11 x64 and ARM64 are also supported; see
   [`WINDOWS-VALIDATION.md`](WINDOWS-VALIDATION.md).
 - **Node.js 22+**.
 - **GitHub Copilot CLI** installed and signed in — the `copilot` command must be on
   your `PATH`. This powers the analysis and the skill/automation builders.
-- `ffmpeg` is **bundled** — no separate install needed.
+- No system media tools are required. Chromium handles screen snapshots and narration
+  audio decoding. A system `ffmpeg` is used only when opening a recording created by
+  an older Skill Recorder version that has no snapshot manifest.
 
 On first launch macOS will prompt for **Screen Recording** (required) and, if you use
 Narrate, **Microphone** permission.
@@ -71,7 +74,9 @@ Other useful scripts:
 ```bash
 npm run typecheck   # tsc --noEmit
 npm run build       # typecheck + production build (dist/ + dist-electron/)
-npm run dist        # build a distributable via electron-builder (dmg/zip on macOS)
+npm run dist        # build a non-Windows distributable via electron-builder
+npm run dist:win:x64    # requires native Windows x64
+npm run dist:win:arm64  # requires native Windows ARM64
 npm start           # run the last build with `electron .`
 ```
 

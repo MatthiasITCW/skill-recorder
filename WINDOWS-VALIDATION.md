@@ -1,92 +1,99 @@
-# Windows Validation Report
+# Windows validation
 
-**Tested on:** Windows 11, Node 22, Electron 43  
-**Date:** 2025-07-25
+Skill Recorder supports native Windows 11 builds for both x64 and ARM64. The
+architecture gate lives in [`.github/workflows/windows.yml`](.github/workflows/windows.yml)
+and runs on GitHub's `windows-latest` and native `windows-11-arm` images.
 
-## Summary
+## Architecture-sensitive components
 
-The skill-recorder **works on Windows** for core recording. Install, typecheck, build, and the recording pipeline all pass. The main gap is the AI describer (Copilot SDK server crashes at launch) and the absence of video capture (likely a Screen Recording permission / `desktopCapturer` sourcing issue in the headless test context — requires manual re-test with a visible desktop).
+| Component | Windows x64 | Windows ARM64 | Notes |
+|---|---:|---:|---|
+| Electron 43 | Yes | Yes | Official Electron archives |
+| Koffi / foreground-window FFI | Yes | Yes | Prebuilt N-API packages; no compiler |
+| Sharp / libvips | Yes | Yes | `@img/sharp-win32-*` packages |
+| ONNX Runtime | Yes | Yes | Both payloads ship in `onnxruntime-node` |
+| GitHub Copilot CLI | Yes | Yes | `@github/copilot-win32-*` packages |
+| TypeScript, Rolldown, Lightning CSS | Yes | Yes | Native development packages exist for both |
+| Standalone FFmpeg / `ffmpeg-static` | No | No | Chromium replaced all current media uses |
+| Electron `ffmpeg.dll` codec library | Yes | Yes | LGPL-2.1+; standard Electron component and notices |
 
----
+`get-windows` remains an optional dependency for macOS/Linux. Windows uses Koffi
+to call `user32`, `dwmapi`, and `kernel32` directly, so a missing Windows
+`get-windows` prebuild cannot break installation or runtime capture.
 
-## ✅ Passing
+## Why native ARM64 installation now works
 
-| Area | Status | Notes |
-|------|--------|-------|
-| `npm install` | ✅ | All native modules (sharp, get-windows, ffmpeg-static) install correctly |
-| `tsc --noEmit` | ✅ | Zero type errors |
-| `vite build` | ✅ | Client + electron main both bundle |
-| App launch | ✅ | Electron window opens, tray created, global shortcut registered |
-| `get-windows` | ✅ | Active window polling works (app names, PIDs, paths, bounds all captured) |
-| Clipboard collector | ✅ | Detects clipboard changes, hashes + previews correctly |
-| Session store | ✅ | Creates `%APPDATA%/skill-recorder/sessions/<id>/` with correct files |
-| Event stream | ✅ | `events.jsonl` written with well-formed JSON lines |
-| Pipeline (bundle + description) | ✅ | `bundle.json` and `description.md` generated post-stop |
-| ffmpeg-static | ✅ | Binary exists at `node_modules/ffmpeg-static/ffmpeg.exe`, runs `ffmpeg -version` |
-| Path handling | ✅ | All `path.join` usage is OS-agnostic; no hardcoded `/` separators found |
-| Terminal hooks (pwsh) | ➖ | Removed after this report. The always-on shell hook was dropped; a safer recorded-terminal (PTY) approach is tracked in #7 |
+The previous install blocker was `ffmpeg-static`, whose postinstall script had no
+Windows ARM64 binary. It has been removed from `package.json`, the lockfile,
+Vite externals, electron-builder unpack rules, and packaged output.
 
----
+Screen recording still uses Chromium's VP8/VP9 `MediaRecorder`. In parallel, the
+capture renderer reads the desktop track, deduplicates 1 fps snapshots, and writes
+a heartbeat at least every five seconds. Post-processing selects, crops, and
+deduplicates those JPEGs without decoding the WebM.
 
-## ⚠️ Issues Found
+Narration no longer shells out to FFmpeg either. A hidden Chromium renderer
+decodes Opus/WebM with `AudioContext`, downmixes/resamples to 16 kHz mono, and the
+main process performs silence detection before Whisper transcription.
 
-### 1. Copilot SDK describer fails to start (BLOCKING for AI analysis)
+## Automated gate
 
-**Symptom:** `[IPC] analyze failed: CLI server exited unexpectedly with code 0`  
-**Root cause:** `@github/copilot-sdk` `CopilotClient.start()` spawns a child server process that exits immediately. The `copilot` CLI is not installed on this machine (`where copilot` → not found).  
-**Impact:** The AI-powered session analysis (intent extraction, step refinement, feedback loop) is completely unavailable.  
-**Fix:** Install the GitHub Copilot CLI (`copilot`) and sign in. The doctor UI already surfaces this requirement — no code change needed, just a prerequisite.
+For each Windows architecture, CI:
 
-### 2. No video captured during test recording
+1. Installs native Node 24 and runs `npm ci`.
+2. Loads Sharp, ONNX Runtime, and Koffi.
+3. Runs unit tests and the production build.
+4. Builds the architecture-specific NSIS installer.
+5. Verifies the packaged PE machine type and the Sharp, ONNX, Koffi, and Copilot
+   payload architecture.
+6. Inspects loose and `app.asar` paths, fails if `ffmpeg-static` or a standalone
+   FFmpeg executable appears, and verifies Electron's codec DLL and license notices.
 
-**Symptom:** Session directory has no `video.webm` or `video.json`. The `frames/` directory is empty.  
-**Likely cause:** `desktopCapturer.getSources({ types: ["screen"] })` may return an empty array when running without a visible desktop session, or Screen Recording permission equivalent is missing. In normal interactive use this should work — needs confirmation in a full desktop session.  
-**Impact:** Frame extraction and visual correlation are skipped. The event-only pipeline still produces a valid bundle.  
-**Fix:** No code change needed — this is expected degradation. The `VideoRecorder.start()` already handles this gracefully (line 88-90: logs "no screen source available; skipping video").
+Release publication is additionally gated on attaching the pinned LGPL source
+and relinking materials listed in [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md).
 
-### 3. URL provider returns `null` on Windows — ✅ FIXED
+Local equivalents:
 
-**Symptom:** No `browser.url` events emitted even when Edge is frontmost.  
-**Root cause:** `createUrlProvider()` returned `null` for non-darwin platforms.  
-**Fix:** Implemented `WindowsUrlProvider` using a persistent PowerShell sidecar with Windows UI Automation. Reads the address bar of Chromium browsers via `Chrome_WidgetWin_1` UIA tree traversal. ~70ms response time per query.  
-**Verified:** 4 browser.url events captured during a test recording (Bing searches + site navigation).
+```powershell
+npm ci
+npm test
+npm run build
+npm run dist:win:arm64  # on native Windows ARM64
+node scripts/verify-windows-package.mjs arm64
+```
 
-### 4. Window titles are empty strings at `basic` capture level
+Use `dist:win:x64` and `x64` for the x64 package. Building each installer on its
+native runner ensures npm selects the correct optional native packages. The package
+scripts reject cross-architecture builds instead of producing an installer containing
+host-architecture Koffi, Sharp, or Copilot binaries.
 
-**Symptom:** All `app.activate` events show `"title": ""`.  
-**Root cause:** This is **by design** — `basic` level sets `windowTitles: false` (confirmed in `common/config.ts`). The `ActiveWindowCollector` respects this and passes empty titles.  
-**Impact:** None — working as intended. Titles appear at `standard` or `full` levels.  
-**Not a bug.**
+## Manual Windows ARM64 smoke test
 
----
+Automated packaging cannot validate desktop permissions or real foreground apps.
+Before a release, run this checklist on a physical Windows 11 ARM64 machine:
 
-## 🔍 Code Review: Windows-Specific Considerations
+1. Confirm `node -p "process.arch"` and the running Electron process both report
+   `arm64`.
+2. Start a two-minute recording, leave the screen static for at least 15 seconds,
+   then switch among a Win32 app, Settings, a browser, and an elevated app.
+3. Confirm `app.activate` records the owning process (not
+   `ApplicationFrameHost.exe` for Settings) and does not crash on the elevated app.
+4. Confirm `video.webm`, `video-frames.json`, periodic files under
+   `video-frames/`, and retained JPEGs under `frames/`.
+5. Request cropped frames from the Sessions analysis and verify exact crop
+   dimensions and readable text.
+6. Record narration, transcribe it, and confirm timestamped segments without a
+   system FFmpeg installation.
+7. Open a pre-change recording. With system FFmpeg installed, legacy frame
+   extraction should work; without it, the event-only analysis must still work
+   and log one actionable compatibility warning.
 
-### Things that already work correctly
+## Known limitations
 
-1. **`doctor.ts`** — uses `where` (Windows) vs `which` (Unix) for binary detection ✅
-2. **`terminal-hooks.ts`** — _(removed after this report; terminal capture dropped, see #7)_ included a PowerShell hook (`PWSH_HOOK`) alongside zsh/bash
-3. **`session-store.ts`** — uses `path.join()` everywhere, no hardcoded separators ✅
-4. **`vite.config.ts`** — uses `path.join()` for all asset copying ✅
-5. **`video/recorder.ts`** — uses `path.join()` for preload and capture.html paths ✅
-6. **Session ID validation** — regex `[A-Za-z0-9._-]` is safe on Windows filesystems ✅
-7. **`ffmpeg-static`** — ships platform-specific binary (`ffmpeg.exe` on Windows) ✅
-8. **`sharp`** — has Windows native bindings, installed and loadable ✅
-
-### Potential issues for production/packaging
-
-| Issue | File | Detail |
-|-------|------|--------|
-| `electron-builder` packaging | `package.json` | Untested — `npm run dist` was not run. Native modules (sharp, ffmpeg-static, get-windows) may need special `asarUnpack` config for Windows `.exe`/`.dll` files |
-| `get-windows` binary | `node_modules/get-windows` | Ships a Windows binary; needs to survive asar packing or be unpacked |
-| Long path risk | `session-store.ts` | `%APPDATA%` paths can be deep; session dirs with many nested frames could exceed 260-char limit on older Windows builds without long path support |
-
----
-
-## Recommendations
-
-1. ~~**Install Copilot CLI**~~ to unblock the describer — no code changes needed.
-2. ~~**Test video capture**~~ — ✅ works in full interactive desktop session.
-3. ~~**Implement Windows URL provider**~~ — ✅ Done (UI Automation sidecar).
-4. **Test `npm run dist`** (electron-builder) to verify native module packaging with `asarUnpack`.
-5. **Consider enabling long paths** in the app manifest or documenting the requirement for Windows users.
+- Browser URL capture still uses the existing Windows PowerShell UI Automation
+  sidecar. Core app/window tracking does not depend on PowerShell.
+- Snapshot information is capped by the intentional 1 fps desktop capture rate.
+  Asking for a higher sampling density cannot create additional visual detail.
+- A standalone system FFmpeg is optional and legacy-only; it is never downloaded,
+  bundled, or required for new recordings. Electron's standard LGPL codec DLL
+  remains part of the Chromium runtime.

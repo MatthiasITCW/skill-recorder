@@ -2,6 +2,28 @@
  *  optimization loop (correlation heuristic or the describer asking for more). */
 export type FrameSource = "event" | "scene" | "probe";
 
+export const CAPTURED_FRAME_MANIFEST_VERSION = 1;
+
+/** One low-rate screen snapshot captured alongside the WebM recording. */
+export interface CapturedVideoFrame {
+  /** Path relative to the session directory. */
+  file: string;
+  /** Wall-clock epoch derived from the recorder's monotonic start anchor. */
+  tMs: number;
+  /** Monotonic offset from MediaRecorder start. */
+  offsetMs: number;
+  width: number;
+  height: number;
+}
+
+/** Versioned source-frame index written by the video recorder. */
+export interface CapturedFrameManifest {
+  version: typeof CAPTURED_FRAME_MANIFEST_VERSION;
+  format: "jpeg";
+  heartbeatMs: number;
+  frames: CapturedVideoFrame[];
+}
+
 export interface FrameRecord {
   /** Filename within the session's `frames/` directory. */
   file: string;

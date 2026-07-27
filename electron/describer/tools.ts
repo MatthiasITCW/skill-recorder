@@ -187,13 +187,13 @@ export function createDescriberTools(ctx: ToolContext): Tool[] {
   const getFrames: Tool = {
     name: "get_frames",
     description:
-      "Sample and VIEW screen frames within a time window [fromMs, toMs] (atMs, ms since recording start). Densely re-samples the window if needed (optional `fps`, default 6) and returns the frames inline as images so you can see the screen. Optional `crop` {x,y,w,h} zooms a region. Use only where events are ambiguous.",
+      "Sample and VIEW the available 1 fps screen snapshots within a time window [fromMs, toMs] (atMs, ms since recording start) and return them inline as images. Optional `fps` can reduce sampling density but cannot add detail beyond the 1 fps capture. Optional `crop` {x,y,w,h} zooms a region. Use only where events are ambiguous.",
     parameters: {
       type: "object",
       properties: {
         fromMs: { type: "number", description: "Window start (atMs)." },
         toMs: { type: "number", description: "Window end (atMs)." },
-        fps: { type: "number", description: "Sampling density (frames/sec). Default 6." },
+        fps: { type: "number", description: "Sampling density up to the 1 fps source rate. Default 1." },
         crop: {
           type: "object",
           properties: {

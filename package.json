@@ -107,10 +107,13 @@
       "target": "nsis",
       "artifactName": "${productName}-${version}-windows-${arch}.${ext}"
     },
+    "compression": "normal",
     "nsis": {
       "oneClick": false,
       "perMachine": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "installerSidebar": null,
+      "include": "build/installer.nsh"
     }
   }
 }

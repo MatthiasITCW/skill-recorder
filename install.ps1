@@ -22,6 +22,9 @@
     SKILL_RECORDER_REPO          owner/repo             (default: adilei/skill-recorder)
     SKILL_RECORDER_REF           branch / tag / commit  (default: master)
     SKILL_RECORDER_NO_RUN        set to install & build only, without launching
+    SKILL_RECORDER_DETACHED      set to run the app detached (survives the window
+                                 closing) and write rolling logs to <home>\logs
+    SKILL_RECORDER_LOG_KEEP      how many detached log files to keep (default: 5)
     SKILL_RECORDER_NODE_VERSION  Node to fetch when missing (default: latest-v22.x)
     SKILL_RECORDER_NODE_MIRROR   Node dist mirror       (default: https://nodejs.org/dist)
 #>
@@ -211,4 +214,28 @@ if ($env:SKILL_RECORDER_NO_RUN) {
 }
 
 Info "Launching Skill Recorder…"
+
+if ($env:SKILL_RECORDER_DETACHED) {
+  # Detached: keep running after this window closes, and (since there's no
+  # console to watch) capture output to a rolling, capped set of log files.
+  $logDir = Join-Path $InstallDir 'logs'
+  $keep = if ($env:SKILL_RECORDER_LOG_KEEP -match '^\d+$') { [int]$env:SKILL_RECORDER_LOG_KEEP } else { 5 }
+  if ($keep -lt 1) { $keep = 1 }
+  New-Item -ItemType Directory -Force -Path $logDir | Out-Null
+  # Rotate by launch: keep the newest ($keep-1) logs so that, once we add the
+  # one below, at most $keep remain.
+  Get-ChildItem -LiteralPath $logDir -Filter 'skill-recorder-*.log' -ErrorAction SilentlyContinue |
+    Sort-Object LastWriteTime -Descending | Select-Object -Skip ($keep - 1) |
+    Remove-Item -Force -ErrorAction SilentlyContinue
+  $logFile = Join-Path $logDir ("skill-recorder-" + (Get-Date -Format 'yyyyMMdd-HHmmss') + ".log")
+  # Let cmd.exe own the redirection so stdout+stderr share one file; Start-Process
+  # launches it independently so the app outlives this PowerShell session.
+  $proc = Start-Process -FilePath $env:ComSpec `
+    -ArgumentList "/c npm start > `"$logFile`" 2>&1" `
+    -WorkingDirectory $InstallDir -WindowStyle Hidden -PassThru
+  Info "Running in the background (PID $($proc.Id)). It will keep running after this window closes."
+  Info "Logs: $logFile"
+  return
+}
+
 & npm start; Assert-Ok 'npm start'

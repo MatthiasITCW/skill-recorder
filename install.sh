@@ -24,6 +24,9 @@
 #   SKILL_RECORDER_REPO          owner/repo              (default: adilei/skill-recorder)
 #   SKILL_RECORDER_REF           branch / tag / commit   (default: master)
 #   SKILL_RECORDER_NO_RUN        set to install & build only, without launching
+#   SKILL_RECORDER_DETACHED      set to run the app detached (survives terminal
+#                                close) and write rolling logs to <home>/logs
+#   SKILL_RECORDER_LOG_KEEP      how many detached log files to keep (default: 5)
 #   SKILL_RECORDER_NODE_VERSION  Node to fetch when missing (default: latest-v22.x)
 #   SKILL_RECORDER_NODE_MIRROR   Node dist mirror        (default: https://nodejs.org/dist)
 #
@@ -214,4 +217,28 @@ if [ -n "${SKILL_RECORDER_NO_RUN:-}" ]; then
 fi
 
 info "Launching Skill Recorder…"
+
+if [ -n "${SKILL_RECORDER_DETACHED:-}" ]; then
+  # Detached: keep running after this terminal closes, and (since there's no
+  # terminal to watch) capture output to a rolling, capped set of log files.
+  log_dir="$INSTALL_DIR/logs"
+  keep="${SKILL_RECORDER_LOG_KEEP:-5}"
+  case "$keep" in ''|*[!0-9]*) keep=5 ;; esac
+  [ "$keep" -lt 1 ] && keep=1
+  mkdir -p "$log_dir"
+  # Rotate by launch: keep the newest (keep-1) logs so that, once we add the
+  # one below, at most $keep remain. `ls -t` lists newest first; `tail` selects
+  # the ones past the cap for deletion.
+  { ls -1t "$log_dir"/skill-recorder-*.log 2>/dev/null || true; } | tail -n +"$keep" | while IFS= read -r old; do
+    rm -f "$old"
+  done
+  log_file="$log_dir/skill-recorder-$(date +%Y%m%d-%H%M%S).log"
+  # </dev/null + nohup + disown fully detach from the (possibly piped) terminal.
+  nohup npm start </dev/null >"$log_file" 2>&1 &
+  disown 2>/dev/null || true
+  info "Running in the background (PID $!). It will keep running after this terminal closes."
+  info "Logs: $log_file"
+  exit 0
+fi
+
 exec npm start

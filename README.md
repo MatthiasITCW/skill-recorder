@@ -72,6 +72,8 @@ Prefix either command with any of these:
 | `SKILL_RECORDER_HOME` | `~/.skill-recorder` | where the app is installed |
 | `SKILL_RECORDER_REF` | `master` | branch, tag, or commit to install |
 | `SKILL_RECORDER_NO_RUN` | *(unset)* | set up without launching |
+| `SKILL_RECORDER_DETACHED` | *(unset)* | run detached (keeps running after the terminal closes) and write rolling logs to `<home>/logs` |
+| `SKILL_RECORDER_LOG_KEEP` | `5` | how many detached log files to keep |
 | `SKILL_RECORDER_NODE_VERSION` | `latest-v22.x` | Node version to fetch when none is installed |
 | `SKILL_RECORDER_NODE_MIRROR` | `https://nodejs.org/dist` | mirror for the Node download |
 

@@ -13,7 +13,7 @@ import {
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 
 /** Compact recording HUD — fixed footprint, never resizes. */
-const RECORDER = { width: 400, height: 600 };
+const RECORDER = { width: 400, height: 534 };
 /** Library sizing bounds; actual width adapts to the space beside the recorder. */
 const LIBRARY = { desiredWidth: 1140, minWidth: 720, floorWidth: 520, maxHeight: 820 };
 const MARGIN = 12;

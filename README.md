@@ -45,14 +45,16 @@ version and only does work when something actually changed.
 curl -fsSL https://raw.githubusercontent.com/adilei/skill-recorder/master/install.sh | bash
 ```
 
-**Windows (PowerShell)**
+**Windows** — paste into any terminal (Command Prompt *or* PowerShell)
 
 ```powershell
-irm https://raw.githubusercontent.com/adilei/skill-recorder/master/install.ps1 | iex
+powershell -c "irm https://raw.githubusercontent.com/adilei/skill-recorder/master/install.ps1 | iex"
 ```
 
-You'll need **Node.js 22+** and the **GitHub Copilot CLI** signed in first (see
-[Requirements](#requirements)). On first launch, macOS asks for **Screen Recording**
+No prerequisites to chase: if you don't already have **Node.js 22+**, the installer quietly
+downloads a private copy just for Skill Recorder (nothing is installed system-wide, no
+executables are built). You'll want the **GitHub Copilot CLI** signed in for the analysis
+step (see [Requirements](#requirements)). On first launch, macOS asks for **Screen Recording**
 permission — grant it and you're ready to record.
 
 > ⚠️ **Keep secrets out of your recordings.** Don't record, type, paste, or narrate
@@ -70,6 +72,8 @@ Prefix either command with any of these:
 | `SKILL_RECORDER_HOME` | `~/.skill-recorder` | where the app is installed |
 | `SKILL_RECORDER_REF` | `master` | branch, tag, or commit to install |
 | `SKILL_RECORDER_NO_RUN` | *(unset)* | set up without launching |
+| `SKILL_RECORDER_NODE_VERSION` | `latest-v22.x` | Node version to fetch when none is installed |
+| `SKILL_RECORDER_NODE_MIRROR` | `https://nodejs.org/dist` | mirror for the Node download |
 
 Re-run the one-liner any time to update and relaunch. To relaunch without re-downloading,
 run `npm start` from the install directory. The installer uses `git` when available and
@@ -84,7 +88,8 @@ falls back to a source tarball/zip download otherwise.
 
 - **macOS** (primary target). Windows 11 x64 and ARM64 are also supported — see
   [`WINDOWS-VALIDATION.md`](WINDOWS-VALIDATION.md).
-- **Node.js 22+**.
+- **Node.js 22+** — the one-liner auto-downloads a private copy if you don't already have
+  it, so you only need to install this yourself if you skip the installer.
 - **GitHub Copilot CLI**, installed and signed in, with `copilot` on your `PATH`. It
   powers the analysis and the skill/automation builders.
 - No system media tools required — Chromium handles screen snapshots and narration audio

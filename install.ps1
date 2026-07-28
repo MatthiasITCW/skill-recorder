@@ -9,24 +9,31 @@
   skips any step (dependency install, build) whose inputs haven't changed, so
   the same one-liner both installs and updates the app.
 
-  Usage (PowerShell):
-    irm https://raw.githubusercontent.com/adilei/skill-recorder/master/install.ps1 | iex
+  Usage (one line, from any Windows terminal — cmd.exe or PowerShell):
+    powershell -c "irm https://raw.githubusercontent.com/adilei/skill-recorder/master/install.ps1 | iex"
 
-  Or with curl.exe:
-    curl.exe -fsSL https://raw.githubusercontent.com/adilei/skill-recorder/master/install.ps1 -o "$env:TEMP\install.ps1"; & "$env:TEMP\install.ps1"
+  Node.js is downloaded automatically when it's missing: an official,
+  checksum-verified Node binary (win-x64 or win-arm64) is placed under the
+  install directory and used just for this app — nothing is installed
+  system-wide and no executables are built.
 
   Environment overrides:
-    SKILL_RECORDER_HOME    install directory      (default: %USERPROFILE%\.skill-recorder)
-    SKILL_RECORDER_REPO    owner/repo             (default: adilei/skill-recorder)
-    SKILL_RECORDER_REF     branch / tag / commit  (default: master)
-    SKILL_RECORDER_NO_RUN  set to install & build only, without launching
+    SKILL_RECORDER_HOME          install directory      (default: %USERPROFILE%\.skill-recorder)
+    SKILL_RECORDER_REPO          owner/repo             (default: adilei/skill-recorder)
+    SKILL_RECORDER_REF           branch / tag / commit  (default: master)
+    SKILL_RECORDER_NO_RUN        set to install & build only, without launching
+    SKILL_RECORDER_NODE_VERSION  Node to fetch when missing (default: latest-v22.x)
+    SKILL_RECORDER_NODE_MIRROR   Node dist mirror       (default: https://nodejs.org/dist)
 #>
 
 $ErrorActionPreference = 'Stop'
+# Invoke-WebRequest is ~10x slower with the progress bar on Windows PowerShell 5.1.
+$ProgressPreference = 'SilentlyContinue'
 
 $Repo       = if ($env:SKILL_RECORDER_REPO) { $env:SKILL_RECORDER_REPO } else { 'adilei/skill-recorder' }
 $Ref        = if ($env:SKILL_RECORDER_REF)  { $env:SKILL_RECORDER_REF }  else { 'master' }
 $InstallDir = if ($env:SKILL_RECORDER_HOME) { $env:SKILL_RECORDER_HOME } else { Join-Path $env:USERPROFILE '.skill-recorder' }
+$NodeMinMajor = 22
 
 function Info($m) { Write-Host "==> $m" -ForegroundColor Cyan }
 function Have($c) { [bool](Get-Command $c -ErrorAction SilentlyContinue) }
@@ -41,13 +48,69 @@ function FileSha($path) {
   if (Test-Path -LiteralPath $path) { (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash } else { '' }
 }
 
+# True when a Node new enough to build & run the app is already on PATH.
+function Test-NodeAvailable {
+  if (-not (Have 'node')) { return $false }
+  try { return ([int](& node -p 'process.versions.node.split(".")[0]') -ge $NodeMinMajor) }
+  catch { return $false }
+}
+
+# Ensure a usable Node/npm is on PATH: prefer the system one, otherwise download
+# an official Node binary into "$InstallDir\.node" (once) and prepend it to PATH.
+function Initialize-NodeRuntime {
+  if (Test-NodeAvailable) { Info "Using existing Node $(& node -v)."; return }
+
+  $nodeDir = Join-Path $InstallDir '.node'
+  if (Test-Path -LiteralPath (Join-Path $nodeDir 'node.exe')) {
+    $env:Path = "$nodeDir;$env:Path"
+    if (Test-NodeAvailable) { Info "Using bundled Node $(& node -v) (in $nodeDir)."; return }
+  }
+
+  # OSArchitecture reports the true OS arch even from an x64 process emulated on
+  # ARM64, so ARM64 devices get the native win-arm64 build.
+  $osArch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
+  $arch = switch ($osArch) {
+    'X64'   { 'x64' }
+    'Arm64' { 'arm64' }
+    default { throw "Can't auto-download Node for Windows $osArch; install Node $NodeMinMajor+ manually." }
+  }
+
+  $channel = if ($env:SKILL_RECORDER_NODE_VERSION) { $env:SKILL_RECORDER_NODE_VERSION } else { "latest-v$NodeMinMajor.x" }
+  if ($channel -notlike 'latest-*' -and $channel -notlike 'v*') { $channel = "v$channel" }
+  $mirror  = if ($env:SKILL_RECORDER_NODE_MIRROR) { $env:SKILL_RECORDER_NODE_MIRROR } else { 'https://nodejs.org/dist' }
+  $base = "$mirror/$channel"
+
+  Info "Node $NodeMinMajor+ not found — downloading a private copy for Skill Recorder…"
+  $sums = (Invoke-WebRequest -UseBasicParsing -Uri "$base/SHASUMS256.txt").Content
+  $line = ($sums -split "`n") | Where-Object { $_ -match "node-.*-win-$arch\.zip$" } | Select-Object -First 1
+  if (-not $line) { throw "No Node win-$arch build found at $base." }
+  $fields = ($line.Trim() -split '\s+')
+  $want = $fields[0].ToLower(); $file = $fields[1]
+
+  $tmp = Join-Path $env:TEMP ("sr-node-" + [guid]::NewGuid().ToString())
+  New-Item -ItemType Directory -Force -Path $tmp | Out-Null
+  try {
+    $zip = Join-Path $tmp $file
+    Info "  downloading $file"
+    Invoke-WebRequest -UseBasicParsing -Uri "$base/$file" -OutFile $zip
+    $got = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLower()
+    if ($got -ne $want) { throw "Checksum mismatch for $file (expected $want, got $got)." }
+    Info "  checksum verified"
+
+    if (Test-Path -LiteralPath $nodeDir) { Remove-Item -Recurse -Force -LiteralPath $nodeDir }
+    Expand-Archive -LiteralPath $zip -DestinationPath $tmp -Force
+    $inner = Get-ChildItem -Directory -LiteralPath $tmp | Where-Object { $_.Name -like 'node-*' } | Select-Object -First 1
+    Move-Item -LiteralPath $inner.FullName -Destination $nodeDir
+  } finally {
+    Remove-Item -Recurse -Force -ErrorAction SilentlyContinue -LiteralPath $tmp
+  }
+
+  $env:Path = "$nodeDir;$env:Path"
+  if (-not (Test-NodeAvailable)) { throw "Downloaded Node is still unusable — please report this." }
+  Info "Installed Node $(& node -v) into $nodeDir"
+}
+
 # --- prerequisites ---------------------------------------------------------
-if (-not (Have 'node')) { throw "Node.js 22+ is required but 'node' was not found on PATH." }
-if (-not (Have 'npm'))  { throw "npm is required but was not found on PATH." }
-
-$nodeMajor = [int](& node -p 'process.versions.node.split(".")[0]')
-if ($nodeMajor -lt 22) { throw "Node.js 22+ is required (found $(& node -v))." }
-
 if (-not (Have 'copilot')) {
   Write-Warning "GitHub Copilot CLI ('copilot') not found on PATH. The app will launch, but recording analysis and skill/automation building need it — install it and sign in first."
 }
@@ -88,6 +151,9 @@ if (Have 'git') {
 }
 
 Set-Location -LiteralPath $InstallDir
+
+# --- ensure a Node.js runtime (download one if the system has none) --------
+Initialize-NodeRuntime
 
 # --- install dependencies (only when the lockfile changed) -----------------
 $depsStamp = Join-Path $InstallDir '.skill-recorder-deps.sha'

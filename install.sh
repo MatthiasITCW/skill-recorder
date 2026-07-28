@@ -39,6 +39,18 @@ warn() { printf '\033[1;33mwarning:\033[0m %s\n' "$*" >&2; }
 die()  { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 have() { command -v "$1" >/dev/null 2>&1; }
 
+# Detect a usable Copilot CLI the way the Electron app does. The app uses the
+# platform binary bundled in node_modules (installed by npm), so that is the
+# real signal — not a `copilot` on PATH. Fall back to the desktop app or PATH.
+copilot_available() {
+  local plat arch
+  case "$(uname -s)" in Darwin) plat="darwin" ;; *) plat="linux" ;; esac
+  case "$(uname -m)" in arm64|aarch64) arch="arm64" ;; *) arch="x64" ;; esac
+  [ -e "$INSTALL_DIR/node_modules/@github/copilot-$plat-$arch/copilot" ] && return 0
+  [ -d "/Applications/GitHub Copilot.app" ] && return 0
+  have copilot
+}
+
 sha256() { # print the sha256 of a file, or nothing if it doesn't exist
   [ -f "$1" ] || return 0
   if have shasum; then shasum -a 256 "$1" | awk '{print $1}'
@@ -128,10 +140,6 @@ ensure_node() {
 }
 
 # --- fetch source ----------------------------------------------------------
-have copilot || warn "GitHub Copilot CLI ('copilot') not found on PATH. The app will \
-launch, but recording analysis and skill/automation building need it — install it and \
-sign in first."
-
 version_token=""
 if have git; then
   if [ ! -d "$INSTALL_DIR/.git" ]; then
@@ -178,6 +186,11 @@ if [ ! -d node_modules ] || [ "$(cat "$deps_stamp" 2>/dev/null || true)" != "$de
 else
   info "Dependencies already up to date — skipping npm install."
 fi
+
+# --- check for Copilot CLI (bundled, desktop app, or PATH) -----------------
+copilot_available || warn "No Copilot CLI found. Install GitHub Copilot \
+(https://github.com/features/copilot) or ensure the bundled package installed \
+correctly. The app will launch, but recording analysis needs it."
 
 # --- build (only when the source or dependencies changed) ------------------
 build_stamp="$INSTALL_DIR/.skill-recorder-build.sha"

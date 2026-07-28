@@ -62,10 +62,30 @@ export async function transcribeNarration(
   return { model: narrationModelId(), segments };
 }
 
-/** A chunk is dropped when its midpoint sits inside a detected silence span. */
-function isMostlySilent(startSec: number, endSec: number, silences: SilenceSpan[]): boolean {
-  const mid = (startSec + endSec) / 2;
-  return silences.some((s) => mid >= s.start && mid <= s.end);
+/**
+ * A chunk is dropped only when almost its entire span is silence, i.e. it is a
+ * Whisper hallucination over near-silent audio (see `BOILERPLATE`/`isMeaningful`).
+ *
+ * We measure the fraction of `[startSec, endSec]` covered by detected silence and
+ * treat the chunk as silent at >= 0.85 coverage. The earlier midpoint test dropped
+ * long real-speech chunks whenever a natural mid-sentence pause happened to land
+ * near the temporal center — a single 16s chunk of clear speech could vanish. A
+ * coverage test keeps those chunks while still catching all-silence hallucinations.
+ *
+ * `detectSilence` returns non-overlapping ascending spans, so summing the clipped
+ * overlaps never double-counts. A zero/negative span can't have a fraction, so it
+ * falls back to a point-in-silence test.
+ */
+export function isMostlySilent(startSec: number, endSec: number, silences: SilenceSpan[]): boolean {
+  const span = endSec - startSec;
+  if (span <= 0) return silences.some((s) => startSec >= s.start && startSec <= s.end);
+  let covered = 0;
+  for (const s of silences) {
+    const lo = Math.max(startSec, s.start);
+    const hi = Math.min(endSec, s.end);
+    if (hi > lo) covered += hi - lo;
+  }
+  return covered / span >= 0.85;
 }
 
 // Whisper hallucinates stock phrases over silence/noise; drop the usual suspects

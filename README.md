@@ -65,7 +65,7 @@ permission — grant it and you're ready to record.
 <details>
 <summary>Install options &amp; updating</summary>
 
-Prefix either command with any of these:
+Set any of these environment variables when you run the command:
 
 | Variable | Default | What it does |
 | --- | --- | --- |
@@ -76,6 +76,21 @@ Prefix either command with any of these:
 | `SKILL_RECORDER_LOG_KEEP` | `5` | how many detached log files to keep |
 | `SKILL_RECORDER_NODE_VERSION` | `latest-v22.x` | Node version to fetch when none is installed |
 | `SKILL_RECORDER_NODE_MIRROR` | `https://nodejs.org/dist` | mirror for the Node download |
+
+**Example — run it detached** so the app keeps running after you close the terminal
+(output goes to rolling log files under `<home>/logs`). Note *where* the variable goes:
+
+- **macOS / Linux** — after the pipe, so it applies to `bash`:
+
+  ```bash
+  curl -fsSL https://raw.githubusercontent.com/adilei/skill-recorder/master/install.sh | SKILL_RECORDER_DETACHED=1 bash
+  ```
+
+- **Windows** — inside the quotes, before `irm`:
+
+  ```powershell
+  powershell -c "$env:SKILL_RECORDER_DETACHED=1; irm https://raw.githubusercontent.com/adilei/skill-recorder/master/install.ps1 | iex"
+  ```
 
 Re-run the one-liner any time to update and relaunch. To relaunch without re-downloading,
 run `npm start` from the install directory. The installer uses `git` when available and

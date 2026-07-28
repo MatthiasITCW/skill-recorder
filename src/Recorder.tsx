@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import type {
   DoctorReport,
@@ -6,6 +6,14 @@ import type {
   NarrationStatus,
   RecorderStatus,
 } from "../common/ipc";
+import {
+  DEFAULT_NARRATION_LANGUAGE,
+  isNarrationLanguage,
+  NARRATION_LANGUAGES,
+  NARRATION_MODEL_DOWNLOAD_LABEL,
+  narrationLanguageLabel,
+  type NarrationLanguage,
+} from "../common/narration";
 import { formatMs } from "./format";
 import { WhatsRecorded } from "./WhatsRecorded";
 
@@ -20,11 +28,15 @@ export function Recorder() {
   const [microphoneSettings, setMicrophoneSettings] =
     useState<MicrophoneSettingsStatus | null>(null);
   const [showPrivacy, setShowPrivacy] = useState(false);
+  const [showNarrationSettings, setShowNarrationSettings] = useState(false);
+  const [narrationLanguage, setSelectedNarrationLanguage] =
+    useState<NarrationLanguage>(DEFAULT_NARRATION_LANGUAGE);
   const [microphonePending, setMicrophonePending] = useState(false);
   const [microphoneActionError, setMicrophoneActionError] = useState<string | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [sessionCount, setSessionCount] = useState(0);
   const [pendingCount, setPendingCount] = useState(0);
+  const narrationSettingsRef = useRef<HTMLElement>(null);
 
   const refreshCount = useCallback(async () => {
     const list = await window.skillRecorder.listSessions();
@@ -32,13 +44,18 @@ export function Recorder() {
     setPendingCount(list.filter((s) => !s.analysis).length);
   }, []);
 
+  const applyRecorderStatus = useCallback((next: RecorderStatus) => {
+    setStatus(next);
+    setSelectedNarrationLanguage(next.narrationLanguage);
+  }, []);
+
   useEffect(() => {
-    void window.skillRecorder.status().then(setStatus);
+    void window.skillRecorder.status().then(applyRecorderStatus);
     void window.skillRecorder.doctor().then(setDoctor);
     void window.skillRecorder.narrationStatus().then(setNarrationStatus);
     void window.skillRecorder.microphoneSettings().then(setMicrophoneSettings);
     void refreshCount();
-    const offRecorder = window.skillRecorder.onStatusChanged(setStatus);
+    const offRecorder = window.skillRecorder.onStatusChanged(applyRecorderStatus);
     const offNarration = window.skillRecorder.onNarrationStatusChanged(setNarrationStatus);
     const offMicrophones =
       window.skillRecorder.onMicrophoneSettingsChanged(setMicrophoneSettings);
@@ -47,7 +64,7 @@ export function Recorder() {
       offNarration();
       offMicrophones();
     };
-  }, [refreshCount]);
+  }, [applyRecorderStatus, refreshCount]);
 
   // The analyze step happens in the library window, so re-check how many
   // recordings still need analysis whenever the recorder regains focus.
@@ -63,6 +80,29 @@ export function Recorder() {
   const justSaved = !recording && status?.lastFinish?.outcome === "saved";
   const justDiscarded = !recording && status?.lastFinish?.outcome === "discarded";
   const narrate = microphoneSettings?.narrationEnabled ?? false;
+  const narrationLanguageName = narrationLanguageLabel(narrationLanguage);
+
+  useEffect(() => {
+    if (recording) setShowNarrationSettings(false);
+  }, [recording]);
+
+  useEffect(() => {
+    if (!showNarrationSettings) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setShowNarrationSettings(false);
+    };
+    const onMouseDown = (event: MouseEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node) || narrationSettingsRef.current?.contains(target)) return;
+      setShowNarrationSettings(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("mousedown", onMouseDown);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("mousedown", onMouseDown);
+    };
+  }, [showNarrationSettings]);
 
   // Refresh the library count whenever a recording finishes.
   useEffect(() => {
@@ -83,8 +123,22 @@ export function Recorder() {
       ? await window.skillRecorder.stop()
       : await window.skillRecorder.start();
     if (!res.ok) window.alert(res.error ?? "Action failed");
-    setStatus(await window.skillRecorder.status());
-  }, [recording]);
+    applyRecorderStatus(await window.skillRecorder.status());
+  }, [applyRecorderStatus, recording]);
+
+  const selectNarrationLanguage = useCallback(
+    async (value: string) => {
+      if (!isNarrationLanguage(value)) {
+        window.alert("Unsupported narration language.");
+        return;
+      }
+      setSelectedNarrationLanguage(value);
+      const result = await window.skillRecorder.setNarrationLanguage(value);
+      if (!result.ok) window.alert(result.error ?? "Could not change the narration language.");
+      applyRecorderStatus(await window.skillRecorder.status());
+    },
+    [applyRecorderStatus],
+  );
 
   const toggleNarration = useCallback(async () => {
     if (!microphoneSettings) return;
@@ -98,6 +152,7 @@ export function Recorder() {
       setMicrophoneActionError(
         result.error ?? "Could not update the narration preference.",
       );
+      setShowNarrationSettings(true);
     }
     setMicrophonePending(false);
   }, [microphoneSettings]);
@@ -160,79 +215,105 @@ export function Recorder() {
         </div>
       </div>
 
-      <section className={`narrate ${narrate ? "on" : ""}`}>
-        <button
-          className="narrate-toggle"
-          role="switch"
-          aria-checked={narrate}
-          aria-busy={microphonePending}
-          onClick={() => void toggleNarration()}
-          disabled={
-            !microphoneSettings ||
-            microphonePending ||
-            recording ||
-            transitioning
-          }
-        >
-          <span className="narrate-icon" aria-hidden>
-            <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
-              <rect
-                x="7.5"
-                y="2.5"
-                width="5"
-                height="9"
-                rx="2.5"
-                stroke="currentColor"
-                strokeWidth="1.4"
-              />
+      <section ref={narrationSettingsRef} className={`narrate ${narrate ? "on" : ""}`}>
+        <div className="narrate-head">
+          <button
+            className="narrate-toggle"
+            role="switch"
+            aria-checked={narrate}
+            aria-busy={microphonePending}
+            onClick={() => void toggleNarration()}
+            disabled={
+              !microphoneSettings ||
+              microphonePending ||
+              recording ||
+              transitioning
+            }
+          >
+            <span className="narrate-icon" aria-hidden>
+              <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
+                <rect
+                  x="7.5"
+                  y="2.5"
+                  width="5"
+                  height="9"
+                  rx="2.5"
+                  stroke="currentColor"
+                  strokeWidth="1.4"
+                />
+                <path
+                  d="M5 9.2a5 5 0 0 0 10 0"
+                  stroke="currentColor"
+                  strokeWidth="1.4"
+                  strokeLinecap="round"
+                />
+                <path
+                  d="M10 14.2v3"
+                  stroke="currentColor"
+                  strokeWidth="1.4"
+                  strokeLinecap="round"
+                />
+              </svg>
+            </span>
+            <span className="narrate-text">
+              <span className="narrate-label">Narrate</span>
+              <span className="narrate-sub">
+                {microphonePending
+                  ? "Requesting microphone access..."
+                  : microphoneActionError || microphoneSettings?.error
+                    ? "Microphone needs attention"
+                    : recording
+                      ? narrate
+                        ? `Listening · ${narrationLanguageName}`
+                        : "Voice off for this recording"
+                      : narrate
+                        ? narrationStatus?.model === "ready"
+                          ? `${narrationLanguageName} transcript · local`
+                          : `${narrationLanguageName} transcript · ${NARRATION_MODEL_DOWNLOAD_LABEL} later`
+                        : "Explain out loud (optional)"}
+              </span>
+            </span>
+            <span className={`narrate-switch ${narrate ? "on" : ""}`} aria-hidden>
+              <span className="narrate-knob" />
+            </span>
+          </button>
+          <button
+            className={`narrate-settings-toggle ${showNarrationSettings ? "open" : ""}`}
+            aria-label="Narration settings"
+            aria-controls="narration-settings"
+            aria-expanded={showNarrationSettings}
+            title="Narration settings"
+            disabled={microphonePending || recording || transitioning}
+            onClick={() => {
+              setMicrophoneActionError(null);
+              setShowNarrationSettings((open) => !open);
+            }}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden>
               <path
-                d="M5 9.2a5 5 0 0 0 10 0"
-                stroke="currentColor"
-                strokeWidth="1.4"
-                strokeLinecap="round"
-              />
-              <path
-                d="M10 14.2v3"
-                stroke="currentColor"
-                strokeWidth="1.4"
-                strokeLinecap="round"
+                fill="currentColor"
+                d="M19.43 12.98c.04-.32.07-.65.07-.98s-.03-.66-.07-.98l2.11-1.65a.5.5 0 0 0 .12-.64l-2-3.46a.5.5 0 0 0-.6-.22l-2.49 1a7.2 7.2 0 0 0-1.69-.98l-.38-2.65A.5.5 0 0 0 14 2h-4a.5.5 0 0 0-.5.42l-.38 2.65c-.61.25-1.17.58-1.69.98l-2.49-1a.5.5 0 0 0-.6.22l-2 3.46a.5.5 0 0 0 .12.64l2.11 1.65a7.7 7.7 0 0 0 0 1.96l-2.11 1.65a.5.5 0 0 0-.12.64l2 3.46a.5.5 0 0 0 .6.22l2.49-1c.52.4 1.08.73 1.69.98l.38 2.65A.5.5 0 0 0 10 22h4a.5.5 0 0 0 .5-.42l.38-2.65c.61-.25 1.17-.58 1.69-.98l2.49 1a.5.5 0 0 0 .6-.22l2-3.46a.5.5 0 0 0-.12-.64zM12 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7Z"
               />
             </svg>
-          </span>
-          <span className="narrate-text">
-            <span className="narrate-label">Narrate</span>
-            <span className="narrate-sub">
-              {microphonePending
-                ? "Requesting microphone access..."
-                : microphoneActionError || microphoneSettings?.error
-                  ? "Microphone needs attention"
-                  : recording
-                    ? narrate
-                      ? "Listening to your voice"
-                      : "Voice off for this recording"
-                    : narrate
-                      ? `Will use ${microphoneSettings?.selectedDeviceLabel ?? "System default"}`
-                      : "Explain out loud (optional)"}
-            </span>
-          </span>
-          <span className={`narrate-switch ${narrate ? "on" : ""}`} aria-hidden>
-            <span className="narrate-knob" />
-          </span>
-        </button>
+          </button>
+        </div>
 
-        {narrate && microphoneSettings && (
-          <div className="narrate-device">
-            <label htmlFor="narrate-microphone">Microphone</label>
+        {showNarrationSettings && (
+          <div id="narration-settings" className="narrate-settings">
+            <label htmlFor="narrate-language">Language</label>
             <div className="narrate-select-wrap">
               <select
-                id="narrate-microphone"
-                value={microphoneSettings.selectedDeviceId}
+                id="narrate-language"
+                value={narrationLanguage}
                 disabled={microphonePending || recording || transitioning}
-                onChange={(event) => void selectMicrophone(event.target.value)}
+                onChange={(event) =>
+                  void selectNarrationLanguage(event.currentTarget.value)
+                }
+                title="The transcript stays in this language"
               >
-                {microphoneSettings.devices.map((device) => (
-                  <option key={device.id} value={device.id}>
-                    {device.label}
+                {NARRATION_LANGUAGES.map(({ code, label }) => (
+                  <option key={code} value={code}>
+                    {label}
                   </option>
                 ))}
               </select>
@@ -240,24 +321,47 @@ export function Recorder() {
                 ▾
               </span>
             </div>
+
+            <label htmlFor="narrate-microphone">Microphone</label>
+            <div className="narrate-select-wrap">
+              <select
+                id="narrate-microphone"
+                value={microphoneSettings?.selectedDeviceId ?? ""}
+                disabled={microphonePending || recording || transitioning}
+                onChange={(event) => void selectMicrophone(event.target.value)}
+              >
+                {microphoneSettings ? (
+                  microphoneSettings.devices.map((device) => (
+                    <option key={device.id} value={device.id}>
+                      {device.label}
+                    </option>
+                  ))
+                ) : (
+                  <option value="">Loading microphones...</option>
+                )}
+              </select>
+              <span className="narrate-select-chevron" aria-hidden>
+                ▾
+              </span>
+            </div>
             {(microphoneActionError ||
-              microphoneSettings.error ||
-              microphoneSettings.fallback) && (
+              microphoneSettings?.error ||
+              microphoneSettings?.fallback) && (
               <p
-                className={`narrate-device-note ${
-                  microphoneActionError || microphoneSettings.error
+                className={`narrate-settings-note ${
+                  microphoneActionError || microphoneSettings?.error
                     ? "error"
                     : "warn"
                 }`}
                 role={
-                  microphoneActionError || microphoneSettings.error
+                  microphoneActionError || microphoneSettings?.error
                     ? "alert"
                     : undefined
                 }
               >
                 {microphoneActionError ??
-                  microphoneSettings.error ??
-                  microphoneSettings.fallback}
+                  microphoneSettings?.error ??
+                  microphoneSettings?.fallback}
               </p>
             )}
           </div>
@@ -441,13 +545,17 @@ function VoiceModelRow({
     return <Row label="voice transcription" status="warn" note="preparing" />;
   }
   if (status.model === "ready") {
-    return <Row label="voice transcription" status="good" note="offline" />;
+    return <Row label="voice transcription" status="good" note="offline · multilingual" />;
   }
   return (
     <Row
       label="voice transcription"
       status="warn"
-      note={status.model === "error" ? "download failed" : "~250 MB"}
+      note={
+        status.model === "error"
+          ? "download failed"
+          : `${NARRATION_MODEL_DOWNLOAD_LABEL} · multilingual`
+      }
       action={{
         label: status.model === "error" ? "retry" : "download",
         disabled: recording,

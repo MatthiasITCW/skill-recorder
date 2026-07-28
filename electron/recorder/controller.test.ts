@@ -5,6 +5,7 @@ import path from "node:path";
 import test from "node:test";
 
 import { FULL_CAPTURE } from "../../common/config";
+import type { NarrationLanguage } from "../../common/narration";
 import type { MicrophoneDevice } from "../../common/microphone";
 import { RecorderController, type SessionAudioRecorder } from "./controller";
 
@@ -12,10 +13,16 @@ class FakeAudioRecorder implements SessionAudioRecorder {
   readonly calls: string[] = [];
   readonly deviceIds: string[] = [];
   finishVideoStartEpoch: number | null | undefined;
+  narrationLanguage: NarrationLanguage | null = null;
   failEnable = false;
 
-  async start(): Promise<void> {
+  async start(
+    _sessionDir: string,
+    _sessionStartedAt: number,
+    narrationLanguage: NarrationLanguage,
+  ): Promise<void> {
     this.calls.push("start");
+    this.narrationLanguage = narrationLanguage;
   }
 
   async enable(deviceId = "default"): Promise<MicrophoneDevice> {
@@ -59,6 +66,7 @@ test("microphone toggles are serialized and finalized on save", async () => {
 
     const started = await controller.start();
     assert.equal(started.ok, true);
+    assert.equal(audio.narrationLanguage, "en");
     assert.equal(controller.status().microphone.state, "off");
 
     assert.equal((await controller.setMicrophoneEnabled(true)).ok, true);
@@ -87,6 +95,31 @@ test("microphone toggles are serialized and finalized on save", async () => {
 
     await controller.whenProcessed();
     assert.equal(processed, 1);
+  });
+});
+
+test("preferred narration language is reused by optionless recording starts", async () => {
+  await withSessionsRoot(async () => {
+    const audio = new FakeAudioRecorder();
+    const controller = new RecorderController({
+      resolveConfig: () => ({ ...FULL_CAPTURE, video: false }),
+      buildCollectors: () => [],
+      createAudioRecorder: () => audio,
+      deleteSession: async () => undefined,
+    });
+
+    assert.deepEqual(await controller.setNarrationLanguage("it"), {
+      ok: true,
+      language: "it",
+    });
+    const started = await controller.start({ narration: true });
+    assert.equal(started.ok, true);
+    assert.equal(audio.narrationLanguage, "it");
+    assert.equal(controller.status().narrationLanguage, "it");
+    const changeWhileRecording = await controller.setNarrationLanguage("fr");
+    assert.equal(changeWhileRecording.ok, false);
+    assert.match(changeWhileRecording.error ?? "", /cannot change while recording/i);
+    assert.equal((await controller.stop()).ok, true);
   });
 });
 

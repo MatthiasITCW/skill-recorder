@@ -5,6 +5,7 @@ import {
   AUDIO_MANIFEST_VERSION,
   alignAudioSegmentsToVideo,
   isAudioManifestV2,
+  readAudioNarrationLanguage,
   readAudioSources,
   type AudioSegment,
 } from "./audio";
@@ -79,4 +80,39 @@ test("legacy and segmented metadata normalize to timestamped transcription sourc
     ],
   );
   assert.throws(() => readAudioSources({ version: AUDIO_MANIFEST_VERSION, segments: [{}] }));
+});
+
+test("audio metadata preserves a supported language and defaults legacy recordings to English", () => {
+  assert.equal(
+    readAudioNarrationLanguage({
+      version: AUDIO_MANIFEST_VERSION,
+      narrationLanguage: "haw",
+      segments: [],
+    }),
+    "haw",
+  );
+  assert.equal(
+    readAudioNarrationLanguage({
+      version: AUDIO_MANIFEST_VERSION,
+      segments: [],
+    }),
+    "en",
+  );
+  assert.equal(
+    readAudioNarrationLanguage({
+      file: "audio.webm",
+      startEpoch: 1_100,
+      durationMs: 400,
+    }),
+    "en",
+  );
+  assert.throws(
+    () =>
+      readAudioNarrationLanguage({
+        version: AUDIO_MANIFEST_VERSION,
+        narrationLanguage: "xx",
+        segments: [],
+      }),
+    /unsupported transcription language/i,
+  );
 });

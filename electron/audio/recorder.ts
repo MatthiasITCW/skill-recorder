@@ -27,6 +27,7 @@ import {
   type MicrophoneDevice,
   type MicrophonePreference,
 } from "../../common/microphone";
+import type { NarrationLanguage } from "../../common/narration";
 import { createLogger } from "../logger";
 import type {
   AudioCaptureEnded,
@@ -107,6 +108,7 @@ export class AudioRecorder {
 
   private dir = "";
   private sessionStartedAt = 0;
+  private narrationLanguage: NarrationLanguage = "en";
   private sequence = 0;
   private active: PendingSegment | null = null;
   private disableTask: Promise<AudioSegment | null> | null = null;
@@ -123,8 +125,13 @@ export class AudioRecorder {
     onCaptureEnded: (event: AudioCaptureEnded) => void,
   ): SessionAudioRecorder {
     return {
-      start: (sessionDir, sessionStartedAt) =>
-        this.startSession(sessionDir, sessionStartedAt, onCaptureEnded),
+      start: (sessionDir, sessionStartedAt, narrationLanguage) =>
+        this.startSession(
+          sessionDir,
+          sessionStartedAt,
+          narrationLanguage,
+          onCaptureEnded,
+        ),
       enable: (deviceId) => this.enable(deviceId),
       disable: () => this.disable(),
       finish: (videoStartEpoch) => this.finishSession(videoStartEpoch),
@@ -292,6 +299,7 @@ export class AudioRecorder {
   private async startSession(
     sessionDir: string,
     sessionStartedAt: number,
+    narrationLanguage: NarrationLanguage,
     onCaptureEnded: (event: AudioCaptureEnded) => void,
   ): Promise<void> {
     if (this.dir) throw new Error("Microphone recorder is already initialized.");
@@ -299,6 +307,7 @@ export class AudioRecorder {
     await mkdir(path.join(sessionDir, AUDIO_DIR), { recursive: true });
     this.dir = sessionDir;
     this.sessionStartedAt = sessionStartedAt;
+    this.narrationLanguage = narrationLanguage;
     this.sequence = 0;
     this.segments.length = 0;
     this.onCaptureEnded = onCaptureEnded;
@@ -460,7 +469,11 @@ export class AudioRecorder {
     const segments = alignAudioSegmentsToVideo(this.segments, videoStartEpoch);
     const manifest: AudioManifestV2 | null =
       segments.length > 0
-        ? { version: AUDIO_MANIFEST_VERSION, segments }
+        ? {
+            version: AUDIO_MANIFEST_VERSION,
+            narrationLanguage: this.narrationLanguage,
+            segments,
+          }
         : null;
 
     try {

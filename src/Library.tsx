@@ -17,6 +17,11 @@ import type {
 import { ARCHITECTURES, TARGETS } from "../common/skill";
 import type { AutomationPlan, BuiltAutomation } from "../common/automation";
 import {
+  DEFAULT_NARRATION_LANGUAGE,
+  NARRATION_MODEL_DOWNLOAD_LABEL,
+  narrationLanguageLabel,
+} from "../common/narration";
+import {
   AnalysisStepTiles,
   AutomationStepTiles,
   EditableText,
@@ -247,6 +252,9 @@ function AnalysisWorkspace({
 }) {
   const sessionId = summary.id;
   const voicePending = summary.hasAudio && !summary.hasNarration;
+  const voiceLanguage = narrationLanguageLabel(
+    summary.narrationLanguage ?? DEFAULT_NARRATION_LANGUAGE,
+  );
   const voiceEmpty = summary.hasNarration && summary.narrationSegmentCount === 0;
   const voiceBusy =
     narrationStatus?.activeSessionId === sessionId && narrationStatus.phase !== "idle";
@@ -444,8 +452,8 @@ function AnalysisWorkspace({
       <div className="ws-body">
         {voicePending && voiceError && !analyzing && (
           <p className="voice-analysis-note">
-            Couldn't transcribe your voice, so this analysis doesn't include it. Your audio is saved —
-            analyzing again will retry.
+            Couldn't transcribe your {voiceLanguage} voice, so this analysis doesn't include it.
+            Your audio is saved — analyzing again will retry.
           </p>
         )}
 
@@ -497,8 +505,8 @@ function AnalysisWorkspace({
             {voicePending && (
               <p className="voice-analysis-note">
                 {narrationStatus?.model === "ready"
-                  ? "Your voice is transcribed first, then analyzed."
-                  : "Your voice is transcribed first, then analyzed. The first run downloads a ~250 MB voice model once."}
+                  ? `Your ${voiceLanguage} voice is transcribed in the same language first, then analyzed.`
+                  : `Your ${voiceLanguage} voice is transcribed in the same language first, then analyzed. The first run downloads a ${NARRATION_MODEL_DOWNLOAD_LABEL} voice model once.`}
               </p>
             )}
             <button className="record-cta" onClick={run}>

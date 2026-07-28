@@ -1,6 +1,7 @@
 import type { Analysis, AnalysisFeedback, AnalysisStep, Confidence } from "./analysis";
 import type { AutomationPlan, BuiltAutomation } from "./automation";
 import type { MicrophoneDevice } from "./microphone";
+import type { NarrationLanguage } from "./narration";
 import type { BuiltSkill, SkillArchitecture, SkillPlan } from "./skill";
 import type { RecorderState } from "./types";
 
@@ -24,6 +25,8 @@ export interface SessionSummary {
   hasVideo: boolean;
   /** True when the user opted into narration and usable audio was saved. */
   hasAudio: boolean;
+  /** Selected source language for saved audio, or null when no audio exists. */
+  narrationLanguage: NarrationLanguage | null;
   /** True once transcription completed, including recordings with no detected speech. */
   hasNarration: boolean;
   narrationSegmentCount: number | null;
@@ -68,6 +71,8 @@ export interface RecorderStatus {
   state: RecorderState;
   sessionId: string | null;
   startedAt: number | null;
+  /** Source language fixed for the active recording's narration. */
+  narrationLanguage: NarrationLanguage;
   eventCount: number;
   transition: "none" | "starting" | "stopping" | "discarding";
   microphone: {
@@ -192,6 +197,8 @@ export interface StartResult {
 export interface StartOptions {
   /** Capture microphone narration for this session (opt-in, off by default). */
   narration?: boolean;
+  /** Source language to preserve in the transcript. Defaults to English. */
+  narrationLanguage?: NarrationLanguage;
   /** Device selected for the initial narration segment; defaults to the OS input. */
   microphoneDeviceId?: string;
 }
@@ -212,6 +219,12 @@ export interface DiscardResult {
 export interface MicrophoneResult {
   ok: boolean;
   state?: RecorderStatus["microphone"]["state"];
+  error?: string;
+}
+
+export interface NarrationLanguageResult {
+  ok: boolean;
+  language?: NarrationLanguage;
   error?: string;
 }
 
@@ -295,6 +308,7 @@ export const IPC = {
   stop: "recorder:stop",
   discard: "recorder:discard",
   microphone: "recorder:microphone",
+  narrationLanguage: "recorder:narration-language",
   microphoneSettings: "microphone:settings",
   microphoneNarration: "microphone:narration",
   microphoneDevice: "microphone:device",
@@ -338,6 +352,7 @@ export interface SkillRecorderApi {
   stop(): Promise<StopResult>;
   discard(): Promise<DiscardResult>;
   setMicrophoneEnabled(enabled: boolean): Promise<MicrophoneResult>;
+  setNarrationLanguage(language: NarrationLanguage): Promise<NarrationLanguageResult>;
   microphoneSettings(): Promise<MicrophoneSettingsStatus>;
   setNarrationEnabled(enabled: boolean): Promise<MicrophoneSettingsResult>;
   selectMicrophone(deviceId: string): Promise<MicrophoneSettingsResult>;

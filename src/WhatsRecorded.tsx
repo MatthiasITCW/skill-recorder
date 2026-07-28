@@ -88,7 +88,8 @@ export function WhatsRecorded({ onClose }: { onClose: () => void }) {
             </li>
             <li>
               The recording can be turned into text on this computer using an offline model. The
-              first transcription needs a one-time ~250 MB download that you choose when to start.
+              transcript stays in the language you select from Whisper's 99 supported choices. The
+              first transcription needs a one-time ~252 MB download that you choose when to start.
             </li>
             <li>Leave Narrate and the recording-bar microphone off and no microphone is opened.</li>
           </ul>

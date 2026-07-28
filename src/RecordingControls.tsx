@@ -4,6 +4,10 @@ import type {
   MicrophoneSettingsStatus,
   RecorderStatus,
 } from "../common/ipc";
+import {
+  DEFAULT_NARRATION_LANGUAGE,
+  narrationLanguageLabel,
+} from "../common/narration";
 import { formatMs } from "./format";
 
 export function RecordingControls() {
@@ -167,6 +171,9 @@ export function RecordingControls() {
   const lifecycleBusy = finishPending !== null || transitionBusy || !recording;
   const microphoneOn = status?.microphone.state === "on";
   const microphoneError = status?.microphone.state === "error";
+  const narrationLanguage = narrationLanguageLabel(
+    status?.narrationLanguage ?? DEFAULT_NARRATION_LANGUAGE,
+  );
   const activeMicrophoneLabel =
     status?.microphone.activeDevice?.label ??
     microphoneSettings?.selectedDeviceLabel ??
@@ -325,16 +332,16 @@ export function RecordingControls() {
               disabled={lifecycleBusy || microphoneBusy}
               aria-label={
                 microphoneOn
-                  ? `Mute ${activeMicrophoneLabel}`
+                  ? `Mute ${activeMicrophoneLabel}. Narration is transcribed in ${narrationLanguage}.`
                   : microphoneError
                     ? `Retry microphone. ${status?.microphone.error ?? ""}`
-                    : `Unmute ${microphoneSettings?.selectedDeviceLabel ?? "System default"}`
+                    : `Unmute ${microphoneSettings?.selectedDeviceLabel ?? "System default"} for ${narrationLanguage} narration`
               }
               aria-pressed={microphoneOn}
               title={
                 microphoneOn
-                  ? `Mute ${activeMicrophoneLabel}`
-                  : `Unmute ${microphoneSettings?.selectedDeviceLabel ?? "System default"}`
+                  ? `Mute ${activeMicrophoneLabel} · ${narrationLanguage} transcript`
+                  : `Unmute ${microphoneSettings?.selectedDeviceLabel ?? "System default"} · ${narrationLanguage} transcript`
               }
               onClick={() => void toggleMicrophone()}
             >

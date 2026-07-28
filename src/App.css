@@ -444,22 +444,28 @@ button:focus-visible,
 }
 
 .narrate {
+  position: relative;
   flex: none;
   width: 100%;
   background: transparent;
   border: 1px solid var(--line);
   color: var(--text);
   border-radius: 12px;
-  overflow: hidden;
   transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.narrate-head {
+  display: flex;
+  align-items: stretch;
 }
 
 .narrate-toggle {
   display: flex;
   align-items: center;
-  gap: 12px;
-  width: 100%;
-  padding: 11px 13px;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+  padding: 11px;
   text-align: left;
   background: transparent;
   color: inherit;
@@ -478,6 +484,27 @@ button:focus-visible,
 .narrate-toggle:disabled {
   opacity: 0.9;
   cursor: default;
+}
+
+.narrate-settings-toggle {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 42px;
+  border-left: 1px solid var(--line);
+  color: var(--muted);
+  background: transparent;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+
+.narrate-settings-toggle:not(:disabled):hover,
+.narrate-settings-toggle.open {
+  color: var(--brand-ink);
+  background: rgba(var(--brand-rgb), 0.08);
+}
+
+.narrate-settings-toggle:disabled {
+  opacity: 0.65;
 }
 
 .narrate-icon {
@@ -544,16 +571,24 @@ button:focus-visible,
   transform: translateX(14px);
 }
 
-.narrate-device {
+.narrate-settings {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
   gap: 6px 10px;
-  padding: 6px 13px 6px 43px;
-  border-top: 1px solid rgba(var(--brand-rgb), 0.14);
+  padding: 10px 13px;
+  border: 1px solid rgba(var(--brand-rgb), 0.3);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: 0 16px 32px -18px rgba(0, 0, 0, 0.45);
 }
 
-.narrate-device label {
+.narrate-settings label {
   font-size: 10.5px;
   font-weight: 600;
   color: var(--brand-ink);
@@ -593,7 +628,7 @@ button:focus-visible,
   transform: translateY(-52%);
 }
 
-.narrate-device-note {
+.narrate-settings-note {
   grid-column: 1 / -1;
   margin: 0;
   color: var(--muted);
@@ -601,11 +636,11 @@ button:focus-visible,
   line-height: 1.35;
 }
 
-.narrate-device-note.warn {
+.narrate-settings-note.warn {
   color: #8a5d00;
 }
 
-.narrate-device-note.error {
+.narrate-settings-note.error {
   color: var(--rec);
 }
 

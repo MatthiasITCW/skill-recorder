@@ -208,13 +208,11 @@ each scenario asserts the shape of the proposed `SkillPlan`:
   vocabulary is applied, not just present.
 - **typed steps** — `minCalculations` / `minActions` require the procedure to be
   split into `calculation` (no side effect) and `action` (changes the world) steps.
-- **confirmation** — `requiresConfirmation` requires at least one action to set
-  `pausesForConfirmation`, i.e. the send/create/delete surface pauses for the user.
 
 **Coverage.** Five scenarios. Two target **Scout**: `price-tracker-skill` (a canonical
-page URL → **fixed** input, `web_fetch` + the `xlsx` skill, calculations then a
-confirmed append) and `github-issue-triage-skill` (the gh-vs-browser case as a skill —
-must use `gh`, forbid the browser, and gate the mutating comment/label actions). Three
+page URL → **fixed** input, `web_fetch` + the `xlsx` skill, calculations then an
+append) and `github-issue-triage-skill` (the gh-vs-browser case as a skill —
+must use `gh`, forbid the browser, and drive the mutating comment/label actions). Three
 target **Cowork** (Microsoft 365 Copilot), whose catalogue has **no browser automation**
 — each asserts the right M365 `server/Tool` is reached for while playwright/`click` and
 the web hosts are forbidden: `cowork-teams-digest` (read a channel then post via

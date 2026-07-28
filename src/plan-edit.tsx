@@ -27,7 +27,7 @@ export function moveItem<T>(arr: T[], i: number, dir: -1 | 1): T[] {
   return out;
 }
 
-/* --- shared vocab (source + step-kind) ----------------------------------- */
+/* --- shared vocab (input source) ----------------------------------------- */
 
 export const SOURCE_LABEL: Record<SkillInput["source"], string> = {
   fixed: "Fixed value",
@@ -47,15 +47,6 @@ const SOURCE_HINT: Record<SkillInput["source"], string> = {
   locate: "How the agent should find it on your device",
 };
 
-const STEP_KIND_LABEL: Record<PlanStep["kind"], string> = {
-  calculation: "Calculates",
-  action: "Does",
-};
-
-const STEP_KIND_OPTIONS: { value: PlanStep["kind"]; label: string }[] = [
-  { value: "calculation", label: "Calculates" },
-  { value: "action", label: "Does" },
-];
 
 /* --- EditableText: reads as plain text, becomes an input on click --------- */
 
@@ -332,7 +323,7 @@ export function InputTiles({
   );
 }
 
-/* --- Skill steps (ordered; typed calculation / action) -------------------- */
+/* --- Skill steps (ordered; numbered title + description) ------------------ */
 
 export function SkillStepTiles({
   steps,
@@ -347,21 +338,15 @@ export function SkillStepTiles({
   return (
     <div className="tiles">
       {steps.map((s, i) => (
-        <div key={i} className={`tile step-tile step-${s.kind}`}>
+        <div key={i} className="tile step-tile">
           <div className="tile-head">
-            <EditablePill
-              value={s.kind}
-              options={STEP_KIND_OPTIONS}
-              onChange={(v) => patch(i, { kind: v })}
-              pill={<span className={`step-kind step-kind-${s.kind}`}>{STEP_KIND_LABEL[s.kind]}</span>}
-            />
+            <span className="tile-num">{i + 1}</span>
             <EditableText
               className="ed-strong"
-              value={s.text}
-              placeholder="What happens in this step?"
-              ariaLabel="Step description"
-              multiline
-              onChange={(v) => patch(i, { text: v })}
+              value={s.title}
+              placeholder="Step title"
+              ariaLabel="Step title"
+              onChange={(v) => patch(i, { title: v })}
             />
             <RowControls
               index={i}
@@ -370,6 +355,15 @@ export function SkillStepTiles({
               onRemove={() => onChange(removeAt(steps, i))}
             />
           </div>
+          <EditableText
+            as="p"
+            multiline
+            className="ed-detail"
+            value={s.text}
+            placeholder="What happens in this step?"
+            ariaLabel="Step description"
+            onChange={(v) => patch(i, { text: v })}
+          />
           <div className="tile-foot">
             <EditableText
               className="ed-tool"
@@ -379,20 +373,12 @@ export function SkillStepTiles({
               hideEmpty
               onChange={(v) => patch(i, { tool: v })}
             />
-            <button
-              type="button"
-              className={`confirm-toggle${s.pausesForConfirmation ? " on" : ""}`}
-              title="Pause for your OK before running this step"
-              onClick={() => patch(i, { pausesForConfirmation: !s.pausesForConfirmation })}
-            >
-              asks first
-            </button>
           </div>
         </div>
       ))}
       <AddTile
         label="Add step"
-        onAdd={() => onChange([...steps, { kind: "action", text: "", tool: "", pausesForConfirmation: false }])}
+        onAdd={() => onChange([...steps, { kind: "action", title: "", text: "", tool: "" }])}
       />
     </div>
   );

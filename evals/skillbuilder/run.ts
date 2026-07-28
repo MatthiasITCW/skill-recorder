@@ -128,8 +128,7 @@ function printResult(r: Result): void {
   }
   for (const [i, s] of (r.plan?.steps ?? []).entries()) {
     const tool = s.tool ? ` {${s.tool}}` : "";
-    const gate = s.pausesForConfirmation ? " ⏸ confirm" : "";
-    console.error(`   ${i + 1}. [${s.kind}] ${s.text}${tool}${gate}`);
+    console.error(`   ${i + 1}. [${s.kind}] ${s.text}${tool}`);
   }
   console.error(`   score: ${Math.round((r.score?.score ?? 0) * 100)}% · ${r.ok ? "PASS" : "FAIL"} · ${(r.durationMs / 1000).toFixed(1)}s`);
   for (const c of r.score?.checks ?? []) {

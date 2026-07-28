@@ -34,8 +34,6 @@ export interface SkillRubric {
   minCalculations?: number;
   /** The plan must contain at least this many `action` steps. Default 1. */
   minActions?: number;
-  /** When true, at least one action step must set `pausesForConfirmation` (a send/create/delete). */
-  requiresConfirmation?: boolean;
 }
 
 export interface SkillBuilderScenario {

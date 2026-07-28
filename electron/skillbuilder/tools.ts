@@ -33,7 +33,7 @@ export function createSkillBuilderTools(ctx: SkillToolContext): Tool[] {
   const proposePlan: Tool = {
     name: "propose_plan",
     description:
-      "Propose your reviewable plan for the skill: how you'll generalize the task, the inputs it needs and where each comes from (fixed / provided / locate), the ordered steps tagged as calculations or actions (each with the native tool it uses), and the allowed-tools. Call this once per turn, then STOP so the user can review or refine it. Do NOT write the skill body yet.",
+      "Propose your reviewable plan for the skill: how you'll generalize the task, the inputs it needs and where each comes from (fixed / provided / locate), the ordered steps (each with a short title, a description, and the native tool it uses), and the allowed-tools. Call this once per turn, then STOP so the user can review or refine it. Do NOT write the skill body yet.",
     parameters: {
       type: "object",
       properties: {
@@ -75,7 +75,7 @@ export function createSkillBuilderTools(ctx: SkillToolContext): Tool[] {
         steps: {
           type: "array",
           description:
-            "The generalized procedure as ordered, typed steps. Tag each as a calculation (reads/derives/decides/formats — no external side effect) or an action (changes the world: submit/send/create/delete).",
+            "The generalized procedure as ordered, typed steps. Give each a short title and a description, and tag it as a calculation (reads/derives/decides/formats — no external side effect) or an action (changes the world: submit/send/create/delete).",
           items: {
             type: "object",
             properties: {
@@ -83,6 +83,10 @@ export function createSkillBuilderTools(ctx: SkillToolContext): Tool[] {
                 type: "string",
                 enum: ["calculation", "action"],
                 description: "calculation = no external effect; action = a side effect.",
+              },
+              title: {
+                type: "string",
+                description: "Short title/label for the step, e.g. \"List open PRs\".",
               },
               text: {
                 type: "string",
@@ -93,13 +97,8 @@ export function createSkillBuilderTools(ctx: SkillToolContext): Tool[] {
                 description:
                   "The native tool/skill this step uses, e.g. \"workiq_search_chats\" or \"Bash(gh *)\".",
               },
-              pausesForConfirmation: {
-                type: "boolean",
-                description:
-                  "For actions that send/create/delete: pause for the user's OK before running.",
-              },
             },
-            required: ["kind", "text"],
+            required: ["kind", "title", "text"],
             additionalProperties: false,
           },
         },

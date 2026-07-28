@@ -32,7 +32,7 @@ const TURN_TIMEOUT_MS = 180_000;
 const KICKOFF_PROMPT =
   "Read get_analysis (and get_timeline where the tool mapping needs evidence), then call " +
   "propose_plan with how you'll generalize this task, its inputs (fixed / provided / locate), and its " +
-  "ordered calculation and action steps (each with the native tool it uses). " +
+  "ordered steps (each a short title + description, with the native tool it uses). " +
   "Stop after propose_plan so the user can review it.";
 
 const CREATE_PROMPT =
@@ -317,9 +317,9 @@ function renderPlanForPrompt(plan: SkillPlan): string {
   if (plan.steps.length) {
     lines.push("", "Steps (in order):");
     plan.steps.forEach((s, idx) => {
-      const bits = [`${idx + 1}. (${s.kind}) ${s.text}`];
+      const head = [s.title, s.text].filter(Boolean).join(" — ");
+      const bits = [`${idx + 1}. (${s.kind}) ${head}`];
       if (s.tool) bits.push(`[tool: ${s.tool}]`);
-      if (s.pausesForConfirmation) bits.push("[pause for confirmation]");
       lines.push(bits.join(" "));
     });
   }

@@ -132,7 +132,7 @@ export type SkillInput = z.infer<typeof SkillInputSchema>;
  * A generalized step is either a **calculation** (reads, derives, decides, or formats
  * — no external side effect) or an **action** (changes the world: submit, send, create,
  * delete). Splitting them keeps the plan honest about side effects; the actions are the
- * risky surface, and destructive/sending ones set {@link PlanStep.pausesForConfirmation}.
+ * risky surface.
  */
 export const PlanStepKind = z.enum(["calculation", "action"]);
 export type PlanStepKind = z.infer<typeof PlanStepKind>;
@@ -142,12 +142,12 @@ export const PlanStepSchema = z.preprocess(
   (v) => (typeof v === "string" ? { kind: "action", text: v } : v),
   z.object({
     kind: PlanStepKind,
+    /** Short title/label for the step, e.g. "List open PRs". */
+    title: z.string().default(""),
     /** Imperative, generalized description of the step. */
     text: z.string(),
     /** The native tool/skill this step uses, if any (e.g. "workiq_search_chats"). */
     tool: z.string().default(""),
-    /** Actions that send/create/delete should pause for the user's OK before running. */
-    pausesForConfirmation: z.boolean().default(false),
   }),
 );
 export type PlanStep = z.infer<typeof PlanStepSchema>;

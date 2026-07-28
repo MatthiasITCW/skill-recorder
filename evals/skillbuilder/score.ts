@@ -87,16 +87,6 @@ export function scoreSkill(plan: SkillPlan, rubric: SkillRubric): SkillScoreResu
     detail: `found ${actions.length}`,
   });
 
-  // Confirmation on the risky surface: at least one action pauses for the user.
-  if (rubric.requiresConfirmation) {
-    const gated = actions.filter((s) => s.pausesForConfirmation);
-    checks.push({
-      name: "an action pauses for confirmation",
-      pass: gated.length > 0,
-      detail: gated.length ? `${gated.length} gated action(s)` : "no action set pausesForConfirmation",
-    });
-  }
-
   // A forbidden-token hit (wrong tool) fails outright; otherwise every check must pass.
   const forbiddenHit = checks.some((c) => c.name.startsWith("avoids ") && !c.pass);
   const passed = checks.filter((c) => c.pass).length;

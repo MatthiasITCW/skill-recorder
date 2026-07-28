@@ -232,17 +232,6 @@ export function Recorder() {
 
   return (
     <div className="hud">
-      <header className="hud-head">
-        <div className="wordmark">
-          <span className="mark-lamp" />
-          <span className="mark-text">Skill Recorder</span>
-        </div>
-        <span className={`rec-chip ${recording ? "rec" : "idle"}`}>
-          <span className="lamp" />
-          {recording ? "REC" : "READY"}
-        </span>
-      </header>
-
       <div className="transport">
         <button
           className={`record ${recording ? "on" : ""}`}
@@ -348,7 +337,15 @@ export function Recorder() {
         </div>
 
         {showNarrationSettings && (
-          <div id="narration-settings" className="narrate-settings">
+          <>
+            <button
+              type="button"
+              className="narrate-scrim"
+              aria-hidden
+              tabIndex={-1}
+              onClick={() => setShowNarrationSettings(false)}
+            />
+            <div id="narration-settings" className="narrate-settings">
             <label htmlFor="narrate-language">Language</label>
             <div className="narrate-select-wrap">
               <select
@@ -413,7 +410,8 @@ export function Recorder() {
                   microphoneSettings?.fallback}
               </p>
             )}
-          </div>
+            </div>
+          </>
         )}
       </section>
 

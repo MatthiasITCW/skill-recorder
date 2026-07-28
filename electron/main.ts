@@ -1,4 +1,4 @@
-import { app, globalShortcut, ipcMain, BrowserWindow } from "electron";
+import { app, BrowserWindow, globalShortcut, ipcMain, Menu } from "electron";
 
 import { FULL_CAPTURE } from "../common/config";
 import { IPC } from "../common/ipc";
@@ -76,6 +76,8 @@ function openLibrary(): void {
 }
 
 app.whenReady().then(() => {
+  if (process.platform === "win32") Menu.setApplicationMenu(null);
+
   narration.initialize();
   registerIpc(recorder, describer, builder, automationBuilder, narration);
   log.info("Capture: recording all sources");
@@ -123,4 +125,3 @@ app.on("will-quit", () => {
   void builder.dispose();
   void automationBuilder.dispose();
 });
-

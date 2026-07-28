@@ -38,6 +38,14 @@ $NodeMinMajor = 22
 function Info($m) { Write-Host "==> $m" -ForegroundColor Cyan }
 function Have($c) { [bool](Get-Command $c -ErrorAction SilentlyContinue) }
 
+# Detect the Copilot CLI the same way the app's doctor does (it runs `where
+# copilot`). Get-Command alone misses an extensionless `copilot` launcher or a
+# Windows App Execution Alias that `where.exe` — and therefore the app — finds.
+function Test-CopilotAvailable {
+  if (Have 'copilot') { return $true }
+  try { $null = & where.exe copilot 2>$null; return ($LASTEXITCODE -eq 0) } catch { return $false }
+}
+
 # Abort if the most recent native command reported a non-zero exit code
 # (PowerShell does not treat native exit codes as terminating errors on its own).
 function Assert-Ok($what) {
@@ -116,7 +124,7 @@ function Initialize-NodeRuntime {
 }
 
 # --- prerequisites ---------------------------------------------------------
-if (-not (Have 'copilot')) {
+if (-not (Test-CopilotAvailable)) {
   Write-Warning "GitHub Copilot CLI ('copilot') not found on PATH. The app will launch, but recording analysis and skill/automation building need it — install it and sign in first."
 }
 

@@ -76,9 +76,44 @@ On first launch macOS will prompt for **Screen Recording** (required). Enabling
 Narrate requests **Microphone** permission immediately so named inputs can be selected
 before recording; the permission-check stream is released without saving audio.
 
+## Quick start (download & run)
+
+Don't want to clone and manage a source checkout? A one-line installer downloads Skill
+Recorder into `~/.skill-recorder`, installs its dependencies, builds it, and launches
+it. It's **safe to re-run**: the same command updates an existing install to the latest
+code and only reinstalls or rebuilds when something actually changed.
+
+**macOS / Linux:**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/adilei/skill-recorder/master/install.sh | bash
+```
+
+**Windows (PowerShell):**
+
+```powershell
+irm https://raw.githubusercontent.com/adilei/skill-recorder/master/install.ps1 | iex
+```
+
+You still need **Node.js 22+** and, for analysis, the **GitHub Copilot CLI** (see
+[Requirements](#requirements)). The installer prefers `git` and falls back to a source
+tarball/zip download when `git` isn't available.
+
+Prefix either command with these optional overrides to change its behavior:
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `SKILL_RECORDER_HOME` | `~/.skill-recorder` | where the app is installed |
+| `SKILL_RECORDER_REF` | `master` | branch, tag, or commit to install |
+| `SKILL_RECORDER_NO_RUN` | *(unset)* | install & build only, don't launch |
+
+To update and relaunch later, just run the same one-liner again; to launch without
+re-downloading, run `npm start` from the install directory.
+
 ## Run it (development)
 
-> There is no packaged/released download yet — run it from source.
+> Prefer the one-line installer above for a quick run. To hack on the code, run it from
+> source instead:
 
 ```bash
 npm install

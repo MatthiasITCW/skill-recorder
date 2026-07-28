@@ -200,7 +200,7 @@ export function Recorder() {
         </button>
 
         <label className="narration-language">
-          <span>Transcript</span>
+          <span>Language</span>
           <select
             value={narrationLanguage}
             disabled={recording || transitioning}

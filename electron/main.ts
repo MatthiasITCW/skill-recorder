@@ -13,6 +13,7 @@ import { deleteSession } from "./sessions";
 import { SkillBuilder } from "./skillbuilder/builder";
 import { AutomationBuilder } from "./automationbuilder/builder";
 import { createTray } from "./tray";
+import { dockIcon } from "./icons";
 import { AudioRecorder } from "./audio/recorder";
 import { VideoRecorder } from "./video/recorder";
 import {
@@ -25,6 +26,9 @@ import {
 } from "./window";
 
 const log = createLogger("Main");
+
+/** Static red-dot tile used for the macOS Dock icon. */
+const dock = dockIcon();
 
 let recorderWindow: BrowserWindow | null = null;
 let libraryWindow: BrowserWindow | null = null;
@@ -174,6 +178,7 @@ function clampControlsToDisplay(): void {
 
 app.whenReady().then(async () => {
   if (process.platform === "win32") Menu.setApplicationMenu(null);
+  if (dock && app.dock) app.dock.setIcon(dock);
 
   narration.initialize();
   try {

@@ -68,6 +68,7 @@
       "node_modules/onnxruntime-node/**"
     ],
     "mac": {
+      "icon": "build/icon.png",
       "target": [
         "dmg",
         "zip"
@@ -88,6 +89,7 @@
       }
     },
     "win": {
+      "icon": "build/icon.png",
       "files": [
         "dist/**",
         "dist-electron/**",

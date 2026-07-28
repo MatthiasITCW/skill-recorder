@@ -467,19 +467,7 @@ export function Recorder() {
       {doctor && (
         <div className="doctor">
           <Row
-            label="window tracking"
-            status={doctor.activeWindow.ok ? "good" : "bad"}
-            note={doctor.activeWindow.ok ? doctor.activeWindow.provider : "provider missing"}
-          />
-          {doctor.activeSources.some((s) => s.key === "browserUrls") && (
-            <Row
-              label="browser URLs"
-              status={doctor.browserUrl.supported ? "good" : "bad"}
-              note={doctor.browserUrl.supported ? doctor.browserUrl.kind : "not on this OS"}
-            />
-          )}
-          <Row
-            label="copilot CLI"
+            label="GitHub Copilot"
             status={doctor.copilotCli.ok ? "good" : "bad"}
             note={doctor.copilotCli.ok ? "found" : "missing"}
           />

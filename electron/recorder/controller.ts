@@ -14,6 +14,10 @@ import type {
   StopResult,
 } from "../../common/ipc";
 import type { RecorderState, SessionMeta } from "../../common/types";
+import {
+  SYSTEM_DEFAULT_MICROPHONE_ID,
+  type MicrophoneDevice,
+} from "../../common/microphone";
 import { createLogger } from "../logger";
 import type { Collector } from "./collector";
 import { CollectorHost } from "./collector";
@@ -39,7 +43,7 @@ export interface SessionVideoRecorder {
 /** Microphone sidecar that can create multiple capture intervals per session. */
 export interface SessionAudioRecorder {
   start(sessionDir: string, sessionStartedAt: number): Promise<void>;
-  enable(): Promise<void>;
+  enable(deviceId?: string): Promise<MicrophoneDevice | void>;
   disable(): Promise<unknown>;
   finish(videoStartEpoch: number | null): Promise<unknown>;
 }
@@ -81,7 +85,11 @@ export class RecorderController {
   private video: SessionVideoRecorder | null = null;
   private audio: SessionAudioRecorder | null = null;
   private transition: RecorderStatus["transition"] = "none";
-  private microphone: RecorderStatus["microphone"] = { state: "off", error: null };
+  private microphone: RecorderStatus["microphone"] = {
+    state: "off",
+    error: null,
+    activeDevice: null,
+  };
   private lastFinish: RecorderStatus["lastFinish"] = null;
   private shuttingDown = false;
   private operations: Promise<void> = Promise.resolve();
@@ -124,7 +132,12 @@ export class RecorderController {
       startedAt: this.store?.meta.startedAt ?? null,
       eventCount: this.store?.eventCount ?? 0,
       transition: this.transition,
-      microphone: { ...this.microphone },
+      microphone: {
+        ...this.microphone,
+        activeDevice: this.microphone.activeDevice
+          ? { ...this.microphone.activeDevice }
+          : null,
+      },
       lastFinish: this.lastFinish ? { ...this.lastFinish } : null,
       lastSession: this.lastCompleted
         ? { id: this.lastCompleted.id, processed: this.lastProcessed }
@@ -155,12 +168,65 @@ export class RecorderController {
     return this.enqueue(() => this.finish("discard"));
   }
 
-  setMicrophoneEnabled(enabled: boolean): Promise<MicrophoneResult> {
+  setMicrophoneEnabled(
+    enabled: boolean,
+    deviceId = SYSTEM_DEFAULT_MICROPHONE_ID,
+  ): Promise<MicrophoneResult> {
     return this.enqueue(async () => {
       if (!this.store || this.transition !== "none") {
         return { ok: false, error: "Microphone controls are only available while recording." };
       }
-      return this.setMicrophoneInternal(enabled);
+      return this.setMicrophoneInternal(enabled, deviceId);
+    });
+  }
+
+  setMicrophoneDevice(deviceId: string): Promise<MicrophoneResult> {
+    return this.enqueue(async () => {
+      if (!this.store || this.transition !== "none") {
+        return { ok: false, error: "Microphone controls are only available while recording." };
+      }
+      if (this.microphone.state !== "on") {
+        return { ok: true, state: this.microphone.state };
+      }
+      if (!this.audio) {
+        const error = "Microphone capture is unavailable for this recording.";
+        this.microphone = { state: "error", error, activeDevice: null };
+        this.emit();
+        return { ok: false, state: "error", error };
+      }
+
+      this.microphone = {
+        state: "stopping",
+        error: null,
+        activeDevice: this.microphone.activeDevice,
+      };
+      this.emit();
+      try {
+        await this.audio.disable();
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.microphone = { state: "error", error: message, activeDevice: null };
+        this.emit();
+        return { ok: false, state: "error", error: message };
+      }
+
+      this.microphone = { state: "starting", error: null, activeDevice: null };
+      this.emit();
+      try {
+        const result = await this.audio.enable(deviceId);
+        this.microphone = {
+          state: "on",
+          error: null,
+          activeDevice: isMicrophoneDevice(result) ? result : null,
+        };
+        this.emit();
+        return { ok: true, state: "on" };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.microphone = { state: "error", error: message, activeDevice: null };
+        this.emit();
+        return { ok: false, state: "error", error: message };
+      }
     });
   }
 
@@ -188,7 +254,7 @@ export class RecorderController {
     if (this.store) return { ok: false, error: "Already recording" };
 
     this.transition = "starting";
-    this.microphone = { state: "off", error: null };
+    this.microphone = { state: "off", error: null, activeDevice: null };
     this.lastFinish = null;
     this.emit();
 
@@ -246,12 +312,15 @@ export class RecorderController {
         const message = error instanceof Error ? error.message : String(error);
         log.warn("microphone initialization failed:", message);
         this.audio = null;
-        this.microphone = { state: "error", error: message };
+        this.microphone = { state: "error", error: message, activeDevice: null };
       }
     }
 
     if (options?.narration && this.audio) {
-      await this.setMicrophoneInternal(true);
+      await this.setMicrophoneInternal(
+        true,
+        options.microphoneDeviceId ?? SYSTEM_DEFAULT_MICROPHONE_ID,
+      );
     }
 
     this.transition = "none";
@@ -259,26 +328,33 @@ export class RecorderController {
     return { ok: true, sessionId: store.meta.id };
   }
 
-  private async setMicrophoneInternal(enabled: boolean): Promise<MicrophoneResult> {
+  private async setMicrophoneInternal(
+    enabled: boolean,
+    deviceId = SYSTEM_DEFAULT_MICROPHONE_ID,
+  ): Promise<MicrophoneResult> {
     if (enabled) {
       if (this.microphone.state === "on") return { ok: true, state: "on" };
       if (!this.audio) {
         const error = "Microphone capture is unavailable for this recording.";
-        this.microphone = { state: "error", error };
+        this.microphone = { state: "error", error, activeDevice: null };
         this.emit();
         return { ok: false, state: "error", error };
       }
 
-      this.microphone = { state: "starting", error: null };
+      this.microphone = { state: "starting", error: null, activeDevice: null };
       this.emit();
       try {
-        await this.audio.enable();
-        this.microphone = { state: "on", error: null };
+        const result = await this.audio.enable(deviceId);
+        this.microphone = {
+          state: "on",
+          error: null,
+          activeDevice: isMicrophoneDevice(result) ? result : null,
+        };
         this.emit();
         return { ok: true, state: "on" };
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        this.microphone = { state: "error", error: message };
+        this.microphone = { state: "error", error: message, activeDevice: null };
         this.emit();
         return { ok: false, state: "error", error: message };
       }
@@ -286,21 +362,25 @@ export class RecorderController {
 
     if (this.microphone.state === "off") return { ok: true, state: "off" };
     if (!this.audio) {
-      this.microphone = { state: "off", error: null };
+      this.microphone = { state: "off", error: null, activeDevice: null };
       this.emit();
       return { ok: true, state: "off" };
     }
 
-    this.microphone = { state: "stopping", error: null };
+    this.microphone = {
+      state: "stopping",
+      error: null,
+      activeDevice: this.microphone.activeDevice,
+    };
     this.emit();
     try {
       await this.audio.disable();
-      this.microphone = { state: "off", error: null };
+      this.microphone = { state: "off", error: null, activeDevice: null };
       this.emit();
       return { ok: true, state: "off" };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      this.microphone = { state: "error", error: message };
+      this.microphone = { state: "error", error: message, activeDevice: null };
       this.emit();
       return { ok: false, state: "error", error: message };
     }
@@ -312,7 +392,11 @@ export class RecorderController {
 
     this.transition = intent === "save" ? "stopping" : "discarding";
     if (this.microphone.state !== "off") {
-      this.microphone = { state: "stopping", error: null };
+      this.microphone = {
+        state: "stopping",
+        error: null,
+        activeDevice: this.microphone.activeDevice,
+      };
     }
     this.emit();
 
@@ -351,7 +435,7 @@ export class RecorderController {
     this.bus.detach();
     store.finalize(Date.now());
     await store.whenClosed();
-    this.microphone = { state: "off", error: null };
+    this.microphone = { state: "off", error: null, activeDevice: null };
 
     if (intent === "discard") {
       try {
@@ -427,7 +511,7 @@ export class RecorderController {
   private onAudioCaptureEnded(event: AudioCaptureEnded): void {
     if (!this.store || this.transition !== "none") return;
     const error = event.error ?? "The microphone stopped unexpectedly.";
-    this.microphone = { state: "error", error };
+    this.microphone = { state: "error", error, activeDevice: null };
     this.emit();
   }
 
@@ -445,4 +529,17 @@ function readStartEpoch(value: unknown): number | null {
   if (!value || typeof value !== "object" || !("startEpoch" in value)) return null;
   const startEpoch = value.startEpoch;
   return typeof startEpoch === "number" && Number.isFinite(startEpoch) ? startEpoch : null;
+}
+
+function isMicrophoneDevice(value: unknown): value is MicrophoneDevice {
+  return (
+    !!value &&
+    typeof value === "object" &&
+    "id" in value &&
+    typeof value.id === "string" &&
+    "label" in value &&
+    typeof value.label === "string" &&
+    "groupId" in value &&
+    typeof value.groupId === "string"
+  );
 }

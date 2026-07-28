@@ -36,7 +36,7 @@ test("recording controls clamp to negative-coordinate and small displays", () =>
   );
 });
 
-test("confirmation expansion preserves the bar's bottom edge", () => {
+test("overlay panel expansion preserves the bar's bottom edge", () => {
   const workArea = { x: 0, y: 0, width: 1440, height: 900 };
   const collapsed = { x: 486, y: 806, width: 468, height: 76 };
   const expanded = resizeRecordingControlsBounds(collapsed, true, workArea);
@@ -47,4 +47,3 @@ test("confirmation expansion preserves the bar's bottom edge", () => {
     collapsed,
   );
 });
-

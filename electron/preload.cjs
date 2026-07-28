@@ -7,6 +7,10 @@ const IPC = {
   stop: "recorder:stop",
   discard: "recorder:discard",
   microphone: "recorder:microphone",
+  microphoneSettings: "microphone:settings",
+  microphoneNarration: "microphone:narration",
+  microphoneDevice: "microphone:device",
+  microphoneSettingsChanged: "microphone:settings-changed",
   status: "recorder:status",
   marker: "recorder:marker",
   doctor: "doctor:check",
@@ -41,10 +45,18 @@ const IPC = {
 };
 
 contextBridge.exposeInMainWorld("skillRecorder", {
-  start: (options) => ipcRenderer.invoke(IPC.start, options),
+  start: () => ipcRenderer.invoke(IPC.start),
   stop: () => ipcRenderer.invoke(IPC.stop),
   discard: () => ipcRenderer.invoke(IPC.discard),
   setMicrophoneEnabled: (enabled) => ipcRenderer.invoke(IPC.microphone, enabled),
+  microphoneSettings: () => ipcRenderer.invoke(IPC.microphoneSettings),
+  setNarrationEnabled: (enabled) => ipcRenderer.invoke(IPC.microphoneNarration, enabled),
+  selectMicrophone: (deviceId) => ipcRenderer.invoke(IPC.microphoneDevice, deviceId),
+  onMicrophoneSettingsChanged: (cb) => {
+    const listener = (_event, status) => cb(status);
+    ipcRenderer.on(IPC.microphoneSettingsChanged, listener);
+    return () => ipcRenderer.removeListener(IPC.microphoneSettingsChanged, listener);
+  },
   status: () => ipcRenderer.invoke(IPC.status),
   marker: (note) => ipcRenderer.invoke(IPC.marker, note),
   doctor: () => ipcRenderer.invoke(IPC.doctor),

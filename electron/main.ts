@@ -36,11 +36,15 @@ let quitTask: Promise<void> | null = null;
 const narration = new NarrationManager((status) =>
   broadcast(IPC.narrationStatusChanged, status),
 );
+const microphones = new AudioRecorder((status) =>
+  broadcast(IPC.microphoneSettingsChanged, status),
+);
 const recorder = new RecorderController({
   resolveConfig: () => ({ ...FULL_CAPTURE }),
   buildCollectors: createCollectors,
   createVideoRecorder: () => new VideoRecorder(),
-  createAudioRecorder: (onCaptureEnded) => new AudioRecorder(onCaptureEnded),
+  createAudioRecorder: (onCaptureEnded) =>
+    microphones.createSession(onCaptureEnded),
   deleteSession,
   postProcess: async (dir) => {
     await processSession(dir);
@@ -51,6 +55,11 @@ const recorder = new RecorderController({
     }
   },
 });
+
+async function startRecording(): Promise<unknown> {
+  await microphones.whenSettingsSettled();
+  return recorder.start(microphones.startOptions());
+}
 
 /** Send an event to every live window (recorder HUD + library, if open). */
 function broadcast(channel: string, payload: unknown): void {
@@ -163,11 +172,26 @@ function clampControlsToDisplay(): void {
   }
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   if (process.platform === "win32") Menu.setApplicationMenu(null);
 
   narration.initialize();
-  registerIpc(recorder, describer, builder, automationBuilder, narration);
+  try {
+    await microphones.initialize();
+  } catch (error) {
+    log.warn(
+      "Microphone service initialization failed:",
+      error instanceof Error ? error.message : error,
+    );
+  }
+  registerIpc(
+    recorder,
+    describer,
+    builder,
+    automationBuilder,
+    narration,
+    microphones,
+  );
   log.info("Capture: recording all sources");
 
   ipcMain.handle(IPC.openLibrary, () => openLibrary());
@@ -200,7 +224,12 @@ app.whenReady().then(() => {
   screen.on("display-metrics-changed", clampControlsToDisplay);
 
   try {
-    createTray(recorder, showRecorderWindow, showRecordingControls);
+    createTray(
+      recorder,
+      startRecording,
+      showRecorderWindow,
+      showRecordingControls,
+    );
   } catch (err) {
     log.warn("Tray unavailable:", err);
   }
@@ -208,7 +237,7 @@ app.whenReady().then(() => {
   const toggle = () => {
     const status = recorder.status();
     if (status.transition !== "none") return;
-    void (status.state === "recording" ? recorder.stop() : recorder.start());
+    void (status.state === "recording" ? recorder.stop() : startRecording());
   };
   if (!globalShortcut.register("CommandOrControl+Shift+R", toggle)) {
     log.warn("Global shortcut registration failed");
@@ -252,4 +281,5 @@ app.on("will-quit", () => {
   void describer.dispose();
   void builder.dispose();
   void automationBuilder.dispose();
+  microphones.dispose();
 });

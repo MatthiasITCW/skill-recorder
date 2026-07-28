@@ -9,10 +9,10 @@ import type {
   AutomationCreateResult,
   AutomationPlanResult,
   DeleteSessionResult,
+  MicrophoneSettingsResult,
   SkillBuildInput,
   SkillCreateResult,
   SkillPlanResult,
-  StartOptions,
 } from "../common/ipc";
 import { IPC } from "../common/ipc";
 import type { AutomationPlan } from "../common/automation";
@@ -21,6 +21,7 @@ import { AutomationBuilder, loadPersistedAutomation } from "./automationbuilder/
 import { Describer, loadPersistedAnalysis } from "./describer/describer";
 import { runDoctor } from "./doctor";
 import { createLogger } from "./logger";
+import type { AudioRecorder } from "./audio/recorder";
 import type { NarrationManager } from "./narration/manager";
 import type { RecorderController } from "./recorder/controller";
 import { isValidSessionId } from "./recorder/session-store";
@@ -36,12 +37,69 @@ export function registerIpc(
   builder: SkillBuilder,
   automationBuilder: AutomationBuilder,
   narration: NarrationManager,
+  microphones: AudioRecorder,
 ): void {
-  ipcMain.handle(IPC.start, (_event, options?: StartOptions) => recorder.start(options));
+  ipcMain.handle(IPC.start, async () => {
+    await microphones.whenSettingsSettled();
+    return recorder.start(microphones.startOptions());
+  });
   ipcMain.handle(IPC.stop, () => recorder.stop());
   ipcMain.handle(IPC.discard, () => recorder.discard());
   ipcMain.handle(IPC.microphone, (_event, enabled: boolean) =>
-    recorder.setMicrophoneEnabled(enabled),
+    recorder.setMicrophoneEnabled(enabled, microphones.effectiveDeviceId()),
+  );
+  ipcMain.handle(IPC.microphoneSettings, () => microphones.settings());
+  ipcMain.handle(
+    IPC.microphoneNarration,
+    async (_event, enabled: boolean): Promise<MicrophoneSettingsResult> => {
+      if (typeof enabled !== "boolean") {
+        return {
+          ok: false,
+          status: microphones.settings(),
+          error: "Invalid narration preference.",
+        };
+      }
+      if (recorder.state === "recording") {
+        return {
+          ok: false,
+          status: microphones.settings(),
+          error: "Choose the next recording's narration state after this recording ends.",
+        };
+      }
+      return microphones.setNarrationEnabled(enabled);
+    },
+  );
+  ipcMain.handle(
+    IPC.microphoneDevice,
+    async (_event, deviceId: string): Promise<MicrophoneSettingsResult> => {
+      if (typeof deviceId !== "string" || !deviceId) {
+        return {
+          ok: false,
+          status: microphones.settings(),
+          error: "Invalid microphone selection.",
+        };
+      }
+      const previousDeviceId = microphones.effectiveDeviceId();
+      const selected = await microphones.selectDevice(deviceId);
+      if (
+        !selected.ok ||
+        recorder.status().microphone.state !== "on" ||
+        microphones.effectiveDeviceId() === previousDeviceId
+      ) {
+        return selected;
+      }
+      const switched = await recorder.setMicrophoneDevice(
+        microphones.effectiveDeviceId(),
+      );
+      if (!switched.ok) {
+        return {
+          ok: false,
+          status: microphones.settings(),
+          error: switched.error ?? "Could not switch microphones.",
+        };
+      }
+      return { ok: true, status: microphones.settings() };
+    },
   );
   ipcMain.handle(IPC.status, () => recorder.status());
   ipcMain.handle(IPC.marker, (_event, note: string) => recorder.marker(note));

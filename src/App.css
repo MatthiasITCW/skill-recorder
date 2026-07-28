@@ -444,20 +444,28 @@ button:focus-visible,
 }
 
 .narrate {
-  display: flex;
-  align-items: center;
-  gap: 12px;
+  flex: none;
   width: 100%;
-  text-align: left;
   background: transparent;
   border: 1px solid var(--line);
   color: var(--text);
   border-radius: 12px;
-  padding: 11px 13px;
+  overflow: hidden;
   transition: border-color 0.15s ease, background 0.15s ease;
 }
 
-.narrate:not(:disabled):hover {
+.narrate-toggle {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 11px 13px;
+  text-align: left;
+  background: transparent;
+  color: inherit;
+}
+
+.narrate-toggle:not(:disabled):hover {
   border-color: var(--line-strong);
   background: var(--surface);
 }
@@ -467,7 +475,7 @@ button:focus-visible,
   background: var(--signal-dim);
 }
 
-.narrate:disabled {
+.narrate-toggle:disabled {
   opacity: 0.9;
   cursor: default;
 }
@@ -510,11 +518,11 @@ button:focus-visible,
 .narrate-switch {
   flex: none;
   box-sizing: border-box;
-  width: 34px;
-  height: 20px;
+  width: 36px;
+  height: 22px;
   border-radius: 999px;
   background: var(--line-strong);
-  padding: 2px;
+  padding: 3px;
   transition: background 0.15s ease;
 }
 
@@ -534,6 +542,71 @@ button:focus-visible,
 
 .narrate-switch.on .narrate-knob {
   transform: translateX(14px);
+}
+
+.narrate-device {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 6px 10px;
+  padding: 6px 13px 6px 43px;
+  border-top: 1px solid rgba(var(--brand-rgb), 0.14);
+}
+
+.narrate-device label {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--brand-ink);
+}
+
+.narrate-select-wrap {
+  position: relative;
+  min-width: 0;
+}
+
+.narrate-select-wrap select {
+  width: 100%;
+  height: 30px;
+  padding: 0 27px 0 9px;
+  appearance: none;
+  border: 1px solid rgba(var(--brand-rgb), 0.34);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 11px;
+  text-overflow: ellipsis;
+}
+
+.narrate-select-wrap select:focus-visible {
+  outline: 2px solid rgba(var(--brand-rgb), 0.5);
+  outline-offset: 1px;
+}
+
+.narrate-select-chevron {
+  position: absolute;
+  top: 50%;
+  right: 9px;
+  color: var(--muted);
+  font-size: 10px;
+  pointer-events: none;
+  transform: translateY(-52%);
+}
+
+.narrate-device-note {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.narrate-device-note.warn {
+  color: #8a5d00;
+}
+
+.narrate-device-note.error {
+  color: var(--rec);
 }
 
 .privacy-note {
@@ -778,7 +851,9 @@ button:focus-visible,
 
   .recording-bar button,
   .recording-discard-confirm,
-  .recording-discard-confirm button {
+  .recording-discard-confirm button,
+  .recording-microphone-menu,
+  .recording-microphone-menu button {
     -webkit-app-region: no-drag;
   }
 
@@ -827,33 +902,54 @@ button:focus-visible,
     background: rgba(255, 255, 255, 0.13);
   }
 
+  .recording-microphone-split {
+    display: flex;
+    align-items: center;
+    height: 36px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 9px;
+    background: #2d2d30;
+    color: #b8b8bc;
+    overflow: hidden;
+    -webkit-app-region: no-drag;
+  }
+
   .recording-microphone {
     display: flex;
     align-items: center;
     justify-content: center;
     gap: 5px;
-    min-width: 67px;
-    height: 36px;
-    padding: 0 8px;
-    border: 1px solid rgba(255, 255, 255, 0.14);
-    border-radius: 9px;
-    background: #2d2d30;
-    color: #b8b8bc;
+    min-width: 59px;
+    height: 34px;
+    padding: 0 7px;
+    background: transparent;
+    color: inherit;
     font-size: 10px;
   }
 
-  .recording-microphone.on {
+  .recording-microphone-menu-toggle {
+    display: grid;
+    place-items: center;
+    width: 23px;
+    height: 34px;
+    border-left: 1px solid rgba(255, 255, 255, 0.12);
+    background: transparent;
+    color: inherit;
+  }
+
+  .recording-microphone-split.on {
     border-color: rgba(239, 89, 75, 0.5);
     background: rgba(239, 89, 75, 0.15);
     color: #ff8a80;
   }
 
-  .recording-microphone.error {
+  .recording-microphone-split.error {
     border-color: rgba(255, 184, 77, 0.55);
     color: #ffc269;
   }
 
   .recording-microphone:not(:disabled):hover,
+  .recording-microphone-menu-toggle:not(:disabled):hover,
   .recording-discard:not(:disabled):hover {
     filter: brightness(1.16);
   }
@@ -890,7 +986,8 @@ button:focus-visible,
   }
 
   .recording-bar button:focus-visible,
-  .recording-discard-confirm button:focus-visible {
+  .recording-discard-confirm button:focus-visible,
+  .recording-microphone-menu button:focus-visible {
     outline: 2px solid #ff766a;
     outline-offset: 2px;
   }
@@ -916,6 +1013,95 @@ button:focus-visible,
     box-shadow: 0 14px 34px rgba(0, 0, 0, 0.42);
     color: #f7f7f7;
     animation: recording-confirm-in 0.15s ease-out;
+  }
+
+  .recording-microphone-menu {
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+    width: 100%;
+    max-height: 150px;
+    padding: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 13px;
+    background: rgba(37, 37, 40, 0.98);
+    box-shadow: 0 14px 34px rgba(0, 0, 0, 0.42);
+    color: #f7f7f7;
+    animation: recording-confirm-in 0.15s ease-out;
+  }
+
+  .recording-microphone-menu header {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .recording-microphone-menu header strong {
+    flex: none;
+    font-size: 12px;
+  }
+
+  .recording-microphone-menu header span {
+    overflow: hidden;
+    color: #aaa;
+    font-size: 10px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .recording-microphone-options {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-height: 0;
+    overflow-y: auto;
+  }
+
+  .recording-microphone-options button {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-height: 29px;
+    padding: 0 8px;
+    border-radius: 7px;
+    background: transparent;
+    color: #e6e6e8;
+    font-size: 10.5px;
+    text-align: left;
+  }
+
+  .recording-microphone-options button:hover,
+  .recording-microphone-options button.selected {
+    background: rgba(255, 255, 255, 0.08);
+  }
+
+  .recording-microphone-options button > span:first-child {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .recording-microphone-selected {
+    flex: none;
+    color: #ff8a80;
+    font-size: 9px;
+  }
+
+  .recording-microphone-menu p {
+    margin: 0;
+    color: #c7c7ca;
+    font-size: 10px;
+    line-height: 1.35;
+  }
+
+  .recording-microphone-menu p.warn {
+    color: #ffc269;
+  }
+
+  .recording-microphone-menu p.error {
+    color: #ff8a80;
   }
 
   .recording-discard-confirm h2 {
@@ -979,7 +1165,8 @@ button:focus-visible,
 
 @media (prefers-reduced-motion: reduce) {
   .recording-live-dot,
-  .recording-discard-confirm {
+  .recording-discard-confirm,
+  .recording-microphone-menu {
     animation: none;
   }
 }

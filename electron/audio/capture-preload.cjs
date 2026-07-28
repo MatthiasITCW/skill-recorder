@@ -18,6 +18,53 @@ let requestedStopEpoch = 0;
 // cluster is lost and the webm ends prematurely.
 let sendChain = Promise.resolve();
 
+function microphoneConstraints(deviceId) {
+  return {
+    echoCancellation: true,
+    noiseSuppression: true,
+    channelCount: 1,
+    ...(typeof deviceId === "string" && deviceId && deviceId !== "default"
+      ? { deviceId: { exact: deviceId } }
+      : {}),
+  };
+}
+
+function serializeError(error) {
+  return {
+    message: error instanceof Error ? error.message : String(error),
+    name: error && typeof error.name === "string" ? error.name : "",
+  };
+}
+
+async function enumerateMicrophones() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return [];
+  const devices = await navigator.mediaDevices.enumerateDevices();
+  return devices
+    .filter((device) => device.kind === "audioinput")
+    .map((device) => ({
+      id: device.deviceId,
+      label: device.label,
+      groupId: device.groupId,
+    }));
+}
+
+async function publishMicrophones() {
+  try {
+    ipcRenderer.send("audio:devices", await enumerateMicrophones());
+  } catch (error) {
+    const detail = serializeError(error);
+    ipcRenderer.send("audio:devices", []);
+    ipcRenderer.send("audio:device-error", detail.message, detail.name);
+  }
+}
+
+if (navigator.mediaDevices) {
+  navigator.mediaDevices.addEventListener("devicechange", () => {
+    void publishMicrophones();
+  });
+  void publishMicrophones();
+}
+
 function cleanup() {
   try {
     if (stream) for (const track of stream.getTracks()) track.stop();
@@ -31,7 +78,7 @@ function cleanup() {
 }
 
 ipcRenderer.on("audio:start", async (_event, opts) => {
-  const { id, bitsPerSecond } = opts || {};
+  const { id, bitsPerSecond, deviceId } = opts || {};
   if (typeof id !== "string" || !id) {
     ipcRenderer.send("audio:error", "", "Invalid microphone segment id.");
     return;
@@ -47,11 +94,7 @@ ipcRenderer.on("audio:start", async (_event, opts) => {
     // A plain microphone request. Echo cancellation / noise suppression keep the
     // narration clean for the transcriber without us touching the samples.
     const nextStream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        echoCancellation: true,
-        noiseSuppression: true,
-        channelCount: 1,
-      },
+      audio: microphoneConstraints(deviceId),
       video: false,
     });
     if (captureId !== id) {
@@ -59,6 +102,7 @@ ipcRenderer.on("audio:start", async (_event, opts) => {
       return;
     }
     stream = nextStream;
+    void publishMicrophones();
     for (const track of stream.getAudioTracks()) {
       track.addEventListener("ended", () => {
         if (!requestedStopEpoch) {
@@ -82,7 +126,13 @@ ipcRenderer.on("audio:start", async (_event, opts) => {
       });
     };
     recorder.onstart = () => {
-      ipcRenderer.send("audio:started", id, epochNow());
+      const track = stream && stream.getAudioTracks()[0];
+      const settings = track ? track.getSettings() : {};
+      ipcRenderer.send("audio:started", id, epochNow(), {
+        id: settings.deviceId || deviceId || "default",
+        label: (track && track.label) || "Microphone",
+        groupId: settings.groupId || "",
+      });
     };
     recorder.onstop = () => {
       // Wait for every queued chunk (including the final one) to be sent.
@@ -93,15 +143,47 @@ ipcRenderer.on("audio:start", async (_event, opts) => {
       });
     };
     recorder.onerror = (e) => {
-      ipcRenderer.send("audio:error", id, String((e && e.error) || e));
+      const detail = serializeError((e && e.error) || e);
+      ipcRenderer.send("audio:error", id, detail.message, detail.name);
     };
 
     // Emit a chunk every second so long sessions stream to disk incrementally.
     recorder.start(1000);
   } catch (err) {
     if (captureId === id) cleanup();
-    ipcRenderer.send("audio:error", id, err instanceof Error ? err.message : String(err));
+    const detail = serializeError(err);
+    ipcRenderer.send("audio:error", id, detail.message, detail.name);
     ipcRenderer.send("audio:stopped", id, epochNow());
+  }
+});
+
+ipcRenderer.on("audio:probe", async (_event, opts) => {
+  const { requestId, deviceId } = opts || {};
+  if (typeof requestId !== "string" || !requestId) return;
+  let probeStream = null;
+  try {
+    if (recorder && recorder.state !== "inactive") {
+      throw new Error("The microphone is already recording.");
+    }
+    probeStream = await navigator.mediaDevices.getUserMedia({
+      audio: microphoneConstraints(deviceId),
+      video: false,
+    });
+    for (const track of probeStream.getTracks()) track.stop();
+    probeStream = null;
+    const devices = await enumerateMicrophones();
+    ipcRenderer.send("audio:probe-result", requestId, { ok: true, devices });
+    ipcRenderer.send("audio:devices", devices);
+  } catch (error) {
+    if (probeStream) {
+      for (const track of probeStream.getTracks()) track.stop();
+    }
+    const detail = serializeError(error);
+    ipcRenderer.send("audio:probe-result", requestId, {
+      ok: false,
+      error: detail.message,
+      errorName: detail.name,
+    });
   }
 });
 
@@ -121,7 +203,8 @@ ipcRenderer.on("audio:stop", (_event, opts) => {
   } catch (err) {
     const stopEpoch = requestedStopEpoch || epochNow();
     cleanup();
-    ipcRenderer.send("audio:error", id, err instanceof Error ? err.message : String(err));
+    const detail = serializeError(err);
+    ipcRenderer.send("audio:error", id, detail.message, detail.name);
     ipcRenderer.send("audio:stopped", id, stopEpoch);
   }
 });

@@ -116,7 +116,7 @@ export function createRecordingControlsWindow(): BrowserWindow {
   return win;
 }
 
-/** Resize confirmation above the bar while preserving its on-screen bottom edge. */
+/** Resize a panel above the bar while preserving its on-screen bottom edge. */
 export function setRecordingControlsExpanded(
   win: BrowserWindow,
   expanded: boolean,

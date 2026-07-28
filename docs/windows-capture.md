@@ -60,18 +60,19 @@ Run a real recording on Windows and verify each source lands in the session's
 5. **Video.** Confirm `video.webm`, `video-frames.json`, snapshots under
    `video-frames/`, and retained images under `frames/`.
 6. **Voice narration.** Turn on the **Narrate** switch before starting or use the
-   microphone control in the floating recording bar. Select English, Italian,
-   French, or Spanish before recording, then toggle the microphone off and on
-   around two spoken sentences. After Stop, confirm `audio.json` contains a
+   microphone control in the floating recording bar. Confirm the selector lists
+   all 99 supported languages alphabetically and defaults to English. Select a
+   language before recording, then toggle the microphone off and on around two
+   spoken sentences. After Stop, confirm `audio.json` contains a
    version-2 segment manifest with `narrationLanguage` and that the referenced
    `audio/segment-*.webm` files exist. Their session/video offsets should
    preserve the silent gap while the microphone was off. If the model is not
    installed, use **Download & transcribe** in Sessions (or the actionable HUD
    readiness row) to approve the one-time ~252 MB Whisper download. Confirm
    `narration.json` records the chosen language and contains the
-   original-language words with `atMs` offsets. Repeat with all four supported
-   languages. Later runs are offline. On Windows the mic grant is requested by
-   the OS on first use.
+   original-language words with `atMs` offsets. Exercise representative
+   languages, including English and a non-Latin script. Later runs are offline.
+   On Windows the mic grant is requested by the OS on first use.
 7. **Recording controls.** Confirm the floating bar stays above the active app,
    can be dragged without making its buttons unclickable, and does not appear in
    captured frames where Windows capture protection is supported. Canceling the

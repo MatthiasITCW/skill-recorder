@@ -82,9 +82,8 @@ export function WhatsRecorded({ onClose }: { onClose: () => void }) {
             </li>
             <li>
               The recording can be turned into text on this computer using an offline model. The
-              transcript stays in the English, Italian, French, or Spanish language you select.
-              The first transcription needs a one-time ~252 MB download that you choose when to
-              start.
+              transcript stays in the language you select from Whisper's 99 supported choices. The
+              first transcription needs a one-time ~252 MB download that you choose when to start.
             </li>
             <li>Leave the microphone off and it is never touched.</li>
           </ul>

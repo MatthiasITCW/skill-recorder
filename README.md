@@ -44,7 +44,7 @@ activity" panel shows exactly what's collected:
 - **Narration** *(optional)* — turn on **Narrate** before capture or toggle the
   microphone from the floating recording bar. Each microphone-on interval is
   timestamped on the video timeline, saved locally, and can be transcribed
-  **on-device** in English, Italian, French, or Spanish (Whisper via
+  **on-device** in any of Whisper's 99 supported languages (via
   transformers.js), preserving the selected language. The first transcription
   uses an explicit, one-time ~252 MB model download. The multilingual q8
   checkpoint is only about 0.6 MB larger than the previous English-only model

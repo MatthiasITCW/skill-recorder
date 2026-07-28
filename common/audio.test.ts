@@ -86,10 +86,10 @@ test("audio metadata preserves a supported language and defaults legacy recordin
   assert.equal(
     readAudioNarrationLanguage({
       version: AUDIO_MANIFEST_VERSION,
-      narrationLanguage: "it",
+      narrationLanguage: "haw",
       segments: [],
     }),
-    "it",
+    "haw",
   );
   assert.equal(
     readAudioNarrationLanguage({
@@ -110,7 +110,7 @@ test("audio metadata preserves a supported language and defaults legacy recordin
     () =>
       readAudioNarrationLanguage({
         version: AUDIO_MANIFEST_VERSION,
-        narrationLanguage: "de",
+        narrationLanguage: "xx",
         segments: [],
       }),
     /unsupported transcription language/i,

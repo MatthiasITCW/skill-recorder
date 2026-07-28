@@ -4,8 +4,7 @@ import type { DoctorReport, NarrationStatus, RecorderStatus } from "../common/ip
 import {
   DEFAULT_NARRATION_LANGUAGE,
   isNarrationLanguage,
-  NARRATION_LANGUAGE_CODES,
-  NARRATION_LANGUAGE_LABELS,
+  NARRATION_LANGUAGES,
   NARRATION_MODEL_DOWNLOAD_LABEL,
   narrationLanguageLabel,
   type NarrationLanguage,
@@ -208,9 +207,9 @@ export function Recorder() {
             onChange={(event) => void selectNarrationLanguage(event.currentTarget.value)}
             title="The transcript stays in this language"
           >
-            {NARRATION_LANGUAGE_CODES.map((language) => (
-              <option key={language} value={language}>
-                {NARRATION_LANGUAGE_LABELS[language]}
+            {NARRATION_LANGUAGES.map(({ code, label }) => (
+              <option key={code} value={code}>
+                {label}
               </option>
             ))}
           </select>

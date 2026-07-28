@@ -452,7 +452,7 @@ button:focus-visible,
 .narrate {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   flex: 1;
   min-width: 0;
   text-align: left;
@@ -460,7 +460,7 @@ button:focus-visible,
   border: 1px solid var(--line);
   color: var(--text);
   border-radius: 12px;
-  padding: 11px 13px;
+  padding: 11px;
   transition: border-color 0.15s ease, background 0.15s ease;
 }
 
@@ -549,7 +549,7 @@ button:focus-visible,
   flex-direction: column;
   justify-content: center;
   gap: 2px;
-  width: 108px;
+  width: 116px;
   padding: 7px 9px;
   border: 1px solid var(--line);
   border-radius: 12px;

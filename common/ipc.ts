@@ -1,5 +1,6 @@
 import type { Analysis, AnalysisFeedback, AnalysisStep, Confidence } from "./analysis";
 import type { AutomationPlan, BuiltAutomation } from "./automation";
+import type { MicrophoneDevice } from "./microphone";
 import type { NarrationLanguage } from "./narration";
 import type { BuiltSkill, SkillArchitecture, SkillPlan } from "./skill";
 import type { RecorderState } from "./types";
@@ -77,6 +78,7 @@ export interface RecorderStatus {
   microphone: {
     state: "off" | "starting" | "on" | "stopping" | "error";
     error: string | null;
+    activeDevice: MicrophoneDevice | null;
   };
   lastFinish: {
     sessionId: string;
@@ -197,6 +199,8 @@ export interface StartOptions {
   narration?: boolean;
   /** Source language to preserve in the transcript. Defaults to English. */
   narrationLanguage?: NarrationLanguage;
+  /** Device selected for the initial narration segment; defaults to the OS input. */
+  microphoneDeviceId?: string;
 }
 
 export interface StopResult {
@@ -221,6 +225,30 @@ export interface MicrophoneResult {
 export interface NarrationLanguageResult {
   ok: boolean;
   language?: NarrationLanguage;
+  error?: string;
+}
+
+export type MicrophonePermissionState = "unknown" | "granted" | "denied";
+
+/** Shared pre-recording microphone preference and current device catalog. */
+export interface MicrophoneSettingsStatus {
+  narrationEnabled: boolean;
+  permission: MicrophonePermissionState;
+  devices: MicrophoneDevice[];
+  /** The preferred device, retained even while it is disconnected. */
+  preferredDeviceId: string;
+  preferredDeviceLabel: string;
+  /** The device that will actually be requested for the next microphone segment. */
+  selectedDeviceId: string;
+  selectedDeviceLabel: string;
+  preferredDeviceUnavailable: boolean;
+  fallback: string | null;
+  error: string | null;
+}
+
+export interface MicrophoneSettingsResult {
+  ok: boolean;
+  status: MicrophoneSettingsStatus;
   error?: string;
 }
 
@@ -281,6 +309,10 @@ export const IPC = {
   discard: "recorder:discard",
   microphone: "recorder:microphone",
   narrationLanguage: "recorder:narration-language",
+  microphoneSettings: "microphone:settings",
+  microphoneNarration: "microphone:narration",
+  microphoneDevice: "microphone:device",
+  microphoneSettingsChanged: "microphone:settings-changed",
   status: "recorder:status",
   marker: "recorder:marker",
   doctor: "doctor:check",
@@ -316,11 +348,17 @@ export const IPC = {
 
 /** Shape exposed on `window.skillRecorder` by the preload bridge. */
 export interface SkillRecorderApi {
-  start(options?: StartOptions): Promise<StartResult>;
+  start(): Promise<StartResult>;
   stop(): Promise<StopResult>;
   discard(): Promise<DiscardResult>;
   setMicrophoneEnabled(enabled: boolean): Promise<MicrophoneResult>;
   setNarrationLanguage(language: NarrationLanguage): Promise<NarrationLanguageResult>;
+  microphoneSettings(): Promise<MicrophoneSettingsStatus>;
+  setNarrationEnabled(enabled: boolean): Promise<MicrophoneSettingsResult>;
+  selectMicrophone(deviceId: string): Promise<MicrophoneSettingsResult>;
+  onMicrophoneSettingsChanged(
+    cb: (status: MicrophoneSettingsStatus) => void,
+  ): () => void;
   status(): Promise<RecorderStatus>;
   marker(note: string): Promise<MarkerResult>;
   doctor(): Promise<DoctorReport>;
@@ -382,6 +420,6 @@ export interface SkillRecorderApi {
   openLibrary(): Promise<void>;
   /** Close the Sessions library window from within it. */
   closeLibrary(): Promise<void>;
-  /** Resize the recording-controls window while its confirmation is visible. */
+  /** Resize the recording-controls window while an overlay panel is visible. */
   setRecordingControlsExpanded(expanded: boolean): Promise<void>;
 }

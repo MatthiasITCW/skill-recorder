@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import type { RecorderStatus } from "../common/ipc";
+import type {
+  MicrophoneSettingsStatus,
+  RecorderStatus,
+} from "../common/ipc";
 import {
   DEFAULT_NARRATION_LANGUAGE,
   narrationLanguageLabel,
@@ -9,16 +12,29 @@ import { formatMs } from "./format";
 
 export function RecordingControls() {
   const [status, setStatus] = useState<RecorderStatus | null>(null);
+  const [microphoneSettings, setMicrophoneSettings] =
+    useState<MicrophoneSettingsStatus | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const [showMicrophoneMenu, setShowMicrophoneMenu] = useState(false);
   const [microphonePending, setMicrophonePending] = useState(false);
+  const [devicePending, setDevicePending] = useState(false);
   const [finishPending, setFinishPending] = useState<"done" | "discard" | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const keepRecordingRef = useRef<HTMLButtonElement>(null);
+  const microphoneControlRef = useRef<HTMLDivElement>(null);
+  const microphoneMenuRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     void window.skillRecorder.status().then(setStatus);
-    return window.skillRecorder.onStatusChanged(setStatus);
+    void window.skillRecorder.microphoneSettings().then(setMicrophoneSettings);
+    const offStatus = window.skillRecorder.onStatusChanged(setStatus);
+    const offMicrophones =
+      window.skillRecorder.onMicrophoneSettingsChanged(setMicrophoneSettings);
+    return () => {
+      offStatus();
+      offMicrophones();
+    };
   }, []);
 
   const recording = status?.state === "recording";
@@ -37,13 +53,17 @@ export function RecordingControls() {
   useEffect(() => {
     if (recording) return;
     if (confirmDiscard) setConfirmDiscard(false);
+    if (showMicrophoneMenu) setShowMicrophoneMenu(false);
     setMicrophonePending(false);
+    setDevicePending(false);
     setFinishPending(null);
-  }, [confirmDiscard, recording]);
+  }, [confirmDiscard, recording, showMicrophoneMenu]);
 
   useEffect(() => {
-    void window.skillRecorder.setRecordingControlsExpanded(confirmDiscard);
-  }, [confirmDiscard]);
+    void window.skillRecorder.setRecordingControlsExpanded(
+      confirmDiscard || showMicrophoneMenu,
+    );
+  }, [confirmDiscard, showMicrophoneMenu]);
 
   useEffect(() => {
     if (!confirmDiscard) return;
@@ -55,6 +75,48 @@ export function RecordingControls() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [confirmDiscard]);
 
+  useEffect(() => {
+    if (!showMicrophoneMenu) return;
+    microphoneMenuRef.current
+      ?.querySelector<HTMLButtonElement>('[aria-pressed="true"]')
+      ?.focus({ preventScroll: true });
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setShowMicrophoneMenu(false);
+    };
+    const onMouseDown = (event: MouseEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (
+        microphoneMenuRef.current?.contains(target) ||
+        microphoneControlRef.current?.contains(target)
+      ) {
+        return;
+      }
+      setShowMicrophoneMenu(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("mousedown", onMouseDown);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("mousedown", onMouseDown);
+    };
+  }, [showMicrophoneMenu]);
+
+  useEffect(() => {
+    if (
+      recording &&
+      (status?.microphone.state === "error" ||
+        microphoneSettings?.preferredDeviceUnavailable)
+    ) {
+      setConfirmDiscard(false);
+      setShowMicrophoneMenu(true);
+    }
+  }, [
+    microphoneSettings?.preferredDeviceUnavailable,
+    recording,
+    status?.microphone.state,
+  ]);
+
   const toggleMicrophone = useCallback(async () => {
     if (!status) return;
     setMicrophonePending(true);
@@ -64,6 +126,19 @@ export function RecordingControls() {
     if (!result.ok) setActionError(result.error ?? "Could not change the microphone.");
     setMicrophonePending(false);
   }, [status]);
+
+  const selectMicrophone = useCallback(async (deviceId: string) => {
+    setDevicePending(true);
+    setActionError(null);
+    const result = await window.skillRecorder.selectMicrophone(deviceId);
+    setMicrophoneSettings(result.status);
+    if (!result.ok) {
+      setActionError(result.error ?? "Could not switch microphones.");
+    } else {
+      setShowMicrophoneMenu(false);
+    }
+    setDevicePending(false);
+  }, []);
 
   const done = useCallback(async () => {
     setFinishPending("done");
@@ -90,6 +165,7 @@ export function RecordingControls() {
   const transitionBusy = status?.transition !== "none";
   const microphoneBusy =
     microphonePending ||
+    devicePending ||
     status?.microphone.state === "starting" ||
     status?.microphone.state === "stopping";
   const lifecycleBusy = finishPending !== null || transitionBusy || !recording;
@@ -98,6 +174,10 @@ export function RecordingControls() {
   const narrationLanguage = narrationLanguageLabel(
     status?.narrationLanguage ?? DEFAULT_NARRATION_LANGUAGE,
   );
+  const activeMicrophoneLabel =
+    status?.microphone.activeDevice?.label ??
+    microphoneSettings?.selectedDeviceLabel ??
+    "System default";
   const microphoneLabel =
     status?.microphone.state === "starting"
       ? "Starting"
@@ -108,7 +188,12 @@ export function RecordingControls() {
           : microphoneError
             ? "Retry"
             : "Off";
-  const error = actionError ?? status?.microphone.error ?? null;
+  const error =
+    actionError ??
+    status?.microphone.error ??
+    microphoneSettings?.error ??
+    microphoneSettings?.fallback ??
+    null;
   const captureLabel =
     status?.transition === "starting"
       ? "Starting"
@@ -159,6 +244,71 @@ export function RecordingControls() {
         </section>
       )}
 
+      {showMicrophoneMenu && (
+        <section
+          ref={microphoneMenuRef}
+          className="recording-microphone-menu"
+          aria-label="Choose microphone"
+        >
+          <header>
+            <strong>Microphone</strong>
+            <span>
+              {microphoneOn
+                ? `Using ${activeMicrophoneLabel}`
+                : `Next: ${microphoneSettings?.selectedDeviceLabel ?? "System default"}`}
+            </span>
+          </header>
+          <div
+            className="recording-microphone-options"
+            role="radiogroup"
+            aria-label="Audio input"
+          >
+            {microphoneSettings?.devices.map((device) => {
+              const selected =
+                device.id === microphoneSettings.selectedDeviceId;
+              return (
+                <button
+                  key={device.id}
+                  className={selected ? "selected" : ""}
+                  role="radio"
+                  aria-checked={selected}
+                  aria-pressed={selected}
+                  disabled={devicePending || finishPending !== null}
+                  onClick={() => void selectMicrophone(device.id)}
+                >
+                  <span>{device.label}</span>
+                  {selected && (
+                    <span className="recording-microphone-selected">
+                      Selected
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+          {error && (
+            <p
+              className={
+                actionError ||
+                status?.microphone.error ||
+                microphoneSettings?.error
+                  ? "error"
+                  : "warn"
+              }
+              role={
+                actionError ||
+                status?.microphone.error ||
+                microphoneSettings?.error
+                  ? "alert"
+                  : undefined
+              }
+            >
+              {error}
+            </p>
+          )}
+        </section>
+      )}
+
       <div className="recording-bar-wrap">
         <div className="recording-bar">
           <div className="recording-live" role="status" aria-label={`${captureLabel} ${formatMs(elapsed)}`}>
@@ -171,31 +321,56 @@ export function RecordingControls() {
 
           <span className="recording-divider" aria-hidden />
 
-          <button
-            className={`recording-microphone ${microphoneOn ? "on" : ""} ${
-              microphoneError ? "error" : ""
-            }`}
-            disabled={lifecycleBusy || microphoneBusy}
-            aria-label={
-              microphoneOn
-                ? `Turn microphone off. Narration is transcribed in ${narrationLanguage}.`
-                : microphoneError
-                  ? `Retry microphone. ${status?.microphone.error ?? ""}`
-                  : `Turn microphone on for ${narrationLanguage} narration`
-            }
-            aria-pressed={microphoneOn}
-            title={`Microphone ${microphoneOn ? "on" : "off"} · ${narrationLanguage} transcript`}
-            onClick={() => void toggleMicrophone()}
+          <div
+            ref={microphoneControlRef}
+            className={`recording-microphone-split ${
+              microphoneOn ? "on" : ""
+            } ${microphoneError ? "error" : ""}`}
           >
-            <MicrophoneIcon off={!microphoneOn} />
-            <span>{microphoneLabel}</span>
-          </button>
+            <button
+              className="recording-microphone"
+              disabled={lifecycleBusy || microphoneBusy}
+              aria-label={
+                microphoneOn
+                  ? `Mute ${activeMicrophoneLabel}. Narration is transcribed in ${narrationLanguage}.`
+                  : microphoneError
+                    ? `Retry microphone. ${status?.microphone.error ?? ""}`
+                    : `Unmute ${microphoneSettings?.selectedDeviceLabel ?? "System default"} for ${narrationLanguage} narration`
+              }
+              aria-pressed={microphoneOn}
+              title={
+                microphoneOn
+                  ? `Mute ${activeMicrophoneLabel} · ${narrationLanguage} transcript`
+                  : `Unmute ${microphoneSettings?.selectedDeviceLabel ?? "System default"} · ${narrationLanguage} transcript`
+              }
+              onClick={() => void toggleMicrophone()}
+            >
+              <MicrophoneIcon off={!microphoneOn} />
+              <span>{microphoneLabel}</span>
+            </button>
+            <button
+              className="recording-microphone-menu-toggle"
+              disabled={lifecycleBusy || microphoneBusy}
+              aria-label="Choose microphone"
+              aria-haspopup="dialog"
+              aria-expanded={showMicrophoneMenu}
+              title="Choose microphone"
+              onClick={() => {
+                setActionError(null);
+                setConfirmDiscard(false);
+                setShowMicrophoneMenu((open) => !open);
+              }}
+            >
+              <ChevronIcon open={showMicrophoneMenu} />
+            </button>
+          </div>
 
           <button
             className="recording-discard"
             disabled={lifecycleBusy}
             onClick={() => {
               setActionError(null);
+              setShowMicrophoneMenu(false);
               setConfirmDiscard(true);
             }}
           >
@@ -212,6 +387,26 @@ export function RecordingControls() {
         {error ?? ""}
       </span>
     </div>
+  );
+}
+
+function ChevronIcon({ open }: { open: boolean }) {
+  return (
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 12 12"
+      fill="none"
+      aria-hidden
+    >
+      <path
+        d={open ? "m3 7.5 3-3 3 3" : "m3 4.5 3 3 3-3"}
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
   );
 }
 

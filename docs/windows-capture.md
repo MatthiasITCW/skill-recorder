@@ -59,25 +59,27 @@ Run a real recording on Windows and verify each source lands in the session's
    preview and hash.
 5. **Video.** Confirm `video.webm`, `video-frames.json`, snapshots under
    `video-frames/`, and retained images under `frames/`.
-6. **Voice narration.** Turn on the **Narrate** switch before starting or use the
-   microphone control in the floating recording bar. Confirm the selector lists
-   all 99 supported languages alphabetically and defaults to English. Select a
-   language before recording, then toggle the microphone off and on around two
-   spoken sentences. After Stop, confirm `audio.json` contains a
-   version-2 segment manifest with `narrationLanguage` and that the referenced
-   `audio/segment-*.webm` files exist. Their session/video offsets should
-   preserve the silent gap while the microphone was off. If the model is not
-   installed, use **Download & transcribe** in Sessions (or the actionable HUD
-   readiness row) to approve the one-time ~252 MB Whisper download. Confirm
-   `narration.json` records the chosen language and contains the
-   original-language words with `atMs` offsets. Exercise representative
-   languages, including English and a non-Latin script. Later runs are offline.
-   On Windows the mic grant is requested by the OS on first use.
+6. **Voice narration.** Turn on **Narrate**, open its settings, and confirm the
+   language selector lists all 99 supported languages alphabetically and defaults
+   to English. Grant microphone access and select a named input or **System default**.
+   During capture, use the main microphone button to mute/unmute and its adjacent
+   menu to switch inputs. Speak before and after a switch, then confirm `audio.json`
+   contains separate version-2 segments with `narrationLanguage`; their
+   session/video offsets should preserve the boundary. Disconnecting the active
+   device must stop microphone capture with a visible error rather than silently
+   recording from another input; reconnecting it should restore the saved preference
+   when Chromium can identify it. If the model is not installed, starting analysis
+   approves the one-time ~252 MB Whisper download. Confirm `narration.json` records
+   the chosen language and contains the original-language words with `atMs` offsets.
+   Exercise representative languages, including English and a non-Latin script.
+   Later runs are offline. On Windows the mic grant is requested by the OS on first
+   use.
 7. **Recording controls.** Confirm the floating bar stays above the active app,
-   can be dragged without making its buttons unclickable, and does not appear in
+   its microphone menu and discard confirmation expand above the fixed bar, it can
+   be dragged without making its buttons unclickable, and it does not appear in
    captured frames where Windows capture protection is supported. Canceling the
-   discard confirmation must continue the same recording; confirming it must
-   leave no saved session.
+   discard confirmation must continue the same recording; confirming it must leave
+   no saved session.
 8. **Stop.** The recording should show up in the library as `recorded`, and
    analysis should produce a coherent intent + ordered steps.
 

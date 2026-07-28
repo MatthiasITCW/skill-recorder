@@ -45,7 +45,7 @@ export function clampRecordingControlsBounds(
 
 /**
  * Resize the transparent overlay above its fixed bar. Its bottom edge remains
- * stationary, so opening confirmation never makes the control bar jump.
+ * stationary, so opening a menu or confirmation never makes the control bar jump.
  */
 export function resizeRecordingControlsBounds(
   bounds: WindowBounds,
@@ -71,4 +71,3 @@ function clamp(value: number, min: number, max: number): number {
   if (max < min) return min;
   return Math.max(min, Math.min(max, value));
 }
-

@@ -258,8 +258,6 @@ function AnalysisWorkspace({
   const voiceEmpty = summary.hasNarration && summary.narrationSegmentCount === 0;
   const voiceBusy =
     narrationStatus?.activeSessionId === sessionId && narrationStatus.phase !== "idle";
-  const modelBusy =
-    narrationStatus?.phase === "downloading" || narrationStatus?.phase === "loading";
   const voiceError =
     narrationStatus?.activeSessionId == null || narrationStatus.activeSessionId === sessionId
       ? narrationStatus?.error
@@ -376,13 +374,6 @@ function AnalysisWorkspace({
     setAnalyzing(false);
   }, [sessionId]);
 
-  const transcribeVoice = useCallback(async () => {
-    setError(null);
-    const res = await window.skillRecorder.transcribeNarration(sessionId);
-    if (!res.ok) setError(res.error ?? "Could not transcribe this recording.");
-    await onChanged();
-  }, [sessionId, onChanged]);
-
   const startEdit = useCallback(() => {
     if (!analysis) return;
     setDraftTitle(analysis.title ?? "");
@@ -459,39 +450,11 @@ function AnalysisWorkspace({
       </div>
 
       <div className="ws-body">
-        {voicePending && (
-          <div className="voice-card">
-            <div className="voice-card-copy">
-              <strong>Voice not transcribed yet</strong>
-              <span>
-                {voiceBusy
-                  ? narrationWorkLabel(narrationStatus)
-                  : `Your audio is saved. Transcription runs locally in ${voiceLanguage} and keeps that language.`}
-              </span>
-              {!voiceBusy && narrationStatus?.model !== "ready" && (
-                <span>
-                  The first use requires a one-time {NARRATION_MODEL_DOWNLOAD_LABEL} multilingual
-                  model download.
-                </span>
-              )}
-              {!voiceBusy && voiceError && (
-                <span className="voice-card-error">{voiceError}</span>
-              )}
-            </div>
-            <button
-              className="secondary"
-              disabled={voiceBusy || modelBusy}
-              onClick={() => void transcribeVoice()}
-            >
-              {voiceBusy || modelBusy
-                ? narrationWorkLabel(narrationStatus)
-                : narrationStatus?.model === "ready"
-                  ? "Transcribe voice"
-                  : narrationStatus?.model === "error"
-                    ? "Try again"
-                    : "Download & transcribe"}
-            </button>
-          </div>
+        {voicePending && voiceError && !analyzing && (
+          <p className="voice-analysis-note">
+            Couldn't transcribe your {voiceLanguage} voice, so this analysis doesn't include it.
+            Your audio is saved — analyzing again will retry.
+          </p>
         )}
 
         {voiceEmpty && (
@@ -541,7 +504,9 @@ function AnalysisWorkspace({
             <p>See what you did in this recording, step by step.</p>
             {voicePending && (
               <p className="voice-analysis-note">
-                Voice is not transcribed yet. Analyzing now will not include it, but your audio will be kept.
+                {narrationStatus?.model === "ready"
+                  ? `Your ${voiceLanguage} voice is transcribed in the same language first, then analyzed.`
+                  : `Your ${voiceLanguage} voice is transcribed in the same language first, then analyzed. The first run downloads a ${NARRATION_MODEL_DOWNLOAD_LABEL} voice model once.`}
               </p>
             )}
             <button className="record-cta" onClick={run}>
@@ -553,11 +518,19 @@ function AnalysisWorkspace({
         {analyzing && (
           <div className="status-line">
             <span className="spinner" />
-            <span className="status-text">{statusLine || "Working…"}</span>
+            <span className="status-text">
+              {voiceBusy ? narrationWorkLabel(narrationStatus) : statusLine || "Working…"}
+            </span>
             <button className="linky status-cancel" onClick={cancel}>
               Cancel
             </button>
           </div>
+        )}
+
+        {analyzing && narrationStatus?.phase === "downloading" && (
+          <p className="voice-analysis-note">
+            First analysis downloads the ~250 MB voice model once — later runs skip this.
+          </p>
         )}
 
         {error && <div className="analysis-error">{error}</div>}

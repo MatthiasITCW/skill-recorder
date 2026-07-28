@@ -17,8 +17,8 @@ can repeat.
 1. **Record** — hit record (or `⌘⇧R` / `Ctrl+Shift+R` from anywhere) and do your task.
    Skill Recorder captures the screen and your activity in the background.
 2. **Control** — while recording, a movable always-on-top bar shows capture and
-   microphone state. Use it to toggle the microphone, finish, or discard the
-   recording; discard always asks for confirmation.
+   microphone state. Use its split microphone control to mute, unmute, or change
+   inputs, then finish or discard the recording; discard always asks for confirmation.
 3. **Analyze** — on stop, it correlates the signals and a Copilot agent reconstructs
    *what you did*: one overall intent plus an ordered list of steps. You can review
    and edit the result.
@@ -42,14 +42,16 @@ activity" panel shows exactly what's collected:
   it and retained only when the screen changes or a heartbeat is due.
 - **Clipboard** — copy/paste content that ties steps together.
 - **Narration** *(optional)* — turn on **Narrate** before capture or toggle the
-  microphone from the floating recording bar. Each microphone-on interval is
-  timestamped on the video timeline, saved locally, and can be transcribed
-  **on-device** in any of Whisper's 99 supported languages (via
-  transformers.js), preserving the selected language. The first transcription
-  uses an explicit, one-time ~252 MB model download. The multilingual q8
-  checkpoint is only about 0.6 MB larger than the previous English-only model
-  and uses the same `small` architecture, so runtime memory and transcription
-  speed are expected to remain effectively unchanged.
+  microphone from the floating recording bar. Narrate shows the active input and
+  remembers a selected microphone, with an explicit **System default** fallback.
+  During capture, the bar can switch inputs without interrupting screen recording;
+  each microphone-on interval is timestamped on the video timeline, saved locally,
+  and can be transcribed **on-device** in any of Whisper's 99 supported languages
+  (via transformers.js), preserving the selected language. The first transcription
+  uses an explicit, one-time ~252 MB model download. The multilingual q8 checkpoint
+  is only about 0.6 MB larger than the previous English-only model and uses the same
+  `small` architecture, so runtime memory and transcription speed are expected to
+  remain effectively unchanged.
 
 ## Requirements
 
@@ -62,8 +64,9 @@ activity" panel shows exactly what's collected:
   audio decoding. A system `ffmpeg` is used only when opening a recording created by
   an older Skill Recorder version that has no snapshot manifest.
 
-On first launch macOS will prompt for **Screen Recording** (required) and, if you use
-Narrate, **Microphone** permission.
+On first launch macOS will prompt for **Screen Recording** (required). Enabling
+Narrate requests **Microphone** permission immediately so named inputs can be selected
+before recording; the permission-check stream is released without saving audio.
 
 ## Run it (development)
 

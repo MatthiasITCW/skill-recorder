@@ -443,28 +443,35 @@ button:focus-visible,
   min-height: 15px;
 }
 
-.narration-row {
-  display: flex;
-  align-items: stretch;
-  gap: 8px;
+.narrate {
+  position: relative;
+  flex: none;
+  width: 100%;
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--text);
+  border-radius: 12px;
+  transition: border-color 0.15s ease, background 0.15s ease;
 }
 
-.narrate {
+.narrate-head {
+  display: flex;
+  align-items: stretch;
+}
+
+.narrate-toggle {
   display: flex;
   align-items: center;
   gap: 10px;
   flex: 1;
   min-width: 0;
+  padding: 11px;
   text-align: left;
   background: transparent;
-  border: 1px solid var(--line);
-  color: var(--text);
-  border-radius: 12px;
-  padding: 11px;
-  transition: border-color 0.15s ease, background 0.15s ease;
+  color: inherit;
 }
 
-.narrate:not(:disabled):hover {
+.narrate-toggle:not(:disabled):hover {
   border-color: var(--line-strong);
   background: var(--surface);
 }
@@ -474,9 +481,30 @@ button:focus-visible,
   background: var(--signal-dim);
 }
 
-.narrate:disabled {
+.narrate-toggle:disabled {
   opacity: 0.9;
   cursor: default;
+}
+
+.narrate-settings-toggle {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 42px;
+  border-left: 1px solid var(--line);
+  color: var(--muted);
+  background: transparent;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+
+.narrate-settings-toggle:not(:disabled):hover,
+.narrate-settings-toggle.open {
+  color: var(--brand-ink);
+  background: rgba(var(--brand-rgb), 0.08);
+}
+
+.narrate-settings-toggle:disabled {
+  opacity: 0.65;
 }
 
 .narrate-icon {
@@ -517,11 +545,11 @@ button:focus-visible,
 .narrate-switch {
   flex: none;
   box-sizing: border-box;
-  width: 34px;
-  height: 20px;
+  width: 36px;
+  height: 22px;
   border-radius: 999px;
   background: var(--line-strong);
-  padding: 2px;
+  padding: 3px;
   transition: background 0.15s ease;
 }
 
@@ -543,45 +571,77 @@ button:focus-visible,
   transform: translateX(14px);
 }
 
-.narration-language {
-  display: flex;
-  flex: none;
-  flex-direction: column;
-  justify-content: center;
-  gap: 2px;
-  width: 116px;
-  padding: 7px 9px;
-  border: 1px solid var(--line);
+.narrate-settings {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 6px 10px;
+  padding: 10px 13px;
+  border: 1px solid rgba(var(--brand-rgb), 0.3);
   border-radius: 12px;
   background: var(--surface);
+  box-shadow: 0 16px 32px -18px rgba(0, 0, 0, 0.45);
 }
 
-.narration-language > span {
-  font-size: 9px;
+.narrate-settings label {
+  font-size: 10.5px;
   font-weight: 600;
-  color: var(--muted);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  color: var(--brand-ink);
 }
 
-.narration-language select {
+.narrate-select-wrap {
+  position: relative;
+  min-width: 0;
+}
+
+.narrate-select-wrap select {
   width: 100%;
-  padding: 0;
-  border: 0;
-  outline: 0;
-  background: transparent;
+  height: 30px;
+  padding: 0 27px 0 9px;
+  appearance: none;
+  border: 1px solid rgba(var(--brand-rgb), 0.34);
+  border-radius: 8px;
+  background: var(--surface);
   color: var(--text);
   font: inherit;
   font-size: 11px;
-  font-weight: 600;
+  text-overflow: ellipsis;
 }
 
-.narration-language:focus-within {
-  border-color: var(--brand);
+.narrate-select-wrap select:focus-visible {
+  outline: 2px solid rgba(var(--brand-rgb), 0.5);
+  outline-offset: 1px;
 }
 
-.narration-language:has(select:disabled) {
-  opacity: 0.75;
+.narrate-select-chevron {
+  position: absolute;
+  top: 50%;
+  right: 9px;
+  color: var(--muted);
+  font-size: 10px;
+  pointer-events: none;
+  transform: translateY(-52%);
+}
+
+.narrate-settings-note {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.narrate-settings-note.warn {
+  color: #8a5d00;
+}
+
+.narrate-settings-note.error {
+  color: var(--rec);
 }
 
 .privacy-note {
@@ -826,7 +886,9 @@ button:focus-visible,
 
   .recording-bar button,
   .recording-discard-confirm,
-  .recording-discard-confirm button {
+  .recording-discard-confirm button,
+  .recording-microphone-menu,
+  .recording-microphone-menu button {
     -webkit-app-region: no-drag;
   }
 
@@ -875,33 +937,54 @@ button:focus-visible,
     background: rgba(255, 255, 255, 0.13);
   }
 
+  .recording-microphone-split {
+    display: flex;
+    align-items: center;
+    height: 36px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 9px;
+    background: #2d2d30;
+    color: #b8b8bc;
+    overflow: hidden;
+    -webkit-app-region: no-drag;
+  }
+
   .recording-microphone {
     display: flex;
     align-items: center;
     justify-content: center;
     gap: 5px;
-    min-width: 67px;
-    height: 36px;
-    padding: 0 8px;
-    border: 1px solid rgba(255, 255, 255, 0.14);
-    border-radius: 9px;
-    background: #2d2d30;
-    color: #b8b8bc;
+    min-width: 59px;
+    height: 34px;
+    padding: 0 7px;
+    background: transparent;
+    color: inherit;
     font-size: 10px;
   }
 
-  .recording-microphone.on {
+  .recording-microphone-menu-toggle {
+    display: grid;
+    place-items: center;
+    width: 23px;
+    height: 34px;
+    border-left: 1px solid rgba(255, 255, 255, 0.12);
+    background: transparent;
+    color: inherit;
+  }
+
+  .recording-microphone-split.on {
     border-color: rgba(239, 89, 75, 0.5);
     background: rgba(239, 89, 75, 0.15);
     color: #ff8a80;
   }
 
-  .recording-microphone.error {
+  .recording-microphone-split.error {
     border-color: rgba(255, 184, 77, 0.55);
     color: #ffc269;
   }
 
   .recording-microphone:not(:disabled):hover,
+  .recording-microphone-menu-toggle:not(:disabled):hover,
   .recording-discard:not(:disabled):hover {
     filter: brightness(1.16);
   }
@@ -938,7 +1021,8 @@ button:focus-visible,
   }
 
   .recording-bar button:focus-visible,
-  .recording-discard-confirm button:focus-visible {
+  .recording-discard-confirm button:focus-visible,
+  .recording-microphone-menu button:focus-visible {
     outline: 2px solid #ff766a;
     outline-offset: 2px;
   }
@@ -964,6 +1048,95 @@ button:focus-visible,
     box-shadow: 0 14px 34px rgba(0, 0, 0, 0.42);
     color: #f7f7f7;
     animation: recording-confirm-in 0.15s ease-out;
+  }
+
+  .recording-microphone-menu {
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+    width: 100%;
+    max-height: 150px;
+    padding: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 13px;
+    background: rgba(37, 37, 40, 0.98);
+    box-shadow: 0 14px 34px rgba(0, 0, 0, 0.42);
+    color: #f7f7f7;
+    animation: recording-confirm-in 0.15s ease-out;
+  }
+
+  .recording-microphone-menu header {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .recording-microphone-menu header strong {
+    flex: none;
+    font-size: 12px;
+  }
+
+  .recording-microphone-menu header span {
+    overflow: hidden;
+    color: #aaa;
+    font-size: 10px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .recording-microphone-options {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-height: 0;
+    overflow-y: auto;
+  }
+
+  .recording-microphone-options button {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-height: 29px;
+    padding: 0 8px;
+    border-radius: 7px;
+    background: transparent;
+    color: #e6e6e8;
+    font-size: 10.5px;
+    text-align: left;
+  }
+
+  .recording-microphone-options button:hover,
+  .recording-microphone-options button.selected {
+    background: rgba(255, 255, 255, 0.08);
+  }
+
+  .recording-microphone-options button > span:first-child {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .recording-microphone-selected {
+    flex: none;
+    color: #ff8a80;
+    font-size: 9px;
+  }
+
+  .recording-microphone-menu p {
+    margin: 0;
+    color: #c7c7ca;
+    font-size: 10px;
+    line-height: 1.35;
+  }
+
+  .recording-microphone-menu p.warn {
+    color: #ffc269;
+  }
+
+  .recording-microphone-menu p.error {
+    color: #ff8a80;
   }
 
   .recording-discard-confirm h2 {
@@ -1027,7 +1200,8 @@ button:focus-visible,
 
 @media (prefers-reduced-motion: reduce) {
   .recording-live-dot,
-  .recording-discard-confirm {
+  .recording-discard-confirm,
+  .recording-microphone-menu {
     animation: none;
   }
 }

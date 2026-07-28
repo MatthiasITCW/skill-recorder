@@ -67,7 +67,8 @@ npm run dev
 
 `npm run dev` starts Vite and launches the Electron app with hot-reload. The app also
 lives in the menu-bar tray; `⌘⇧R` (macOS) / `Ctrl+Shift+R` (Windows) toggles recording
-from anywhere.
+from anywhere. On Windows, press `F12` while the recorder or Sessions window is focused
+to toggle DevTools during development.
 
 Other useful scripts:
 

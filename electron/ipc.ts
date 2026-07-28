@@ -42,10 +42,6 @@ export function registerIpc(
   narration: NarrationManager,
   microphones: AudioRecorder,
 ): void {
-  ipcMain.handle(IPC.start, async () => {
-    await microphones.whenSettingsSettled();
-    return recorder.start(microphones.startOptions());
-  });
   ipcMain.handle(IPC.stop, () => recorder.stop());
   ipcMain.handle(IPC.discard, () => recorder.discard());
   ipcMain.handle(IPC.microphone, (_event, enabled: boolean) =>

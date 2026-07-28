@@ -5,7 +5,13 @@ import { useEffect, useRef } from "react";
  * and what leaves the machine on analysis. Every claim here is grounded in the
  * actual collectors and describer behavior, so it must be kept in sync with them.
  */
-export function WhatsRecorded({ onClose }: { onClose: () => void }) {
+export function WhatsRecorded({
+  onClose,
+  onReviewed,
+}: {
+  onClose: () => void;
+  onReviewed: () => void;
+}) {
   const sheetRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -64,8 +70,10 @@ export function WhatsRecorded({ onClose }: { onClose: () => void }) {
             <li>A silent video of your screen at a low frame rate.</li>
           </ul>
           <p className="sheet-caution">
-            If you copy something sensitive like a password while recording, its preview is captured.
-            Stop the recording or avoid copying secrets during a session.
+            Do not type, paste, display, copy, or narrate passwords, access tokens, API keys,
+            credentials, secrets, or other sensitive or confidential information. Anything visible
+            on screen can appear in the recording, and copied text previews and narration are
+            captured too.
           </p>
         </section>
 
@@ -108,9 +116,9 @@ export function WhatsRecorded({ onClose }: { onClose: () => void }) {
           <ul>
             <li>Nothing leaves your computer while you record.</li>
             <li>
-              When you choose Analyze, the timeline, the recorded events, screenshots from your
-              video, and your narration text (if you recorded any) are sent to a Copilot AI model so
-              it can describe what you did.
+              When you choose Analyze, the event timeline—including window and document titles,
+              URLs, and clipboard previews—plus extracted screen images and narration text (if
+              recorded) are sent to GitHub&apos;s cloud service and processed by GitHub Copilot.
             </li>
           </ul>
         </section>
@@ -123,7 +131,7 @@ export function WhatsRecorded({ onClose }: { onClose: () => void }) {
           </ul>
         </section>
 
-        <button className="sheet-close" onClick={onClose}>
+        <button className="sheet-close" onClick={onReviewed}>
           Got it
         </button>
       </div>

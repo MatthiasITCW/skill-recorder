@@ -19,9 +19,9 @@ can repeat.
 2. **Control** — while recording, a movable always-on-top bar shows capture and
    microphone state. Use its split microphone control to mute, unmute, or change
    inputs, then finish or discard the recording; discard always asks for confirmation.
-3. **Analyze** — on stop, it correlates the signals and a Copilot agent reconstructs
-   *what you did*: one overall intent plus an ordered list of steps. You can review
-   and edit the result.
+3. **Analyze** — when you choose Analyze, relevant recording data is sent to GitHub's
+   cloud service and processed by GitHub Copilot to reconstruct *what you did*: one
+   overall intent plus an ordered list of steps. You can review and edit the result.
 4. **Create** — from an approved analysis, generalize the one run into a:
    - **Skill** — a `SKILL.md` procedure an agent runs on demand, and
    - **Automation** — the same procedure on a schedule/trigger.
@@ -32,15 +32,23 @@ can repeat.
 
 ## What's captured
 
-Everything is captured and processed **locally**. The in-app "Records your screen and
-activity" panel shows exactly what's collected:
+Recording, storage, frame extraction, and optional narration transcription happen
+**locally**, and nothing leaves your computer while you record. When you choose
+Analyze, the event timeline (including window/document titles, URLs, and clipboard
+previews), extracted screen images, narration text, and other content you provide are
+sent to GitHub's cloud service and processed by GitHub Copilot.
+
+Do not record, type, paste, display, copy, or narrate passwords, access tokens, API
+keys, credentials, secrets, or other sensitive or confidential information. The app
+shows a reminder before recording and its "Records your screen and activity" panel
+explains exactly what's collected:
 
 - **Window tracking** — active-app / window switches (Koffi/Win32 on Windows,
   `get-windows` elsewhere).
 - **Browser URLs** — the page you're on (macOS, via AppleScript).
 - **Screen video** — recorded by Chromium; low-rate snapshots are captured alongside
   it and retained only when the screen changes or a heartbeat is due.
-- **Clipboard** — copy/paste content that ties steps together.
+- **Clipboard** — short previews of copied text that tie steps together.
 - **Narration** *(optional)* — turn on **Narrate** before capture or toggle the
   microphone from the floating recording bar. Narrate shows the active input and
   remembers a selected microphone, with an explicit **System default** fallback.

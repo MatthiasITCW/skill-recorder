@@ -503,6 +503,18 @@ function AnalysisWorkspace({
         {summary.processed && !analysis && !analyzing && (
           <div className="ws-empty">
             <p>See what you did in this recording, step by step.</p>
+            <div className="cloud-analysis-note">
+              <strong>GitHub Copilot cloud analysis</strong>
+              <span>
+                Analyze sends the event timeline—including window and document titles, URLs,
+                and clipboard previews—plus extracted screen images, narration text, and other
+                content you provide to GitHub&apos;s cloud service for processing by GitHub Copilot.
+              </span>
+              <span className="cloud-analysis-caution">
+                Do not analyze a recording that may contain passwords, access tokens, API keys,
+                credentials, secrets, or other sensitive or confidential information.
+              </span>
+            </div>
             {voicePending && (
               <p className="voice-analysis-note">
                 {narrationStatus?.model === "ready"

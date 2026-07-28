@@ -1,7 +1,7 @@
 import { app, BrowserWindow, globalShortcut, ipcMain, Menu, screen } from "electron";
 
 import { FULL_CAPTURE } from "../common/config";
-import { IPC, type RecorderStatus } from "../common/ipc";
+import { IPC, type RecorderStatus, type StartResult } from "../common/ipc";
 import { createCollectors } from "./collectors";
 import { Describer } from "./describer/describer";
 import { processSession } from "./pipeline";
@@ -9,6 +9,7 @@ import { registerIpc } from "./ipc";
 import { createLogger } from "./logger";
 import { NarrationManager } from "./narration/manager";
 import { RecorderController } from "./recorder/controller";
+import { RecordingPrivacySession } from "./recording-privacy";
 import { deleteSession } from "./sessions";
 import { SkillBuilder } from "./skillbuilder/builder";
 import { AutomationBuilder } from "./automationbuilder/builder";
@@ -33,6 +34,7 @@ let recorderHome: Electron.Rectangle | null = null;
 let controlsExpanded = false;
 let quitReady = false;
 let quitTask: Promise<void> | null = null;
+const recordingPrivacy = new RecordingPrivacySession();
 const narration = new NarrationManager((status) =>
   broadcast(IPC.narrationStatusChanged, status),
 );
@@ -56,7 +58,7 @@ const recorder = new RecorderController({
   },
 });
 
-async function startRecording(): Promise<unknown> {
+async function startRecording(): Promise<StartResult> {
   await microphones.whenSettingsSettled();
   return recorder.start(microphones.startOptions());
 }
@@ -120,12 +122,31 @@ function showRecordingControls(): void {
   win.moveTop();
 }
 
-function showRecorderWindow(): void {
+function showRecorderWindow(): BrowserWindow {
   if (!recorderWindow || recorderWindow.isDestroyed()) {
     recorderWindow = createRecorderWindow();
   }
   recorderWindow.show();
   recorderWindow.focus();
+  return recorderWindow;
+}
+
+function showRecordingPrivacyWarning(): void {
+  const win = showRecorderWindow();
+  const notify = () => {
+    if (!win.isDestroyed()) win.webContents.send(IPC.recordingPrivacyWarningRequested);
+  };
+  if (win.webContents.isLoading()) {
+    win.webContents.once("did-finish-load", notify);
+  } else {
+    notify();
+  }
+}
+
+async function requestStartRecording(): Promise<StartResult> {
+  if (recordingPrivacy.startDecision() === "start") return startRecording();
+  showRecordingPrivacyWarning();
+  return { ok: false, privacyWarningRequired: true };
 }
 
 /** Keep the full HUD and compact overlay mutually exclusive. */
@@ -192,6 +213,9 @@ app.whenReady().then(async () => {
     narration,
     microphones,
   );
+  ipcMain.handle(IPC.start, () => requestStartRecording());
+  ipcMain.handle(IPC.startConfirmed, () => startRecording());
+  ipcMain.handle(IPC.recordingPrivacyReviewed, () => recordingPrivacy.markReviewed());
   log.info("Capture: recording all sources");
 
   ipcMain.handle(IPC.openLibrary, () => openLibrary());
@@ -226,7 +250,7 @@ app.whenReady().then(async () => {
   try {
     createTray(
       recorder,
-      startRecording,
+      requestStartRecording,
       showRecorderWindow,
       showRecordingControls,
     );
@@ -237,7 +261,7 @@ app.whenReady().then(async () => {
   const toggle = () => {
     const status = recorder.status();
     if (status.transition !== "none") return;
-    void (status.state === "recording" ? recorder.stop() : startRecording());
+    void (status.state === "recording" ? recorder.stop() : requestStartRecording());
   };
   if (!globalShortcut.register("CommandOrControl+Shift+R", toggle)) {
     log.warn("Global shortcut registration failed");

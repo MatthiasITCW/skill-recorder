@@ -701,6 +701,73 @@ button:focus-visible,
   transform: translateX(2px);
 }
 
+/* Pre-recording privacy warning */
+.recording-warning {
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+  width: 100%;
+  max-width: 344px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 18px;
+  box-shadow: 0 24px 60px -18px rgba(0, 0, 0, 0.4);
+  animation: sheet-rise 0.18s ease;
+}
+
+.recording-warning-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.recording-warning-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  background: rgba(var(--warn-rgb), 0.14);
+  color: #8a5d00;
+}
+
+.recording-warning-head h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.recording-warning-copy,
+.recording-warning-detail {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.recording-warning-copy {
+  color: var(--text);
+}
+
+.recording-warning-detail {
+  color: var(--muted);
+  background: var(--surface-2);
+  border-radius: 9px;
+  padding: 9px 11px;
+}
+
+.recording-warning-actions {
+  display: grid;
+  gap: 8px;
+}
+
+.recording-warning-actions button {
+  width: 100%;
+  min-height: 38px;
+}
+
 /* What's-recorded disclosure sheet */
 .sheet-backdrop {
   position: fixed;
@@ -840,6 +907,7 @@ button:focus-visible,
 
 @media (prefers-reduced-motion: reduce) {
   .sheet-backdrop,
+  .recording-warning,
   .sheet {
     animation: none;
   }
@@ -1665,6 +1733,30 @@ button:focus-visible,
   gap: 12px;
   color: var(--muted);
   font-size: 13px;
+}
+
+.cloud-analysis-note {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 610px;
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.cloud-analysis-note strong {
+  color: var(--text);
+  font-size: 12.5px;
+}
+
+.cloud-analysis-caution {
+  color: var(--brand-ink);
 }
 
 .voice-card {

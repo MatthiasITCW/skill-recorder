@@ -201,6 +201,8 @@ export interface AutomationCreateResult {
 export interface StartResult {
   ok: boolean;
   sessionId?: string;
+  /** The recording has not started; the renderer must show the pre-recording warning. */
+  privacyWarningRequired?: boolean;
   error?: string;
 }
 
@@ -316,6 +318,7 @@ export interface DoctorReport {
 /** IPC channel names — the single source of truth shared by main + preload. */
 export const IPC = {
   start: "recorder:start",
+  startConfirmed: "recorder:start-confirmed",
   stop: "recorder:stop",
   discard: "recorder:discard",
   microphone: "recorder:microphone",
@@ -328,6 +331,8 @@ export const IPC = {
   marker: "recorder:marker",
   doctor: "doctor:check",
   statusChanged: "recorder:status-changed",
+  recordingPrivacyReviewed: "recorder:privacy-reviewed",
+  recordingPrivacyWarningRequested: "recorder:privacy-warning-requested",
   narrationStatus: "narration:status",
   narrationDownload: "narration:download",
   narrationTranscribe: "narration:transcribe",
@@ -359,7 +364,12 @@ export const IPC = {
 
 /** Shape exposed on `window.skillRecorder` by the preload bridge. */
 export interface SkillRecorderApi {
+  /** Request a start; may require the pre-recording privacy warning first. */
   start(): Promise<StartResult>;
+  /** Start once after the user explicitly proceeds through the privacy warning. */
+  confirmStart(): Promise<StartResult>;
+  markRecordingPrivacyReviewed(): Promise<void>;
+  onRecordingPrivacyWarningRequested(cb: () => void): () => void;
   stop(): Promise<StopResult>;
   discard(): Promise<DiscardResult>;
   setMicrophoneEnabled(enabled: boolean): Promise<MicrophoneResult>;

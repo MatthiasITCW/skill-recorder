@@ -4,6 +4,7 @@ const { contextBridge, ipcRenderer } = require("electron");
 
 const IPC = {
   start: "recorder:start",
+  startConfirmed: "recorder:start-confirmed",
   stop: "recorder:stop",
   discard: "recorder:discard",
   microphone: "recorder:microphone",
@@ -16,6 +17,8 @@ const IPC = {
   marker: "recorder:marker",
   doctor: "doctor:check",
   statusChanged: "recorder:status-changed",
+  recordingPrivacyReviewed: "recorder:privacy-reviewed",
+  recordingPrivacyWarningRequested: "recorder:privacy-warning-requested",
   narrationStatus: "narration:status",
   narrationDownload: "narration:download",
   narrationTranscribe: "narration:transcribe",
@@ -45,8 +48,30 @@ const IPC = {
   recordingControlsExpanded: "ui:recording-controls-expanded",
 };
 
+let recordingPrivacyWarningPending = false;
+let recordingPrivacyWarningCallback = null;
+ipcRenderer.on(IPC.recordingPrivacyWarningRequested, () => {
+  if (recordingPrivacyWarningCallback) {
+    recordingPrivacyWarningCallback();
+    return;
+  }
+  recordingPrivacyWarningPending = true;
+});
+
 contextBridge.exposeInMainWorld("skillRecorder", {
   start: () => ipcRenderer.invoke(IPC.start),
+  confirmStart: () => ipcRenderer.invoke(IPC.startConfirmed),
+  markRecordingPrivacyReviewed: () => ipcRenderer.invoke(IPC.recordingPrivacyReviewed),
+  onRecordingPrivacyWarningRequested: (cb) => {
+    recordingPrivacyWarningCallback = cb;
+    if (recordingPrivacyWarningPending) {
+      recordingPrivacyWarningPending = false;
+      cb();
+    }
+    return () => {
+      if (recordingPrivacyWarningCallback === cb) recordingPrivacyWarningCallback = null;
+    };
+  },
   stop: () => ipcRenderer.invoke(IPC.stop),
   discard: () => ipcRenderer.invoke(IPC.discard),
   setMicrophoneEnabled: (enabled) => ipcRenderer.invoke(IPC.microphone, enabled),

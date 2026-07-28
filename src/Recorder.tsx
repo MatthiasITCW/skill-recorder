@@ -15,11 +15,13 @@ import {
   type NarrationLanguage,
 } from "../common/narration";
 import { formatMs } from "./format";
+import { RecordingPrivacyWarning } from "./RecordingPrivacyWarning";
 import { WhatsRecorded } from "./WhatsRecorded";
 
 const IS_MAC = typeof navigator !== "undefined" && /Mac/i.test(navigator.userAgent);
 /** Mirrors the main-process global shortcut "CommandOrControl+Shift+R", per OS. */
 const TOGGLE_SHORTCUT = IS_MAC ? "⌘⇧R" : "Ctrl+Shift+R";
+type PrivacyReviewOrigin = "home" | "warning";
 
 export function Recorder() {
   const [status, setStatus] = useState<RecorderStatus | null>(null);
@@ -27,7 +29,10 @@ export function Recorder() {
   const [narrationStatus, setNarrationStatus] = useState<NarrationStatus | null>(null);
   const [microphoneSettings, setMicrophoneSettings] =
     useState<MicrophoneSettingsStatus | null>(null);
-  const [showPrivacy, setShowPrivacy] = useState(false);
+  const [privacyReviewOrigin, setPrivacyReviewOrigin] =
+    useState<PrivacyReviewOrigin | null>(null);
+  const [showRecordingWarning, setShowRecordingWarning] = useState(false);
+  const [warningStarting, setWarningStarting] = useState(false);
   const [showNarrationSettings, setShowNarrationSettings] = useState(false);
   const [narrationLanguage, setSelectedNarrationLanguage] =
     useState<NarrationLanguage>(DEFAULT_NARRATION_LANGUAGE);
@@ -65,6 +70,13 @@ export function Recorder() {
       offMicrophones();
     };
   }, [applyRecorderStatus, refreshCount]);
+
+  useEffect(() => {
+    return window.skillRecorder.onRecordingPrivacyWarningRequested(() => {
+      setShowNarrationSettings(false);
+      setShowRecordingWarning(true);
+    });
+  }, []);
 
   // The analyze step happens in the library window, so re-check how many
   // recordings still need analysis whenever the recorder regains focus.
@@ -119,12 +131,51 @@ export function Recorder() {
   }, [recording, startedAt]);
 
   const toggle = useCallback(async () => {
-    const res = recording
-      ? await window.skillRecorder.stop()
-      : await window.skillRecorder.start();
+    if (recording) {
+      const res = await window.skillRecorder.stop();
+      if (!res.ok) window.alert(res.error ?? "Action failed");
+      applyRecorderStatus(await window.skillRecorder.status());
+      return;
+    }
+
+    const res = await window.skillRecorder.start();
+    if (res.privacyWarningRequired) {
+      setShowRecordingWarning(true);
+      return;
+    }
     if (!res.ok) window.alert(res.error ?? "Action failed");
     applyRecorderStatus(await window.skillRecorder.status());
   }, [applyRecorderStatus, recording]);
+
+  const startAfterWarning = useCallback(async () => {
+    setWarningStarting(true);
+    const res = await window.skillRecorder.confirmStart();
+    if (!res.ok) {
+      setWarningStarting(false);
+      window.alert(res.error ?? "Could not start recording.");
+      return;
+    }
+    setShowRecordingWarning(false);
+    setWarningStarting(false);
+    applyRecorderStatus(await window.skillRecorder.status());
+  }, [applyRecorderStatus]);
+
+  const openPrivacyReview = useCallback((origin: PrivacyReviewOrigin) => {
+    setShowRecordingWarning(false);
+    setPrivacyReviewOrigin(origin);
+  }, []);
+
+  const closePrivacyReview = useCallback(() => {
+    const returnToWarning = privacyReviewOrigin === "warning";
+    setPrivacyReviewOrigin(null);
+    if (returnToWarning) setShowRecordingWarning(true);
+  }, [privacyReviewOrigin]);
+
+  const completePrivacyReview = useCallback(async () => {
+    await window.skillRecorder.markRecordingPrivacyReviewed();
+    setPrivacyReviewOrigin(null);
+    setShowRecordingWarning(false);
+  }, []);
 
   const selectNarrationLanguage = useCallback(
     async (value: string) => {
@@ -366,7 +417,7 @@ export function Recorder() {
         )}
       </section>
 
-      <button className="privacy-note" onClick={() => setShowPrivacy(true)}>
+      <button className="privacy-note" onClick={() => openPrivacyReview("home")}>
         <span className="privacy-note-icon" aria-hidden>
           <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
             <path
@@ -481,7 +532,20 @@ export function Recorder() {
 
       <p className="hint">{TOGGLE_SHORTCUT} toggles from anywhere</p>
 
-      {showPrivacy && <WhatsRecorded onClose={() => setShowPrivacy(false)} />}
+      {showRecordingWarning && (
+        <RecordingPrivacyWarning
+          starting={warningStarting}
+          onStart={() => void startAfterWarning()}
+          onReview={() => openPrivacyReview("warning")}
+          onClose={() => setShowRecordingWarning(false)}
+        />
+      )}
+      {privacyReviewOrigin && (
+        <WhatsRecorded
+          onClose={closePrivacyReview}
+          onReviewed={() => void completePrivacyReview()}
+        />
+      )}
     </div>
   );
 }

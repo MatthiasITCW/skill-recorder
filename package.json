@@ -21,6 +21,8 @@
     "dist": "node scripts/assert-generic-dist-platform.mjs && vite build && electron-builder --publish never",
     "dist:win:x64": "node scripts/assert-native-windows-arch.mjs x64 && vite build && electron-builder --publish never --win nsis --x64",
     "dist:win:arm64": "node scripts/assert-native-windows-arch.mjs arm64 && vite build && electron-builder --publish never --win nsis --arm64",
+    "dist:portable:mac": "vite build && electron-builder --publish never --mac zip",
+    "dist:portable:win": "node scripts/assert-native-windows-arch.mjs x64 && vite build && electron-builder --publish never --win portable --x64",
     "start": "electron ."
   },
   "dependencies": {
@@ -72,6 +74,8 @@
         "dmg",
         "zip"
       ],
+      "identity": "-",
+      "hardenedRuntime": false,
       "extraResources": [
         {
           "from": "node_modules/electron/dist/LICENSE",

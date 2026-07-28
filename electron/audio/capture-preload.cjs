@@ -10,6 +10,9 @@ const { readFile } = require("node:fs/promises");
 let recorder = null;
 /** @type {MediaStream | null} */
 let stream = null;
+/** @type {string | null} */
+let captureId = null;
+let requestedStopEpoch = 0;
 // Serialises chunk sends so the final blob (dispatched just before `stop`) is
 // fully forwarded before we tell main the recording stopped — otherwise the last
 // cluster is lost and the webm ends prematurely.
@@ -23,14 +26,27 @@ function cleanup() {
   }
   stream = null;
   recorder = null;
+  captureId = null;
+  requestedStopEpoch = 0;
 }
 
 ipcRenderer.on("audio:start", async (_event, opts) => {
-  const { bitsPerSecond } = opts || {};
+  const { id, bitsPerSecond } = opts || {};
+  if (typeof id !== "string" || !id) {
+    ipcRenderer.send("audio:error", "", "Invalid microphone segment id.");
+    return;
+  }
+  if (recorder && recorder.state !== "inactive") {
+    ipcRenderer.send("audio:error", id, "Microphone capture is already active.");
+    return;
+  }
   try {
+    captureId = id;
+    requestedStopEpoch = 0;
+    sendChain = Promise.resolve();
     // A plain microphone request. Echo cancellation / noise suppression keep the
     // narration clean for the transcriber without us touching the samples.
-    stream = await navigator.mediaDevices.getUserMedia({
+    const nextStream = await navigator.mediaDevices.getUserMedia({
       audio: {
         echoCancellation: true,
         noiseSuppression: true,
@@ -38,6 +54,18 @@ ipcRenderer.on("audio:start", async (_event, opts) => {
       },
       video: false,
     });
+    if (captureId !== id) {
+      for (const track of nextStream.getTracks()) track.stop();
+      return;
+    }
+    stream = nextStream;
+    for (const track of stream.getAudioTracks()) {
+      track.addEventListener("ended", () => {
+        if (!requestedStopEpoch) {
+          ipcRenderer.send("audio:error", id, "The microphone disconnected.");
+        }
+      }, { once: true });
+    }
 
     const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
       ? "audio/webm;codecs=opus"
@@ -46,45 +74,61 @@ ipcRenderer.on("audio:start", async (_event, opts) => {
 
     recorder.ondataavailable = (e) => {
       if (!e.data || e.data.size === 0) return;
+      const segmentId = id;
       // Preserve order and completion; Uint8Array survives IPC structured clone.
       sendChain = sendChain.then(async () => {
         const buf = await e.data.arrayBuffer();
-        ipcRenderer.send("audio:chunk", new Uint8Array(buf));
+        ipcRenderer.send("audio:chunk", segmentId, new Uint8Array(buf));
       });
     };
-    recorder.onstart = () => ipcRenderer.send("audio:started", Date.now());
+    recorder.onstart = () => {
+      ipcRenderer.send("audio:started", id, epochNow());
+    };
     recorder.onstop = () => {
       // Wait for every queued chunk (including the final one) to be sent.
       sendChain.then(() => {
+        const stopEpoch = requestedStopEpoch || epochNow();
         cleanup();
-        ipcRenderer.send("audio:stopped");
+        ipcRenderer.send("audio:stopped", id, stopEpoch);
       });
     };
     recorder.onerror = (e) => {
-      ipcRenderer.send("audio:error", String((e && e.error) || e));
+      ipcRenderer.send("audio:error", id, String((e && e.error) || e));
     };
 
     // Emit a chunk every second so long sessions stream to disk incrementally.
     recorder.start(1000);
   } catch (err) {
-    cleanup();
-    ipcRenderer.send("audio:error", err instanceof Error ? err.message : String(err));
+    if (captureId === id) cleanup();
+    ipcRenderer.send("audio:error", id, err instanceof Error ? err.message : String(err));
+    ipcRenderer.send("audio:stopped", id, epochNow());
   }
 });
 
-ipcRenderer.on("audio:stop", () => {
+ipcRenderer.on("audio:stop", (_event, opts) => {
+  const id = opts && opts.id;
+  if (typeof id !== "string" || id !== captureId) return;
   try {
     if (recorder && recorder.state !== "inactive") {
+      requestedStopEpoch = epochNow();
       recorder.requestData();
       recorder.stop();
     } else {
-      ipcRenderer.send("audio:stopped");
+      const stopEpoch = requestedStopEpoch || epochNow();
+      cleanup();
+      ipcRenderer.send("audio:stopped", id, stopEpoch);
     }
   } catch (err) {
-    ipcRenderer.send("audio:error", err instanceof Error ? err.message : String(err));
-    ipcRenderer.send("audio:stopped");
+    const stopEpoch = requestedStopEpoch || epochNow();
+    cleanup();
+    ipcRenderer.send("audio:error", id, err instanceof Error ? err.message : String(err));
+    ipcRenderer.send("audio:stopped", id, stopEpoch);
   }
 });
+
+function epochNow() {
+  return performance.timeOrigin + performance.now();
+}
 
 ipcRenderer.on("audio:decode", async (_event, opts) => {
   const { id, audioPath, sampleRate, chunkSamples } = opts || {};

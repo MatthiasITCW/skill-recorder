@@ -1,4 +1,4 @@
-import { Menu, Tray, nativeImage, type BrowserWindow } from "electron";
+import { Menu, Tray, nativeImage } from "electron";
 
 import type { RecorderController } from "./recorder/controller";
 
@@ -21,7 +21,11 @@ function trayIcon(): Electron.NativeImage {
   return nativeImage.createFromBitmap(buf, { width: size, height: size });
 }
 
-export function createTray(recorder: RecorderController, win: BrowserWindow): Tray {
+export function createTray(
+  recorder: RecorderController,
+  showRecorderWindow: () => void,
+  showRecordingControls: () => void,
+): Tray {
   const tray = new Tray(trayIcon());
   tray.setToolTip("Skill Recorder");
 
@@ -35,10 +39,13 @@ export function createTray(recorder: RecorderController, win: BrowserWindow): Tr
         },
         { type: "separator" },
         {
-          label: "Show window",
+          label: recording ? "Show recording controls" : "Show window",
           click: () => {
-            win.show();
-            win.focus();
+            if (recording) {
+              showRecordingControls();
+              return;
+            }
+            showRecorderWindow();
           },
         },
         { label: "Quit", role: "quit" },

@@ -46,8 +46,10 @@ export function Recorder() {
   }, [refreshCount]);
 
   const recording = status?.state === "recording";
+  const transitioning = status?.transition !== "none";
   const startedAt = status?.startedAt ?? null;
-  const justSaved = !recording && status?.lastSession != null;
+  const justSaved = !recording && status?.lastFinish?.outcome === "saved";
+  const justDiscarded = !recording && status?.lastFinish?.outcome === "discarded";
 
   // Refresh the library count whenever a recording finishes.
   useEffect(() => {
@@ -97,6 +99,7 @@ export function Recorder() {
         <button
           className={`record ${recording ? "on" : ""}`}
           onClick={toggle}
+          disabled={transitioning}
           aria-label={recording ? "Stop recording" : "Start recording"}
         >
           <span className="record-glyph" />
@@ -109,6 +112,8 @@ export function Recorder() {
             ? `${status?.eventCount ?? 0} events captured`
             : justSaved
               ? "Capture saved. Open Sessions to analyze"
+              : justDiscarded
+                ? "Recording discarded"
               : "Ready to capture"}
         </div>
       </div>
@@ -118,7 +123,7 @@ export function Recorder() {
         role="switch"
         aria-checked={narrate}
         onClick={() => setNarrate((v) => !v)}
-        disabled={recording}
+        disabled={recording || transitioning}
       >
         <span className="narrate-icon" aria-hidden>
           <svg width="18" height="18" viewBox="0 0 20 20" fill="none">

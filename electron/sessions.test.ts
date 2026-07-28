@@ -16,11 +16,20 @@ test("session size includes every artifact and deletion removes the whole direct
     const dir = path.join(root, id);
     await mkdir(path.join(dir, "video-frames"), { recursive: true });
     await mkdir(path.join(dir, "frames"), { recursive: true });
+    await mkdir(path.join(dir, "audio"), { recursive: true });
 
     const artifacts: [string, string | Uint8Array][] = [
       ["session.json", JSON.stringify({ id, startedAt: 1_000, stoppedAt: 2_000 })],
       ["video.webm", Buffer.alloc(17, 1)],
-      ["audio.webm", Buffer.alloc(19, 2)],
+      [
+        "audio.json",
+        JSON.stringify({
+          version: 2,
+          segments: [{ file: "audio/segment-0001.webm" }, { file: "audio/segment-0002.webm" }],
+        }),
+      ],
+      [path.join("audio", "segment-0001.webm"), Buffer.alloc(19, 2)],
+      [path.join("audio", "segment-0002.webm"), Buffer.alloc(13, 2)],
       [path.join("video-frames", "frame_000001.jpg"), Buffer.alloc(23, 3)],
       [path.join("frames", "event_1000.jpg"), Buffer.alloc(29, 4)],
     ];
@@ -32,6 +41,7 @@ test("session size includes every artifact and deletion removes the whole direct
       0,
     );
     assert.equal(summary?.sizeBytes, expectedBytes);
+    assert.equal(summary?.hasAudio, true);
 
     await deleteSession(id);
     await assert.rejects(access(dir), { code: "ENOENT" });

@@ -39,6 +39,10 @@ export function registerIpc(
 ): void {
   ipcMain.handle(IPC.start, (_event, options?: StartOptions) => recorder.start(options));
   ipcMain.handle(IPC.stop, () => recorder.stop());
+  ipcMain.handle(IPC.discard, () => recorder.discard());
+  ipcMain.handle(IPC.microphone, (_event, enabled: boolean) =>
+    recorder.setMicrophoneEnabled(enabled),
+  );
   ipcMain.handle(IPC.status, () => recorder.status());
   ipcMain.handle(IPC.marker, (_event, note: string) => recorder.marker(note));
   ipcMain.handle(IPC.doctor, () => runDoctor());

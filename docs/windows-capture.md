@@ -59,14 +59,22 @@ Run a real recording on Windows and verify each source lands in the session's
    preview and hash.
 5. **Video.** Confirm `video.webm`, `video-frames.json`, snapshots under
    `video-frames/`, and retained images under `frames/`.
-6. **Voice narration.** Turn on the **Narrate** switch before starting, then speak
-   a sentence or two during the recording. After Stop, confirm `audio.webm` +
-   `audio.json` are written. If the model is not installed, use **Download &
+6. **Voice narration.** Turn on the **Narrate** switch before starting or use the
+   microphone control in the floating recording bar. Toggle it off and on around
+   two spoken sentences. After Stop, confirm `audio.json` contains a version-2
+   segment manifest and the referenced `audio/segment-*.webm` files exist. Their
+   session/video offsets should preserve the silent gap while the microphone was
+   off. If the model is not installed, use **Download &
    transcribe** in Sessions (or the actionable HUD readiness row) to approve the
    one-time ~250 MB Whisper download. Confirm `narration.json` then contains your
    words with `atMs` offsets. Later runs are offline. On Windows the mic grant is
    requested by the OS on first use.
-7. **Stop.** The recording should show up in the library as `recorded`, and
+7. **Recording controls.** Confirm the floating bar stays above the active app,
+   can be dragged without making its buttons unclickable, and does not appear in
+   captured frames where Windows capture protection is supported. Canceling the
+   discard confirmation must continue the same recording; confirming it must
+   leave no saved session.
+8. **Stop.** The recording should show up in the library as `recorded`, and
    analysis should produce a coherent intent + ordered steps.
 
 If a source produces nothing, check the doctor row for it first, then the main

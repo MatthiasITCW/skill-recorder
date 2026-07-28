@@ -68,6 +68,15 @@ export interface RecorderStatus {
   sessionId: string | null;
   startedAt: number | null;
   eventCount: number;
+  transition: "none" | "starting" | "stopping" | "discarding";
+  microphone: {
+    state: "off" | "starting" | "on" | "stopping" | "error";
+    error: string | null;
+  };
+  lastFinish: {
+    sessionId: string;
+    outcome: "saved" | "discarded";
+  } | null;
   /** Set after a recording stops; drives the "Analyze" affordance. */
   lastSession: LastSession | null;
 }
@@ -190,6 +199,18 @@ export interface StopResult {
   error?: string;
 }
 
+export interface DiscardResult {
+  ok: boolean;
+  sessionId?: string;
+  error?: string;
+}
+
+export interface MicrophoneResult {
+  ok: boolean;
+  state?: RecorderStatus["microphone"]["state"];
+  error?: string;
+}
+
 export interface MarkerResult {
   ok: boolean;
   error?: string;
@@ -244,6 +265,8 @@ export interface DoctorReport {
 export const IPC = {
   start: "recorder:start",
   stop: "recorder:stop",
+  discard: "recorder:discard",
+  microphone: "recorder:microphone",
   status: "recorder:status",
   marker: "recorder:marker",
   doctor: "doctor:check",
@@ -274,12 +297,15 @@ export const IPC = {
   automationProgress: "automation:progress",
   openLibrary: "ui:open-library",
   closeLibrary: "ui:close-library",
+  recordingControlsExpanded: "ui:recording-controls-expanded",
 } as const;
 
 /** Shape exposed on `window.skillRecorder` by the preload bridge. */
 export interface SkillRecorderApi {
   start(options?: StartOptions): Promise<StartResult>;
   stop(): Promise<StopResult>;
+  discard(): Promise<DiscardResult>;
+  setMicrophoneEnabled(enabled: boolean): Promise<MicrophoneResult>;
   status(): Promise<RecorderStatus>;
   marker(note: string): Promise<MarkerResult>;
   doctor(): Promise<DoctorReport>;
@@ -341,4 +367,6 @@ export interface SkillRecorderApi {
   openLibrary(): Promise<void>;
   /** Close the Sessions library window from within it. */
   closeLibrary(): Promise<void>;
+  /** Resize the recording-controls window while its confirmation is visible. */
+  setRecordingControlsExpanded(expanded: boolean): Promise<void>;
 }

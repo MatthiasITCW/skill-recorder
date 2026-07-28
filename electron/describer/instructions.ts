@@ -74,8 +74,9 @@ All times are **\`atMs\` = milliseconds since the recording started**.
   part of their task. In particular, the FIRST step (focusing Skill Recorder to press Start,
   usually at \`atMs\` ≈ 0) and the LAST step (returning to Skill Recorder to press Stop) are
   recorder bracketing, not user actions — do NOT emit them as steps. Also drop any mid-session
-  flick back to Skill Recorder just to add a marker. The real task starts with the first
-  non-recorder app the user works in.
+  focus on Skill Recorder's floating controls to toggle the microphone, cancel a discard, or
+  operate another recording control. The real task starts with the first non-recorder app the
+  user works in.
 - \`UserNotificationCenter\` / OS permission dialogs (e.g. "requesting to record the
   screen") are the recorder's own consent prompts — NOT user actions. Skip them.
 - URL tracking params (\`gclid\`, \`gad_source\`, \`utm_*\`) and ad-redirect hops carry no

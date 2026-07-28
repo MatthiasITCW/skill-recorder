@@ -13,6 +13,21 @@ export function formatDur(ms: number): string {
   return `${Math.floor(s / 60)}m ${s % 60}s`;
 }
 
+/** Compact binary file size, e.g. "824 KB" or "12.4 MB". */
+export function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
+  if (bytes < 1024) return `${Math.round(bytes)} B`;
+
+  const units = ["KB", "MB", "GB", "TB"];
+  let value = bytes / 1024;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit++;
+  }
+  return `${Number(value.toFixed(1))} ${units[unit]}`;
+}
+
 /**
  * Compact one-line label derived from a full intent sentence. Used as the
  * sessions-list name when an analysis has no short `title` (older analyses saved

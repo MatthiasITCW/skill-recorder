@@ -1,11 +1,15 @@
-import { access, readdir, readFile, rm, stat } from "node:fs/promises";
+import { access, lstat, readdir, readFile, rm, stat } from "node:fs/promises";
 import path from "node:path";
 
 import { AnalysisSchema, type Analysis } from "../common/analysis";
 import type { SessionSummary } from "../common/ipc";
 import { NARRATION_FILE, type NarrationTranscript } from "../common/narration";
 import type { SessionMeta } from "../common/types";
+import { createLogger } from "./logger";
 import { isValidSessionId, sessionDir, sessionsRoot } from "./recorder/session-store";
+
+const log = createLogger("Sessions");
+const SIZE_STAT_BATCH = 64;
 
 /** True when `file` exists (non-throwing `fs.access`). */
 async function exists(file: string): Promise<boolean> {
@@ -42,6 +46,57 @@ async function loadNarration(
   }
 }
 
+function isMissing(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    error.code === "ENOENT"
+  );
+}
+
+/** Sum file and link sizes without following links outside the session directory. */
+export async function sessionDirectorySize(root: string): Promise<number> {
+  const pending = [root];
+  let total = 0;
+
+  while (pending.length > 0) {
+    const dir = pending.pop();
+    if (!dir) break;
+
+    let entries;
+    try {
+      entries = await readdir(dir, { withFileTypes: true });
+    } catch (error) {
+      if (isMissing(error)) continue;
+      throw error;
+    }
+
+    const files: string[] = [];
+    for (const entry of entries) {
+      const file = path.join(dir, entry.name);
+      if (entry.isDirectory()) pending.push(file);
+      else files.push(file);
+    }
+
+    for (let start = 0; start < files.length; start += SIZE_STAT_BATCH) {
+      const stats = await Promise.all(
+        files.slice(start, start + SIZE_STAT_BATCH).map(async (file) => {
+          try {
+            return await lstat(file);
+          } catch (error) {
+            if (isMissing(error)) return null;
+            throw error;
+          }
+        }),
+      );
+      for (const info of stats) total += info?.size ?? 0;
+    }
+  }
+
+  return total;
+}
+
 /** Build the library summary for a single session dir, or null if it isn't one. */
 async function summarize(root: string, name: string): Promise<SessionSummary | null> {
   const dir = path.join(root, name);
@@ -59,21 +114,30 @@ async function summarize(root: string, name: string): Promise<SessionSummary | n
   }
   if (!meta?.id) return null;
 
-  const [analysis, processed, hasVideo, hasAudio, narration, hasSkill, hasAutomation] = await Promise.all([
-    loadAnalysis(dir),
-    exists(path.join(dir, "bundle.json")),
-    exists(path.join(dir, "video.json")),
-    exists(path.join(dir, "audio.json")),
-    loadNarration(dir),
-    exists(path.join(dir, "skill.json")),
-    exists(path.join(dir, "built-automation.json")),
-  ]);
+  const [analysis, processed, hasVideo, hasAudio, narration, hasSkill, hasAutomation, sizeBytes] =
+    await Promise.all([
+      loadAnalysis(dir),
+      exists(path.join(dir, "bundle.json")),
+      exists(path.join(dir, "video.json")),
+      exists(path.join(dir, "audio.json")),
+      loadNarration(dir),
+      exists(path.join(dir, "skill.json")),
+      exists(path.join(dir, "built-automation.json")),
+      sessionDirectorySize(dir).catch((error) => {
+        log.warn(
+          `could not measure session ${name}:`,
+          error instanceof Error ? error.message : String(error),
+        );
+        return null;
+      }),
+    ]);
 
   return {
     id: meta.id,
     startedAt: meta.startedAt ?? null,
     stoppedAt: meta.stoppedAt ?? null,
     durationMs: meta.startedAt && meta.stoppedAt ? meta.stoppedAt - meta.startedAt : null,
+    sizeBytes,
     processed,
     hasVideo,
     hasAudio,

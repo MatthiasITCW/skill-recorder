@@ -16,6 +16,8 @@ export interface SessionSummary {
   startedAt: number | null;
   stoppedAt: number | null;
   durationMs: number | null;
+  /** Total bytes occupied by all files under this session's directory. */
+  sizeBytes: number | null;
   /** True once post-processing produced a bundle. */
   processed: boolean;
   hasVideo: boolean;

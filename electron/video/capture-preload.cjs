@@ -36,6 +36,7 @@ let frameReady = false;
 let recordingStarted = false;
 let startEpoch = 0;
 let startMonotonic = 0;
+let requestedStopEpoch = 0;
 /** @type {number | null} */
 let firstFrameTimestampUs = null;
 let firstFrameEpoch = 0;
@@ -61,6 +62,10 @@ function currentEpoch() {
   return recordingStarted
     ? startEpoch + (performance.now() - startMonotonic)
     : Date.now();
+}
+
+function epochNow() {
+  return performance.timeOrigin + performance.now();
 }
 
 function createCanvas(width, height) {
@@ -269,6 +274,7 @@ function cleanup() {
   frameReady = false;
   capturingFrames = false;
   recordingStarted = false;
+  requestedStopEpoch = 0;
   firstFrameTimestampUs = null;
   lastFrameHash = "";
   lastFrameEmitAt = 0;
@@ -310,7 +316,7 @@ ipcRenderer.on("video:start", async (_event, opts) => {
       });
     };
     recorder.onstart = () => {
-      startEpoch = Date.now();
+      startEpoch = epochNow();
       startMonotonic = performance.now();
       recordingStarted = true;
       ipcRenderer.send("video:started", startEpoch);
@@ -318,12 +324,14 @@ ipcRenderer.on("video:start", async (_event, opts) => {
     recorder.onstop = () => {
       // Wait for every queued chunk and snapshot before acknowledging stop.
       Promise.all([sendChain, stopFrameCapture()]).then(() => {
+        const stopEpoch = requestedStopEpoch || currentEpoch();
         cleanup();
-        ipcRenderer.send("video:stopped");
+        ipcRenderer.send("video:stopped", stopEpoch);
       }).catch((err) => {
+        const stopEpoch = requestedStopEpoch || currentEpoch();
         cleanup();
         ipcRenderer.send("video:error", err instanceof Error ? err.message : String(err));
-        ipcRenderer.send("video:stopped");
+        ipcRenderer.send("video:stopped", stopEpoch);
       });
     };
     recorder.onerror = (e) => {
@@ -354,15 +362,17 @@ function withTimeout(promise, timeoutMs, message) {
 ipcRenderer.on("video:stop", async () => {
   try {
     if (recorder && recorder.state !== "inactive") {
+      requestedStopEpoch = currentEpoch();
       recorder.requestData();
       recorder.stop();
     } else {
       await stopFrameCapture();
-      ipcRenderer.send("video:stopped");
+      ipcRenderer.send("video:stopped", requestedStopEpoch || currentEpoch());
     }
   } catch (err) {
+    const stopEpoch = requestedStopEpoch || currentEpoch();
     await stopFrameCapture().catch(() => undefined);
     ipcRenderer.send("video:error", err instanceof Error ? err.message : String(err));
-    ipcRenderer.send("video:stopped");
+    ipcRenderer.send("video:stopped", stopEpoch);
   }
 });

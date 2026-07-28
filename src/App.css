@@ -68,6 +68,18 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+body[data-route="recording-controls"] {
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background: transparent;
+}
+
+body[data-route="recording-controls"] #root {
+  width: 100%;
+  height: 100%;
+}
+
 /* --- Shared primitives ---------------------------------------------------- */
 
 .eyebrow {
@@ -721,6 +733,253 @@ button:focus-visible,
 @media (prefers-reduced-motion: reduce) {
   .sheet-backdrop,
   .sheet {
+    animation: none;
+  }
+}
+
+/* =========================================================================
+   In-recording control overlay
+   ========================================================================= */
+
+  .recording-controls {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    gap: 8px;
+    width: 100%;
+    height: 100%;
+    padding: 4px 6px 2px;
+    color: #f7f7f7;
+  }
+
+  .recording-bar-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    -webkit-app-region: drag;
+  }
+
+  .recording-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    min-height: 58px;
+    padding: 8px 9px 8px 14px;
+    border: 1px solid rgba(255, 255, 255, 0.13);
+    border-radius: 14px;
+    background: rgba(32, 32, 34, 0.97);
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.42), 0 2px 6px rgba(0, 0, 0, 0.3);
+    -webkit-app-region: drag;
+  }
+
+  .recording-bar button,
+  .recording-discard-confirm,
+  .recording-discard-confirm button {
+    -webkit-app-region: no-drag;
+  }
+
+  .recording-live {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 118px;
+    -webkit-app-region: drag;
+  }
+
+  .recording-live-dot {
+    width: 7px;
+    height: 7px;
+    flex: none;
+    border-radius: 50%;
+    background: #ef594b;
+    box-shadow: 0 0 0 3px rgba(239, 89, 75, 0.14);
+    animation: pulse 1.2s ease-in-out infinite;
+  }
+
+  .recording-live-copy {
+    display: flex;
+    align-items: baseline;
+    gap: 7px;
+    min-width: 0;
+  }
+
+  .recording-live-copy strong {
+    font-size: 12px;
+    font-weight: 650;
+    color: #f7f7f7;
+  }
+
+  .recording-live-copy span {
+    font-family: var(--mono);
+    font-size: 10px;
+    font-variant-numeric: tabular-nums;
+    color: #aaa;
+  }
+
+  .recording-divider {
+    width: 1px;
+    height: 26px;
+    flex: none;
+    background: rgba(255, 255, 255, 0.13);
+  }
+
+  .recording-microphone {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    min-width: 67px;
+    height: 36px;
+    padding: 0 8px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 9px;
+    background: #2d2d30;
+    color: #b8b8bc;
+    font-size: 10px;
+  }
+
+  .recording-microphone.on {
+    border-color: rgba(239, 89, 75, 0.5);
+    background: rgba(239, 89, 75, 0.15);
+    color: #ff8a80;
+  }
+
+  .recording-microphone.error {
+    border-color: rgba(255, 184, 77, 0.55);
+    color: #ffc269;
+  }
+
+  .recording-microphone:not(:disabled):hover,
+  .recording-discard:not(:disabled):hover {
+    filter: brightness(1.16);
+  }
+
+  .recording-discard,
+  .recording-done {
+    height: 36px;
+    padding: 0 13px;
+    border-radius: 9px;
+    font-size: 11.5px;
+    font-weight: 600;
+  }
+
+  .recording-discard {
+    margin-left: auto;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: #343438;
+    color: #e6e6e8;
+  }
+
+  .recording-done {
+    min-width: 62px;
+    background: #fff;
+    color: #202024;
+  }
+
+  .recording-done:not(:disabled):hover {
+    background: #f0f0f1;
+  }
+
+  .recording-bar button:disabled,
+  .recording-discard-confirm button:disabled {
+    opacity: 0.52;
+  }
+
+  .recording-bar button:focus-visible,
+  .recording-discard-confirm button:focus-visible {
+    outline: 2px solid #ff766a;
+    outline-offset: 2px;
+  }
+
+  .recording-drag-handle {
+    display: block;
+    width: 34px;
+    height: 4px;
+    border-radius: 999px;
+    background: rgba(67, 67, 70, 0.74);
+    -webkit-app-region: drag;
+  }
+
+  .recording-discard-confirm {
+    display: flex;
+    flex-direction: column;
+    gap: 13px;
+    width: 100%;
+    padding: 15px 16px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 13px;
+    background: rgba(37, 37, 40, 0.98);
+    box-shadow: 0 14px 34px rgba(0, 0, 0, 0.42);
+    color: #f7f7f7;
+    animation: recording-confirm-in 0.15s ease-out;
+  }
+
+  .recording-discard-confirm h2 {
+    margin: 0 0 4px;
+    font-size: 13px;
+    font-weight: 650;
+  }
+
+  .recording-discard-confirm p {
+    margin: 0;
+    color: #b8b8bc;
+    font-size: 11.5px;
+    line-height: 1.4;
+  }
+
+  .recording-discard-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+
+  .recording-keep,
+  .recording-confirm-discard {
+    min-height: 34px;
+    padding: 0 12px;
+    border-radius: 8px;
+    font-size: 11.5px;
+    font-weight: 600;
+  }
+
+  .recording-keep {
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    background: #343438;
+    color: #efeff1;
+  }
+
+  .recording-confirm-discard {
+    background: #d9473b;
+    color: #fff;
+  }
+
+  .recording-confirm-discard:not(:disabled):hover {
+    background: #c43c32;
+  }
+
+  .recording-controls-live {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  @keyframes recording-confirm-in {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+  }
+
+@media (prefers-reduced-motion: reduce) {
+  .recording-live-dot,
+  .recording-discard-confirm {
     animation: none;
   }
 }

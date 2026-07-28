@@ -4,7 +4,15 @@ import { app } from "electron";
 
 import type { CaptureConfig } from "../../common/config";
 import { EventType } from "../../common/events";
-import type { MarkerResult, RecorderStatus, StartOptions, StartResult, StopResult } from "../../common/ipc";
+import type {
+  DiscardResult,
+  MarkerResult,
+  MicrophoneResult,
+  RecorderStatus,
+  StartOptions,
+  StartResult,
+  StopResult,
+} from "../../common/ipc";
 import type { RecorderState, SessionMeta } from "../../common/types";
 import { createLogger } from "../logger";
 import type { Collector } from "./collector";
@@ -22,10 +30,22 @@ function makeSessionId(d = new Date()): string {
   return `${stamp}-${randomUUID().slice(0, 8)}`;
 }
 
-/** A best-effort media sidecar (e.g. screen video) tied to a session's lifecycle. */
-export interface SessionMediaRecorder {
+/** A best-effort screen-video sidecar tied to a session's lifecycle. */
+export interface SessionVideoRecorder {
   start(sessionDir: string): Promise<void>;
   stop(): Promise<unknown>;
+}
+
+/** Microphone sidecar that can create multiple capture intervals per session. */
+export interface SessionAudioRecorder {
+  start(sessionDir: string, sessionStartedAt: number): Promise<void>;
+  enable(): Promise<void>;
+  disable(): Promise<unknown>;
+  finish(videoStartEpoch: number | null): Promise<unknown>;
+}
+
+export interface AudioCaptureEnded {
+  error: string | null;
 }
 
 export interface RecorderDeps {
@@ -34,29 +54,38 @@ export interface RecorderDeps {
   /** Builds the collectors enabled by a config. */
   buildCollectors: (config: CaptureConfig) => readonly Collector[];
   /** Optional factory for the video sidecar; only used when `config.video`. */
-  createVideoRecorder?: () => SessionMediaRecorder;
-  /** Optional factory for the narration sidecar; only used when the user opts in. */
-  createAudioRecorder?: () => SessionMediaRecorder;
-  /** Optional best-effort post-processing (frames + correlation) after stop. */
+  createVideoRecorder?: () => SessionVideoRecorder;
+  /** Optional factory for the live-toggle microphone sidecar. */
+  createAudioRecorder?: (
+    onCaptureEnded: (event: AudioCaptureEnded) => void,
+  ) => SessionAudioRecorder;
+  /** Permanently removes a finalized session when the user discards it. */
+  deleteSession?: (sessionId: string) => Promise<void>;
+  /** Optional best-effort post-processing (frames + correlation) after save. */
   postProcess?: (sessionDir: string) => Promise<void>;
 }
 
+type FinishIntent = "save" | "discard";
+type FinishResult = StopResult & DiscardResult;
+
 /**
- * The recorder state machine. It owns session lifecycle, the shared event bus,
- * and the collector host. Capture sources are resolved from the current config
- * at each `start()`, so the user can change the capture level between sessions
- * without restarting the app. When `config.video` is set, an optional video
- * sidecar is started and stopped alongside the collectors (best-effort).
+ * The recorder state machine. All lifecycle mutations are serialized so UI,
+ * tray, shortcut, microphone, and app-shutdown commands cannot race each other.
  */
 export class RecorderController {
   private store: SessionStore | null = null;
-  private readonly listeners = new Set<(s: RecorderStatus) => void>();
+  private readonly listeners = new Set<(status: RecorderStatus) => void>();
   private readonly bus = new EventBus();
   private readonly host: CollectorHost;
   private activeCollectors: readonly Collector[] = [];
-  private video: SessionMediaRecorder | null = null;
-  private audio: SessionMediaRecorder | null = null;
-  private processing: Promise<void> | null = null;
+  private video: SessionVideoRecorder | null = null;
+  private audio: SessionAudioRecorder | null = null;
+  private transition: RecorderStatus["transition"] = "none";
+  private microphone: RecorderStatus["microphone"] = { state: "off", error: null };
+  private lastFinish: RecorderStatus["lastFinish"] = null;
+  private shuttingDown = false;
+  private operations: Promise<void> = Promise.resolve();
+  private readonly processing = new Set<Promise<void>>();
   private lastCompleted: { id: string; dir: string } | null = null;
   private lastProcessed = false;
 
@@ -84,6 +113,7 @@ export class RecorderController {
     if (this.lastCompleted?.id !== id) return;
     this.lastCompleted = null;
     this.lastProcessed = false;
+    if (this.lastFinish?.sessionId === id) this.lastFinish = null;
     this.emit();
   }
 
@@ -93,120 +123,283 @@ export class RecorderController {
       sessionId: this.store?.meta.id ?? null,
       startedAt: this.store?.meta.startedAt ?? null,
       eventCount: this.store?.eventCount ?? 0,
+      transition: this.transition,
+      microphone: { ...this.microphone },
+      lastFinish: this.lastFinish ? { ...this.lastFinish } : null,
       lastSession: this.lastCompleted
         ? { id: this.lastCompleted.id, processed: this.lastProcessed }
         : null,
     };
   }
 
-  onStatusChanged(cb: (s: RecorderStatus) => void): () => void {
+  onStatusChanged(cb: (status: RecorderStatus) => void): () => void {
     this.listeners.add(cb);
     return () => {
       this.listeners.delete(cb);
     };
   }
 
-  private emit(): void {
-    const s = this.status();
-    for (const cb of this.listeners) cb(s);
+  start(options?: StartOptions): Promise<StartResult> {
+    return this.enqueue(() =>
+      this.shuttingDown
+        ? Promise.resolve({ ok: false, error: "Skill Recorder is shutting down." })
+        : this.startInternal(options),
+    );
   }
 
-  async start(options?: StartOptions): Promise<StartResult> {
+  stop(): Promise<StopResult> {
+    return this.enqueue(() => this.finish("save"));
+  }
+
+  discard(): Promise<DiscardResult> {
+    return this.enqueue(() => this.finish("discard"));
+  }
+
+  setMicrophoneEnabled(enabled: boolean): Promise<MicrophoneResult> {
+    return this.enqueue(async () => {
+      if (!this.store || this.transition !== "none") {
+        return { ok: false, error: "Microphone controls are only available while recording." };
+      }
+      return this.setMicrophoneInternal(enabled);
+    });
+  }
+
+  // Marker capture is intentionally retained even though the "Add marker" HUD
+  // button was removed in favor of voice narration (see docs/future-features.md).
+  marker(note: string): MarkerResult {
+    if (!this.store || this.transition !== "none") {
+      return { ok: false, error: "Not recording" };
+    }
+    this.bus.publish({ type: EventType.Marker, source: "user", payload: { note } });
+    return { ok: true };
+  }
+
+  /** Resolves when every saved session still being post-processed has finished. */
+  whenProcessed(): Promise<void> {
+    return Promise.all([...this.processing]).then(() => undefined);
+  }
+
+  /** Reject new recordings while the app drains capture and post-processing. */
+  beginShutdown(): void {
+    this.shuttingDown = true;
+  }
+
+  private async startInternal(options?: StartOptions): Promise<StartResult> {
     if (this.store) return { ok: false, error: "Already recording" };
-    const meta: SessionMeta = {
-      id: makeSessionId(),
-      startedAt: Date.now(),
-      stoppedAt: null,
-      platform: process.platform,
-      appVersion: app.getVersion(),
-    };
-    const store = new SessionStore(meta);
+
+    this.transition = "starting";
+    this.microphone = { state: "off", error: null };
+    this.lastFinish = null;
+    this.emit();
+
+    let store: SessionStore;
+    try {
+      const meta: SessionMeta = {
+        id: makeSessionId(),
+        startedAt: Date.now(),
+        stoppedAt: null,
+        platform: process.platform,
+        appVersion: app.getVersion(),
+      };
+      store = new SessionStore(meta);
+    } catch (error) {
+      this.transition = "none";
+      this.emit();
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+
     this.store = store;
     this.bus.attach(store);
     this.bus.publish({
       type: EventType.SessionStart,
       source: "recorder",
-      payload: { platform: meta.platform },
+      payload: { platform: store.meta.platform },
     });
-    log.info("Recording started:", meta.id, "->", store.dir);
+    log.info("Recording started:", store.meta.id, "->", store.dir);
     this.emit();
 
     const config = this.deps.resolveConfig();
     this.activeCollectors = this.deps.buildCollectors(config);
     await this.host.startAll(this.activeCollectors, store.dir);
 
-    // Video is a best-effort sidecar; never let it block or fail the session.
+    // Video remains a best-effort sidecar; it never blocks the event recording.
     if (config.video && this.deps.createVideoRecorder) {
       this.video = this.deps.createVideoRecorder();
       try {
         await this.video.start(store.dir);
-      } catch (err) {
-        log.warn("video start failed:", err instanceof Error ? err.message : err);
+      } catch (error) {
+        log.warn("video start failed:", error instanceof Error ? error.message : error);
         this.video = null;
       }
     }
 
-    // Narration is strictly opt-in (the HUD toggle), off by default, and just as
-    // best-effort as video: a missing mic or denied permission never fails the run.
-    if (options?.narration && this.deps.createAudioRecorder) {
-      this.audio = this.deps.createAudioRecorder();
+    // Initialize the audio utility for every session so the overlay can turn the
+    // mic on later. This does not request microphone access until enable().
+    if (this.deps.createAudioRecorder) {
+      this.audio = this.deps.createAudioRecorder((event) => this.onAudioCaptureEnded(event));
       try {
-        await this.audio.start(store.dir);
-      } catch (err) {
-        log.warn("narration start failed:", err instanceof Error ? err.message : err);
+        await this.audio.start(store.dir, store.meta.startedAt);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        log.warn("microphone initialization failed:", message);
         this.audio = null;
+        this.microphone = { state: "error", error: message };
       }
     }
-    return { ok: true, sessionId: meta.id };
+
+    if (options?.narration && this.audio) {
+      await this.setMicrophoneInternal(true);
+    }
+
+    this.transition = "none";
+    this.emit();
+    return { ok: true, sessionId: store.meta.id };
   }
 
-  // Marker capture is intentionally retained even though the "Add marker" HUD
-  // button was removed in favor of voice narration (see docs/future-features.md).
-  // The full path (IPC -> event bus -> bundle -> describer) stays wired so a
-  // future UI (e.g. a silent hotkey flag) can re-enable it without backend work.
-  marker(note: string): MarkerResult {
-    if (!this.store) return { ok: false, error: "Not recording" };
-    this.bus.publish({ type: EventType.Marker, source: "user", payload: { note } });
-    return { ok: true };
+  private async setMicrophoneInternal(enabled: boolean): Promise<MicrophoneResult> {
+    if (enabled) {
+      if (this.microphone.state === "on") return { ok: true, state: "on" };
+      if (!this.audio) {
+        const error = "Microphone capture is unavailable for this recording.";
+        this.microphone = { state: "error", error };
+        this.emit();
+        return { ok: false, state: "error", error };
+      }
+
+      this.microphone = { state: "starting", error: null };
+      this.emit();
+      try {
+        await this.audio.enable();
+        this.microphone = { state: "on", error: null };
+        this.emit();
+        return { ok: true, state: "on" };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.microphone = { state: "error", error: message };
+        this.emit();
+        return { ok: false, state: "error", error: message };
+      }
+    }
+
+    if (this.microphone.state === "off") return { ok: true, state: "off" };
+    if (!this.audio) {
+      this.microphone = { state: "off", error: null };
+      this.emit();
+      return { ok: true, state: "off" };
+    }
+
+    this.microphone = { state: "stopping", error: null };
+    this.emit();
+    try {
+      await this.audio.disable();
+      this.microphone = { state: "off", error: null };
+      this.emit();
+      return { ok: true, state: "off" };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.microphone = { state: "error", error: message };
+      this.emit();
+      return { ok: false, state: "error", error: message };
+    }
   }
 
-  async stop(): Promise<StopResult> {
+  private async finish(intent: FinishIntent): Promise<FinishResult> {
     const store = this.store;
     if (!store) return { ok: false, error: "Not recording" };
-    // Stop collectors first so nothing publishes after the stream is finalized.
+
+    this.transition = intent === "save" ? "stopping" : "discarding";
+    if (this.microphone.state !== "off") {
+      this.microphone = { state: "stopping", error: null };
+    }
+    this.emit();
+
+    // Stop producers before finalizing the event stream. Audio is flushed before
+    // video so the mic-off boundary is anchored as close as possible to the click.
     await this.host.stopAll();
+    if (this.audio) {
+      try {
+        await this.audio.disable();
+      } catch (error) {
+        log.warn("microphone stop failed:", error instanceof Error ? error.message : error);
+      }
+    }
+
+    let videoStartEpoch: number | null = null;
     if (this.video) {
       try {
-        await this.video.stop();
-      } catch (err) {
-        log.warn("video stop failed:", err instanceof Error ? err.message : err);
+        const result = await this.video.stop();
+        videoStartEpoch = readStartEpoch(result);
+      } catch (error) {
+        log.warn("video stop failed:", error instanceof Error ? error.message : error);
       }
       this.video = null;
     }
+
     if (this.audio) {
       try {
-        await this.audio.stop();
-      } catch (err) {
-        log.warn("narration stop failed:", err instanceof Error ? err.message : err);
+        await this.audio.finish(videoStartEpoch);
+      } catch (error) {
+        log.warn("microphone finalization failed:", error instanceof Error ? error.message : error);
       }
       this.audio = null;
     }
+
     this.bus.publish({ type: EventType.SessionStop, source: "recorder", payload: {} });
     this.bus.detach();
-    this.store = null;
     store.finalize(Date.now());
+    await store.whenClosed();
+    this.microphone = { state: "off", error: null };
+
+    if (intent === "discard") {
+      try {
+        if (!this.deps.deleteSession) {
+          throw new Error("Session deletion is not configured.");
+        }
+        await this.deps.deleteSession(store.meta.id);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.store = null;
+        this.lastCompleted = { id: store.meta.id, dir: store.dir };
+        this.lastProcessed = false;
+        this.lastFinish = { sessionId: store.meta.id, outcome: "saved" };
+        this.transition = "none";
+        this.emit();
+        this.schedulePostProcess(store.dir);
+        log.warn("discard cleanup failed:", message);
+        return {
+          ok: false,
+          sessionId: store.meta.id,
+          error: `Recording stopped, but its files could not be discarded: ${message}`,
+        };
+      }
+
+      this.store = null;
+      this.transition = "none";
+      this.lastFinish = { sessionId: store.meta.id, outcome: "discarded" };
+      log.info("Recording discarded:", store.meta.id);
+      this.emit();
+      return { ok: true, sessionId: store.meta.id };
+    }
+
+    this.store = null;
     this.lastCompleted = { id: store.meta.id, dir: store.dir };
     this.lastProcessed = false;
+    this.lastFinish = { sessionId: store.meta.id, outcome: "saved" };
+    this.transition = "none";
     log.info("Recording stopped:", store.meta.id, `(${store.eventCount} events)`);
     this.emit();
     // Frames + correlation run in the background so the UI returns promptly.
-    this.processing = this.runPostProcess(store.dir, store.whenClosed());
+    this.schedulePostProcess(store.dir);
     return { ok: true, sessionId: store.meta.id, sessionDir: store.dir };
   }
 
-  /** Resolves when the most recent session's post-processing finishes. */
-  whenProcessed(): Promise<void> {
-    return this.processing ?? Promise.resolve();
+  private schedulePostProcess(dir: string): void {
+    const processing = this.runPostProcess(dir, Promise.resolve());
+    this.processing.add(processing);
+    void processing.finally(() => this.processing.delete(processing));
   }
 
   private async runPostProcess(dir: string, closed: Promise<void>): Promise<void> {
@@ -216,13 +409,40 @@ export class RecorderController {
       return;
     }
     try {
-      await closed; // ensure events.jsonl is fully flushed before reading it
+      await closed;
       await this.deps.postProcess(dir);
-    } catch (err) {
-      log.warn("post-processing failed:", err instanceof Error ? err.message : err);
+    } catch (error) {
+      log.warn("post-processing failed:", error instanceof Error ? error.message : error);
     } finally {
       if (this.lastCompleted?.dir === dir) this.lastProcessed = true;
       this.emit();
     }
   }
+
+  private emit(): void {
+    const status = this.status();
+    for (const listener of this.listeners) listener(status);
+  }
+
+  private onAudioCaptureEnded(event: AudioCaptureEnded): void {
+    if (!this.store || this.transition !== "none") return;
+    const error = event.error ?? "The microphone stopped unexpectedly.";
+    this.microphone = { state: "error", error };
+    this.emit();
+  }
+
+  private enqueue<T>(work: () => Promise<T>): Promise<T> {
+    const operation = this.operations.then(work, work);
+    this.operations = operation.then(
+      () => undefined,
+      () => undefined,
+    );
+    return operation;
+  }
+}
+
+function readStartEpoch(value: unknown): number | null {
+  if (!value || typeof value !== "object" || !("startEpoch" in value)) return null;
+  const startEpoch = value.startEpoch;
+  return typeof startEpoch === "number" && Number.isFinite(startEpoch) ? startEpoch : null;
 }

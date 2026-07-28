@@ -2,13 +2,16 @@ import { existsSync, readFileSync } from "node:fs";
 import { readdir, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
+import {
+  readAudioSources,
+  type AudioSource,
+} from "../../common/audio";
 import type {
   NarrationActionResult,
   NarrationStatus,
 } from "../../common/ipc";
 import { NARRATION_FILE, type NarrationTranscript } from "../../common/narration";
 import type { SessionMeta } from "../../common/types";
-import type { AudioResult } from "../audio/recorder";
 import { createLogger } from "../logger";
 import { isValidSessionId, sessionDir } from "../recorder/session-store";
 import { transcribeNarration } from "./transcribe";
@@ -39,6 +42,15 @@ function readTranscript(file: string): NarrationTranscript | null {
   } catch {
     return null;
   }
+}
+
+function resolveSessionFile(dir: string, relativeFile: string): string {
+  const resolved = path.resolve(dir, relativeFile);
+  const prefix = `${path.resolve(dir)}${path.sep}`;
+  if (!resolved.startsWith(prefix)) {
+    throw new Error("Narration metadata points outside the recording folder.");
+  }
+  return resolved;
 }
 
 async function writeTranscript(file: string, transcript: NarrationTranscript): Promise<void> {
@@ -192,16 +204,29 @@ export class NarrationManager {
     if (!existsSync(audioJson)) return { ok: false, error: "This recording has no saved narration." };
 
     let meta: SessionMeta;
-    let audio: AudioResult;
+    let audioSources: AudioSource[];
     try {
       meta = readJson<SessionMeta>(path.join(dir, "session.json"));
-      audio = readJson<AudioResult>(audioJson);
+      audioSources = readAudioSources(readJson<unknown>(audioJson));
     } catch (err) {
       return { ok: false, error: `Could not read narration metadata: ${message(err)}` };
     }
 
-    const audioPath = path.join(dir, audio.file);
-    if (!existsSync(audioPath)) return { ok: false, error: "The saved narration audio is missing." };
+    if (audioSources.length === 0) {
+      return { ok: false, error: "This recording has no saved narration." };
+    }
+    let sourceFiles: Array<AudioSource & { audioPath: string }>;
+    try {
+      sourceFiles = audioSources.map((source) => ({
+        ...source,
+        audioPath: resolveSessionFile(dir, source.file),
+      }));
+    } catch (err) {
+      return { ok: false, error: message(err) };
+    }
+    if (sourceFiles.some((source) => !existsSync(source.audioPath))) {
+      return { ok: false, error: "One or more saved narration segments are missing." };
+    }
 
     if (!allowDownload && !isNarrationModelCached()) {
       this.update({
@@ -224,12 +249,18 @@ export class NarrationManager {
         activeSessionId: sessionId,
         error: null,
       });
-      const transcript: NarrationTranscript = await transcribeNarration(
-        audioPath,
-        audio.startEpoch - meta.startedAt,
-        audio.durationMs,
-        pipe,
-      );
+      const transcript: NarrationTranscript = { model: "", segments: [] };
+      for (const source of sourceFiles) {
+        const segmentTranscript = await transcribeNarration(
+          source.audioPath,
+          source.startEpoch - meta.startedAt,
+          source.durationMs,
+          pipe,
+        );
+        transcript.model ||= segmentTranscript.model;
+        transcript.segments.push(...segmentTranscript.segments);
+      }
+      transcript.segments.sort((a, b) => a.atMs - b.atMs);
       await writeTranscript(narrationFile, transcript);
       log.info(`transcribed ${sessionId}: ${transcript.segments.length} segment(s)`);
       this.update({

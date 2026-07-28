@@ -1,7 +1,7 @@
-import { app, globalShortcut, ipcMain, BrowserWindow } from "electron";
+import { app, globalShortcut, ipcMain, BrowserWindow, screen } from "electron";
 
 import { FULL_CAPTURE } from "../common/config";
-import { IPC } from "../common/ipc";
+import { IPC, type RecorderStatus } from "../common/ipc";
 import { createCollectors } from "./collectors";
 import { Describer } from "./describer/describer";
 import { processSession } from "./pipeline";
@@ -9,18 +9,30 @@ import { registerIpc } from "./ipc";
 import { createLogger } from "./logger";
 import { NarrationManager } from "./narration/manager";
 import { RecorderController } from "./recorder/controller";
+import { deleteSession } from "./sessions";
 import { SkillBuilder } from "./skillbuilder/builder";
 import { AutomationBuilder } from "./automationbuilder/builder";
 import { createTray } from "./tray";
 import { AudioRecorder } from "./audio/recorder";
 import { VideoRecorder } from "./video/recorder";
-import { createLibraryWindow, createRecorderWindow, redockLibrary } from "./window";
+import {
+  clampRecordingControlsWindow,
+  createLibraryWindow,
+  createRecorderWindow,
+  createRecordingControlsWindow,
+  redockLibrary,
+  setRecordingControlsExpanded,
+} from "./window";
 
 const log = createLogger("Main");
 
 let recorderWindow: BrowserWindow | null = null;
 let libraryWindow: BrowserWindow | null = null;
+let recordingControlsWindow: BrowserWindow | null = null;
 let recorderHome: Electron.Rectangle | null = null;
+let controlsExpanded = false;
+let quitReady = false;
+let quitTask: Promise<void> | null = null;
 const narration = new NarrationManager((status) =>
   broadcast(IPC.narrationStatusChanged, status),
 );
@@ -28,12 +40,15 @@ const recorder = new RecorderController({
   resolveConfig: () => ({ ...FULL_CAPTURE }),
   buildCollectors: createCollectors,
   createVideoRecorder: () => new VideoRecorder(),
-  createAudioRecorder: () => new AudioRecorder(),
+  createAudioRecorder: (onCaptureEnded) => new AudioRecorder(onCaptureEnded),
+  deleteSession,
   postProcess: async (dir) => {
     await processSession(dir);
-    void narration.transcribeIfCached(dir).catch((err) =>
-      log.warn("Cached narration processing failed:", err),
-    );
+    try {
+      await narration.transcribeIfCached(dir);
+    } catch (err) {
+      log.warn("Cached narration processing failed:", err);
+    }
   },
 });
 
@@ -52,6 +67,7 @@ const automationBuilder = new AutomationBuilder((progress) =>
 
 /** Open, focus, and re-dock the Sessions library window (creating it lazily). */
 function openLibrary(): void {
+  if (recorder.state === "recording") return;
   if (!recorderWindow || recorderWindow.isDestroyed()) return;
   if (libraryWindow && !libraryWindow.isDestroyed()) {
     redockLibrary(recorderWindow, libraryWindow);
@@ -75,6 +91,78 @@ function openLibrary(): void {
   });
 }
 
+function ensureRecordingControlsWindow(): BrowserWindow {
+  if (recordingControlsWindow && !recordingControlsWindow.isDestroyed()) {
+    return recordingControlsWindow;
+  }
+  controlsExpanded = false;
+  recordingControlsWindow = createRecordingControlsWindow();
+  recordingControlsWindow.on("closed", () => {
+    recordingControlsWindow = null;
+    controlsExpanded = false;
+  });
+  return recordingControlsWindow;
+}
+
+function showRecordingControls(): void {
+  const win = ensureRecordingControlsWindow();
+  clampRecordingControlsWindow(win);
+  if (!win.isVisible()) win.showInactive();
+  win.moveTop();
+}
+
+function showRecorderWindow(): void {
+  if (!recorderWindow || recorderWindow.isDestroyed()) {
+    recorderWindow = createRecorderWindow();
+  }
+  recorderWindow.show();
+  recorderWindow.focus();
+}
+
+/** Keep the full HUD and compact overlay mutually exclusive. */
+function syncRecordingWindows(status: RecorderStatus): void {
+  if (status.state === "recording") {
+    if (libraryWindow && !libraryWindow.isDestroyed()) libraryWindow.close();
+    if (recorderWindow && !recorderWindow.isDestroyed()) recorderWindow.hide();
+    showRecordingControls();
+    return;
+  }
+  // A start emits an idle/starting status before the session folder exists.
+  if (status.transition === "starting") return;
+
+  if (recordingControlsWindow && !recordingControlsWindow.isDestroyed()) {
+    const controls = recordingControlsWindow;
+    if (controlsExpanded) {
+      setRecordingControlsExpanded(controls, false);
+      controlsExpanded = false;
+    }
+    controls.hide();
+    // Let an overlay-originated stop/discard IPC reply reach its renderer before
+    // tearing that renderer down. A recording restarted in the same turn reuses it.
+    setTimeout(() => {
+      if (
+        recorder.state === "idle" &&
+        recordingControlsWindow === controls &&
+        !controls.isDestroyed()
+      ) {
+        controls.destroy();
+        recordingControlsWindow = null;
+      }
+    }, 500);
+  }
+  if (recorderWindow && !recorderWindow.isDestroyed()) {
+    const wasHidden = !recorderWindow.isVisible();
+    recorderWindow.show();
+    if (wasHidden) recorderWindow.focus();
+  }
+}
+
+function clampControlsToDisplay(): void {
+  if (recordingControlsWindow && !recordingControlsWindow.isDestroyed()) {
+    clampRecordingControlsWindow(recordingControlsWindow);
+  }
+}
+
 app.whenReady().then(() => {
   narration.initialize();
   registerIpc(recorder, describer, builder, automationBuilder, narration);
@@ -84,31 +172,52 @@ app.whenReady().then(() => {
   ipcMain.handle(IPC.closeLibrary, () => {
     if (libraryWindow && !libraryWindow.isDestroyed()) libraryWindow.close();
   });
+  ipcMain.handle(IPC.recordingControlsExpanded, (event, expanded: boolean) => {
+    const win = recordingControlsWindow;
+    if (
+      !win ||
+      win.isDestroyed() ||
+      event.sender !== win.webContents ||
+      typeof expanded !== "boolean" ||
+      recorder.state !== "recording"
+    ) {
+      return;
+    }
+    controlsExpanded = expanded;
+    setRecordingControlsExpanded(win, expanded);
+  });
 
-  recorder.onStatusChanged((status) => broadcast(IPC.statusChanged, status));
-
+  recorder.onStatusChanged((status) => {
+    broadcast(IPC.statusChanged, status);
+    syncRecordingWindows(status);
+  });
   recorderWindow = createRecorderWindow();
 
+  screen.on("display-added", clampControlsToDisplay);
+  screen.on("display-removed", clampControlsToDisplay);
+  screen.on("display-metrics-changed", clampControlsToDisplay);
+
   try {
-    createTray(recorder, recorderWindow);
+    createTray(recorder, showRecorderWindow, showRecordingControls);
   } catch (err) {
     log.warn("Tray unavailable:", err);
   }
 
   const toggle = () => {
-    void (recorder.state === "recording" ? recorder.stop() : recorder.start());
+    const status = recorder.status();
+    if (status.transition !== "none") return;
+    void (status.state === "recording" ? recorder.stop() : recorder.start());
   };
   if (!globalShortcut.register("CommandOrControl+Shift+R", toggle)) {
     log.warn("Global shortcut registration failed");
   }
 
   app.on("activate", () => {
-    if (!recorderWindow || recorderWindow.isDestroyed()) {
-      recorderWindow = createRecorderWindow();
-    } else {
-      recorderWindow.show();
-      recorderWindow.focus();
+    if (recorder.state === "recording") {
+      showRecordingControls();
+      return;
     }
+    showRecorderWindow();
   });
 });
 
@@ -116,11 +225,29 @@ app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
 
+app.on("before-quit", (event) => {
+  if (quitReady) return;
+  event.preventDefault();
+  if (quitTask) return;
+  recorder.beginShutdown();
+  quitTask = (async () => {
+    // stop() is serialized behind any start/mic/discard operation already in
+    // flight, and is a harmless "Not recording" result when the app is idle.
+    await recorder.stop();
+    await recorder.whenProcessed();
+  })()
+    .catch((error) => {
+      log.warn("graceful shutdown failed:", error);
+    })
+    .finally(() => {
+      quitReady = true;
+      app.quit();
+    });
+});
+
 app.on("will-quit", () => {
   globalShortcut.unregisterAll();
-  if (recorder.state === "recording") void recorder.stop();
   void describer.dispose();
   void builder.dispose();
   void automationBuilder.dispose();
 });
-

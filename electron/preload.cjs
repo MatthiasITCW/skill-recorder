@@ -5,6 +5,8 @@ const { contextBridge, ipcRenderer } = require("electron");
 const IPC = {
   start: "recorder:start",
   stop: "recorder:stop",
+  discard: "recorder:discard",
+  microphone: "recorder:microphone",
   status: "recorder:status",
   marker: "recorder:marker",
   doctor: "doctor:check",
@@ -35,11 +37,14 @@ const IPC = {
   automationProgress: "automation:progress",
   openLibrary: "ui:open-library",
   closeLibrary: "ui:close-library",
+  recordingControlsExpanded: "ui:recording-controls-expanded",
 };
 
 contextBridge.exposeInMainWorld("skillRecorder", {
   start: (options) => ipcRenderer.invoke(IPC.start, options),
   stop: () => ipcRenderer.invoke(IPC.stop),
+  discard: () => ipcRenderer.invoke(IPC.discard),
+  setMicrophoneEnabled: (enabled) => ipcRenderer.invoke(IPC.microphone, enabled),
   status: () => ipcRenderer.invoke(IPC.status),
   marker: (note) => ipcRenderer.invoke(IPC.marker, note),
   doctor: () => ipcRenderer.invoke(IPC.doctor),
@@ -90,4 +95,6 @@ contextBridge.exposeInMainWorld("skillRecorder", {
   },
   openLibrary: () => ipcRenderer.invoke(IPC.openLibrary),
   closeLibrary: () => ipcRenderer.invoke(IPC.closeLibrary),
+  setRecordingControlsExpanded: (expanded) =>
+    ipcRenderer.invoke(IPC.recordingControlsExpanded, expanded),
 });

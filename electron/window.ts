@@ -3,6 +3,13 @@ import { fileURLToPath } from "node:url";
 
 import { BrowserWindow, screen } from "electron";
 
+import {
+  RECORDING_CONTROLS_SIZE,
+  clampRecordingControlsBounds,
+  initialRecordingControlsBounds,
+  resizeRecordingControlsBounds,
+} from "./recording-controls-bounds";
+
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 
 /** Compact recording HUD — fixed footprint, never resizes. */
@@ -13,6 +20,7 @@ const MARGIN = 12;
 const GAP = 10;
 
 type Bounds = { x: number; y: number; width: number; height: number };
+let recordingControlsAnchor: { x: number; bottom: number } | null = null;
 
 function loadRoute(win: BrowserWindow, hash?: string): void {
   const devUrl = process.env.VITE_DEV_SERVER_URL;
@@ -41,6 +49,79 @@ export function createRecorderWindow(): BrowserWindow {
   });
   loadRoute(win);
   return win;
+}
+
+/** Always-on-top recording transport shown without stealing focus from the task. */
+export function createRecordingControlsWindow(): BrowserWindow {
+  let bounds: Bounds;
+  if (recordingControlsAnchor) {
+    const preferred = {
+      x: recordingControlsAnchor.x,
+      y: recordingControlsAnchor.bottom - RECORDING_CONTROLS_SIZE.collapsedHeight,
+      width: RECORDING_CONTROLS_SIZE.width,
+      height: RECORDING_CONTROLS_SIZE.collapsedHeight,
+    };
+    const display = screen.getDisplayMatching(preferred);
+    bounds = clampRecordingControlsBounds(preferred, display.workArea);
+  } else {
+    const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+    bounds = initialRecordingControlsBounds(display.workArea);
+  }
+  const win = new BrowserWindow({
+    ...bounds,
+    show: false,
+    frame: false,
+    transparent: true,
+    backgroundColor: "#00000000",
+    resizable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    closable: false,
+    skipTaskbar: true,
+    title: "Skill Recorder: Recording controls",
+    webPreferences: {
+      preload: path.join(dirname, "preload.cjs"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+      backgroundThrottling: false,
+    },
+  });
+  win.setAlwaysOnTop(true, "floating");
+  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  // Supported platforms exclude this window from desktop capture; on older
+  // systems Electron falls back to protecting its content.
+  win.setContentProtection(true);
+  const rememberPosition = () => {
+    if (win.isDestroyed()) return;
+    const current = win.getBounds();
+    recordingControlsAnchor = { x: current.x, bottom: current.y + current.height };
+  };
+  win.on("move", rememberPosition);
+  win.on("resize", rememberPosition);
+  rememberPosition();
+  loadRoute(win, "recording-controls");
+  return win;
+}
+
+/** Resize confirmation above the bar while preserving its on-screen bottom edge. */
+export function setRecordingControlsExpanded(
+  win: BrowserWindow,
+  expanded: boolean,
+): void {
+  if (win.isDestroyed()) return;
+  const bounds = win.getBounds();
+  const display = screen.getDisplayMatching(bounds);
+  win.setBounds(resizeRecordingControlsBounds(bounds, expanded, display.workArea), false);
+}
+
+/** Bring a dragged overlay back onto an available display. */
+export function clampRecordingControlsWindow(win: BrowserWindow): void {
+  if (win.isDestroyed()) return;
+  const bounds = win.getBounds();
+  const display = screen.getDisplayMatching(bounds);
+  win.setBounds(clampRecordingControlsBounds(bounds, display.workArea), false);
 }
 
 /**

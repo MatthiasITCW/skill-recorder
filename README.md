@@ -16,10 +16,13 @@ can repeat.
 
 1. **Record** — hit record (or `⌘⇧R` / `Ctrl+Shift+R` from anywhere) and do your task.
    Skill Recorder captures the screen and your activity in the background.
-2. **Analyze** — on stop, it correlates the signals and a Copilot agent reconstructs
+2. **Control** — while recording, a movable always-on-top bar shows capture and
+   microphone state. Use it to toggle the microphone, finish, or discard the
+   recording; discard always asks for confirmation.
+3. **Analyze** — on stop, it correlates the signals and a Copilot agent reconstructs
    *what you did*: one overall intent plus an ordered list of steps. You can review
    and edit the result.
-3. **Create** — from an approved analysis, generalize the one run into a:
+4. **Create** — from an approved analysis, generalize the one run into a:
    - **Skill** — a `SKILL.md` procedure an agent runs on demand, and
    - **Automation** — the same procedure on a schedule/trigger.
 
@@ -38,9 +41,11 @@ activity" panel shows exactly what's collected:
 - **Screen video** — recorded by Chromium; low-rate snapshots are captured alongside
   it and retained only when the screen changes or a heartbeat is due.
 - **Clipboard** — copy/paste content that ties steps together.
-- **Narration** *(optional)* — turn on **Narrate** to explain out loud; audio is
-  saved immediately and can be transcribed **on-device** (Whisper via transformers.js).
-  The first transcription uses an explicit, one-time ~250 MB model download.
+- **Narration** *(optional)* — turn on **Narrate** before capture or toggle the
+  microphone from the floating recording bar. Each microphone-on interval is
+  timestamped on the video timeline, saved locally, and can be transcribed
+  **on-device** (Whisper via transformers.js). The first transcription uses an
+  explicit, one-time ~250 MB model download.
 
 ## Requirements
 

@@ -43,6 +43,7 @@ const FPS = 1;
 const BITS_PER_SECOND = 500_000;
 const MAX_WIDTH = 1280;
 const MAX_HEIGHT = 720;
+const START_TIMEOUT_MS = 10_000;
 const STOP_TIMEOUT_MS = 10_000;
 const MAX_FRAME_BYTES = 5 * 1024 * 1024;
 const FRAME_HEARTBEAT_MS = 5000;
@@ -71,6 +72,8 @@ export class VideoRecorder {
   private dir = "";
   private bytes = 0;
   private startEpoch: number | null = null;
+  private stopEpoch: number | null = null;
+  private startedResolve: (() => void) | null = null;
   private stoppedResolve: (() => void) | null = null;
   private failed = false;
   private frameDir = "";
@@ -88,6 +91,8 @@ export class VideoRecorder {
   private readonly onStarted = (e: IpcMainEvent, epoch: number) => {
     if (e.sender !== this.win?.webContents) return;
     this.startEpoch = epoch;
+    this.startedResolve?.();
+    this.startedResolve = null;
     log.info("recording started; anchor epoch", epoch);
   };
 
@@ -130,8 +135,9 @@ export class VideoRecorder {
     if (e.sender === this.win?.webContents) log.warn("snapshot capture unavailable:", message);
   };
 
-  private readonly onStopped = (e: IpcMainEvent) => {
+  private readonly onStopped = (e: IpcMainEvent, epoch: number) => {
     if (e.sender !== this.win?.webContents) return;
+    this.stopEpoch = Number.isFinite(epoch) ? epoch : Date.now();
     this.stoppedResolve?.();
   };
 
@@ -139,6 +145,8 @@ export class VideoRecorder {
     if (e.sender !== this.win?.webContents) return;
     this.failed = true;
     log.warn("capture unavailable:", message);
+    this.startedResolve?.();
+    this.startedResolve = null;
     // Unblock a pending stop() if the recorder never really started.
     this.stoppedResolve?.();
   };
@@ -160,6 +168,7 @@ export class VideoRecorder {
       this.file = path.join(sessionDir, "video.webm");
       this.bytes = 0;
       this.startEpoch = null;
+      this.stopEpoch = null;
       this.failed = false;
       this.frameDir = path.join(sessionDir, VIDEO_FRAMES_DIR);
       this.frameSequence = 0;
@@ -187,6 +196,9 @@ export class VideoRecorder {
       });
       await this.win.loadFile(path.join(dirname, "video", "capture.html"));
 
+      const started = new Promise<void>((resolve) => {
+        this.startedResolve = resolve;
+      });
       this.win.webContents.send("video:start", {
         sourceId: source.id,
         fps: FPS,
@@ -195,9 +207,16 @@ export class VideoRecorder {
         maxHeight: MAX_HEIGHT,
       });
       log.info("capture requested for screen source", source.id, "->", this.file);
+      await Promise.race([started, delay(START_TIMEOUT_MS)]);
+      if (this.startEpoch == null) {
+        log.warn("screen capture did not start; continuing without video");
+        await this.teardown();
+        await this.removeEmptyArtifacts();
+      }
     } catch (err) {
       log.warn("failed to start video:", err instanceof Error ? err.message : err);
       await this.teardown();
+      await this.removeEmptyArtifacts();
     }
   }
 
@@ -205,6 +224,7 @@ export class VideoRecorder {
   async stop(): Promise<VideoResult | null> {
     if (!this.win || !this.stream) {
       await this.teardown();
+      await this.removeEmptyArtifacts();
       return null;
     }
 
@@ -214,7 +234,7 @@ export class VideoRecorder {
     });
     await Promise.race([stopped, delay(STOP_TIMEOUT_MS)]);
 
-    const stopEpoch = Date.now();
+    const stopEpoch = this.stopEpoch ?? Date.now();
     await this.closeStream();
     await Promise.allSettled([...this.frameWrites]);
 
@@ -295,10 +315,16 @@ export class VideoRecorder {
     ipcMain.removeListener("video:stopped", this.onStopped);
     ipcMain.removeListener("video:error", this.onError);
     this.stoppedResolve = null;
+    this.startedResolve = null;
     await this.closeStream();
     this.stream = null;
     if (this.win && !this.win.isDestroyed()) this.win.destroy();
     this.win = null;
+  }
+
+  private async removeEmptyArtifacts(): Promise<void> {
+    if (this.file && existsSync(this.file)) await unlink(this.file).catch(() => undefined);
+    if (this.frameDir) await rm(this.frameDir, { recursive: true, force: true });
   }
 }
 

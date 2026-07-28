@@ -683,7 +683,7 @@ function TargetPicker({
           <span className="ws-when">{formatWhen(startedAt)}</span>
         </div>
         <button className="ghost" onClick={onClose} title="Back to the analysis">
-          Close
+          Cancel
         </button>
       </div>
       <div className="ws-body">

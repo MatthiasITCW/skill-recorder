@@ -51,8 +51,13 @@ function FileSha($path) {
 # True when a Node new enough to build & run the app is already on PATH.
 function Test-NodeAvailable {
   if (-not (Have 'node')) { return $false }
-  try { return ([int](& node -p 'process.versions.node.split(".")[0]') -ge $NodeMinMajor) }
-  catch { return $false }
+  try {
+    # Parse "node -v" (e.g. v22.23.1); avoid passing a JS expression, because
+    # Windows strips the embedded quotes from 'node -p "...".split()' arguments.
+    $v = & node -v 2>$null
+    if ($v -match '^v?(\d+)\.') { return ([int]$Matches[1] -ge $NodeMinMajor) }
+    return $false
+  } catch { return $false }
 }
 
 # Ensure a usable Node/npm is on PATH: prefer the system one, otherwise download

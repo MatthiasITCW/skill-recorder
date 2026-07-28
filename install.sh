@@ -48,8 +48,13 @@ sha256() { # print the sha256 of a file, or nothing if it doesn't exist
 # True when a Node new enough to build & run the app is already on PATH.
 node_ok() {
   have node || return 1
-  local maj; maj="$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)"
-  [ "${maj:-0}" -ge "$NODE_MIN_MAJOR" ]
+  # Parse "node -v" (e.g. v22.23.1) rather than a quoted JS expression, to stay
+  # consistent with the Windows script and avoid any arg-quoting surprises.
+  local ver maj
+  ver="$(node -v 2>/dev/null)" || return 1
+  maj="${ver#v}"; maj="${maj%%.*}"
+  case "$maj" in ''|*[!0-9]*) return 1 ;; esac
+  [ "$maj" -ge "$NODE_MIN_MAJOR" ]
 }
 
 # Echo "<os> <arch>" tokens matching Node's dist filenames, or die if unsupported.

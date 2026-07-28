@@ -1,4 +1,4 @@
-import { app, globalShortcut, ipcMain, BrowserWindow, screen } from "electron";
+import { app, BrowserWindow, globalShortcut, ipcMain, Menu, screen } from "electron";
 
 import { FULL_CAPTURE } from "../common/config";
 import { IPC, type RecorderStatus } from "../common/ipc";
@@ -164,6 +164,8 @@ function clampControlsToDisplay(): void {
 }
 
 app.whenReady().then(() => {
+  if (process.platform === "win32") Menu.setApplicationMenu(null);
+
   narration.initialize();
   registerIpc(recorder, describer, builder, automationBuilder, narration);
   log.info("Capture: recording all sources");

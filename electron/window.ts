@@ -31,6 +31,16 @@ function loadRoute(win: BrowserWindow, hash?: string): void {
   }
 }
 
+function registerDevelopmentDevToolsShortcut(win: BrowserWindow): void {
+  if (process.platform !== "win32" || !process.env.VITE_DEV_SERVER_URL) return;
+
+  win.webContents.on("before-input-event", (event, input) => {
+    if (input.type !== "keyDown" || input.key !== "F12" || input.isAutoRepeat) return;
+    event.preventDefault();
+    win.webContents.toggleDevTools();
+  });
+}
+
 export function createRecorderWindow(): BrowserWindow {
   const win = new BrowserWindow({
     width: RECORDER.width,
@@ -47,6 +57,7 @@ export function createRecorderWindow(): BrowserWindow {
       sandbox: false,
     },
   });
+  registerDevelopmentDevToolsShortcut(win);
   loadRoute(win);
   return win;
 }
@@ -180,6 +191,7 @@ export function createLibraryWindow(recorder: BrowserWindow): BrowserWindow {
       sandbox: false,
     },
   });
+  registerDevelopmentDevToolsShortcut(win);
   // Move the recorder and reveal the library together so the pair appears docked.
   win.once("ready-to-show", () => {
     if (!recorder.isDestroyed()) recorder.setPosition(layout.recorder.x, layout.recorder.y, false);

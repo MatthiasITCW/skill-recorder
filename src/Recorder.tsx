@@ -267,9 +267,7 @@ export function Recorder() {
                         ? `Listening · ${narrationLanguageName}`
                         : "Voice off for this recording"
                       : narrate
-                        ? narrationStatus?.model === "ready"
-                          ? `${narrationLanguageName} transcript · local`
-                          : `${narrationLanguageName} transcript · ${NARRATION_MODEL_DOWNLOAD_LABEL} later`
+                        ? narrationLanguageName
                         : "Explain out loud (optional)"}
               </span>
             </span>

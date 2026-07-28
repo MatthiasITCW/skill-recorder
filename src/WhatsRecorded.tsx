@@ -72,19 +72,25 @@ export function WhatsRecorded({ onClose }: { onClose: () => void }) {
         <section className="sheet-block">
           <h3>Voice narration (only if you turn it on)</h3>
           <p className="sheet-note">
-            Off by default. Choose the initial state with Narrate, then use the floating recording bar.
+            Off by default. Choose the initial state and microphone with Narrate, then use the
+            floating recording bar.
           </p>
           <ul>
-            <li>Your microphone is used only while it is on and a recording is running.</li>
+            <li>
+              Enabling Narrate briefly opens and releases the microphone so the app can request
+              permission and show the available inputs. No audio is saved during this check.
+            </li>
+            <li>Your microphone audio is saved only while it is on and a recording is running.</li>
             <li>
               Turning the microphone off ends that voice segment and releases the device. Turning it
-              on again starts a new segment linked to the same recording timeline.
+              on again, or switching inputs, starts a new segment linked to the same recording
+              timeline.
             </li>
             <li>
               The recording can be turned into text on this computer using an offline model. The
               first transcription needs a one-time ~250 MB download that you choose when to start.
             </li>
-            <li>Leave the microphone off and it is never touched.</li>
+            <li>Leave Narrate and the recording-bar microphone off and no microphone is opened.</li>
           </ul>
         </section>
 

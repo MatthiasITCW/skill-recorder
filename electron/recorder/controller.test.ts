@@ -5,10 +5,12 @@ import path from "node:path";
 import test from "node:test";
 
 import { FULL_CAPTURE } from "../../common/config";
+import type { MicrophoneDevice } from "../../common/microphone";
 import { RecorderController, type SessionAudioRecorder } from "./controller";
 
 class FakeAudioRecorder implements SessionAudioRecorder {
   readonly calls: string[] = [];
+  readonly deviceIds: string[] = [];
   finishVideoStartEpoch: number | null | undefined;
   failEnable = false;
 
@@ -16,9 +18,15 @@ class FakeAudioRecorder implements SessionAudioRecorder {
     this.calls.push("start");
   }
 
-  async enable(): Promise<void> {
+  async enable(deviceId = "default"): Promise<MicrophoneDevice> {
     this.calls.push("enable");
+    this.deviceIds.push(deviceId);
     if (this.failEnable) throw new Error("Microphone permission denied.");
+    return {
+      id: deviceId,
+      label: deviceId === "default" ? "System microphone" : `Microphone ${deviceId}`,
+      groupId: "",
+    };
   }
 
   async disable(): Promise<void> {
@@ -96,11 +104,16 @@ test("discard removes the active session and skips post-processing", async () =>
       },
     });
 
-    const started = await controller.start({ narration: true });
+    const started = await controller.start({
+      narration: true,
+      microphoneDeviceId: "usb-desk",
+    });
     assert.equal(started.ok, true);
     const id = started.sessionId;
     assert.ok(id);
     assert.equal(controller.status().microphone.state, "on");
+    assert.equal(controller.status().microphone.activeDevice?.id, "usb-desk");
+    assert.deepEqual(audio.deviceIds, ["usb-desk"]);
 
     const discarded = await controller.discard();
     assert.equal(discarded.ok, true);
@@ -185,6 +198,7 @@ test("unexpected microphone termination updates live status without ending video
     assert.deepEqual(controller.status().microphone, {
       state: "error",
       error: "The microphone disconnected.",
+      activeDevice: null,
     });
     assert.equal((await controller.stop()).ok, true);
   });
@@ -246,6 +260,31 @@ test("microphone failure is surfaced without stopping screen capture", async () 
     assert.match(result.error ?? "", /permission denied/i);
     assert.equal(controller.status().state, "recording");
     assert.equal(controller.status().microphone.state, "error");
+    assert.equal((await controller.stop()).ok, true);
+  });
+});
+
+test("switching an active microphone closes one segment before starting the next", async () => {
+  await withSessionsRoot(async () => {
+    const audio = new FakeAudioRecorder();
+    const controller = new RecorderController({
+      resolveConfig: () => ({ ...FULL_CAPTURE, video: false }),
+      buildCollectors: () => [],
+      createAudioRecorder: () => audio,
+      deleteSession: async () => undefined,
+    });
+
+    assert.equal((await controller.start()).ok, true);
+    assert.equal(
+      (await controller.setMicrophoneEnabled(true, "built-in")).ok,
+      true,
+    );
+    assert.equal((await controller.setMicrophoneDevice("usb-desk")).ok, true);
+    assert.deepEqual(audio.calls, ["start", "enable", "disable", "enable"]);
+    assert.deepEqual(audio.deviceIds, ["built-in", "usb-desk"]);
+    assert.equal(controller.status().microphone.state, "on");
+    assert.equal(controller.status().microphone.activeDevice?.id, "usb-desk");
+
     assert.equal((await controller.stop()).ok, true);
   });
 });

@@ -120,6 +120,11 @@ export function registerIpc(
     const id = resolveSessionId(sessionId);
     if (!id) return { ok: false, error: "No completed session to analyze yet." };
     if (!isValidSessionId(id)) return { ok: false, error: "Unknown session." };
+    // Transcribe any recorded voice first so analysis never silently runs without
+    // the user's spoken intent. Downloads the model on first use. Best-effort: a
+    // failure here falls through to analyzing without voice (the error is surfaced
+    // via the narration status affordance and the audio stays saved).
+    await narration.ensureTranscribedForAnalysis(id);
     try {
       const analysis = await describer.analyze(id);
       return { ok: true, analysis };

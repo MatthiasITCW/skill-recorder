@@ -14,6 +14,7 @@ import { NARRATION_FILE, type NarrationTranscript } from "../../common/narration
 import type { SessionMeta } from "../../common/types";
 import { createLogger } from "../logger";
 import { isValidSessionId, sessionDir } from "../recorder/session-store";
+import { shouldTranscribeBeforeAnalyze } from "./analyze-gate";
 import { transcribeNarration } from "./transcribe";
 import {
   getAsrPipeline,
@@ -154,6 +155,33 @@ export class NarrationManager {
       if (this.sessionTasks.get(sessionId) === task) this.sessionTasks.delete(sessionId);
     });
     return task;
+  }
+
+  /**
+   * Ensure a session's voice narration is transcribed before an analysis runs, so
+   * `describer.analyze` never silently proceeds without the user's own words.
+   * Downloads the voice model on first use. Best-effort: on failure it resolves
+   * with the error (already surfaced via the narration status) instead of
+   * throwing, so the caller can still analyze without voice and the audio stays
+   * saved. A session with no audio, or one already transcribed, is a fast no-op
+   * that never touches the transcription queue.
+   */
+  async ensureTranscribedForAnalysis(sessionId: string): Promise<NarrationActionResult> {
+    if (!isValidSessionId(sessionId)) return { ok: false, error: "Unknown session." };
+    const dir = sessionDir(sessionId);
+    const hasAudio = existsSync(path.join(dir, "audio.json"));
+    const hasTranscript = readTranscript(path.join(dir, NARRATION_FILE)) != null;
+    if (!shouldTranscribeBeforeAnalyze(hasAudio, hasTranscript)) {
+      return hasTranscript ? { ok: true, outcome: "already-transcribed" } : { ok: true };
+    }
+    const result = await this.transcribeSessionWithDownload(sessionId, true);
+    if (!result.ok) {
+      log.warn(
+        `pre-analysis transcription failed for ${sessionId}:`,
+        result.error ?? result.outcome,
+      );
+    }
+    return result;
   }
 
   async transcribeIfCached(dir: string): Promise<void> {

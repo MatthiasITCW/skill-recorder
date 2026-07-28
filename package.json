@@ -18,9 +18,9 @@
     "eval": "node --experimental-transform-types --no-warnings --import ./evals/register.mjs evals/run.ts",
     "eval:builder": "node --experimental-transform-types --no-warnings --import ./evals/register.mjs evals/builder/run.ts",
     "eval:skill": "node --experimental-transform-types --no-warnings --import ./evals/register.mjs evals/skillbuilder/run.ts",
-    "dist": "node scripts/assert-generic-dist-platform.mjs && vite build && electron-builder",
-    "dist:win:x64": "node scripts/assert-native-windows-arch.mjs x64 && vite build && electron-builder --win nsis --x64",
-    "dist:win:arm64": "node scripts/assert-native-windows-arch.mjs arm64 && vite build && electron-builder --win nsis --arm64",
+    "dist": "node scripts/assert-generic-dist-platform.mjs && vite build && electron-builder --publish never",
+    "dist:win:x64": "node scripts/assert-native-windows-arch.mjs x64 && vite build && electron-builder --publish never --win nsis --x64",
+    "dist:win:arm64": "node scripts/assert-native-windows-arch.mjs arm64 && vite build && electron-builder --publish never --win nsis --arm64",
     "start": "electron ."
   },
   "dependencies": {

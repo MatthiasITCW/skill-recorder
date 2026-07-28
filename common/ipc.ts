@@ -275,6 +275,16 @@ export interface DeleteSessionResult {
   error?: string;
 }
 
+/** Result of packaging a recording into a downloadable debug bundle (.zip). */
+export interface DebugBundleResult {
+  ok: boolean;
+  /** Absolute path of the written .zip on success. */
+  path?: string;
+  /** True when the user dismissed the save dialog — a cancel, not an error. */
+  canceled?: boolean;
+  error?: string;
+}
+
 export interface CopilotInfo {
   ok: boolean;
   path: string | null;
@@ -345,6 +355,7 @@ export const IPC = {
   analyzeProgress: "analyze:progress",
   listSessions: "sessions:list",
   deleteSession: "sessions:delete",
+  exportDebugBundle: "sessions:export-debug",
   buildSkill: "skill:build",
   createSkill: "skill:create",
   getSkill: "skill:get",
@@ -403,6 +414,12 @@ export interface SkillRecorderApi {
   listSessions(): Promise<SessionSummary[]>;
   /** Permanently delete a saved recording and all its artifacts from disk. */
   deleteSession(sessionId: string): Promise<DeleteSessionResult>;
+  /**
+   * Package a single recording (its whole session folder plus a generated
+   * diagnostics file) into a .zip the user picks a location for. The bundle
+   * contains private capture data; the renderer warns before calling this.
+   */
+  exportDebugBundle(sessionId: string): Promise<DebugBundleResult>;
   /**
    * Propose (or refine) a skill from a recording's analysis. Pass `feedback` to
    * revise the current plan in the same multi-turn conversation.

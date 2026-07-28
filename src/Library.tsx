@@ -242,6 +242,165 @@ function SessionsList({
 
 /* --- Analysis workspace --------------------------------------------------- */
 
+const DownloadGlyph = () => (
+  <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden>
+    <path
+      d="M8 2.6v6.2m0 0 2.3-2.3M8 8.8 5.7 6.5"
+      stroke="currentColor"
+      strokeWidth="1.2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+    <path
+      d="M3.2 10.4v1.2c0 .6.5 1.1 1.1 1.1h7.4c.6 0 1.1-.5 1.1-1.1v-1.2"
+      stroke="currentColor"
+      strokeWidth="1.2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </svg>
+);
+
+const SavedGlyph = () => (
+  <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden>
+    <path
+      d="M3.4 8.4 6.3 11.3 12.6 4.8"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </svg>
+);
+
+/**
+ * Subtle, per-recording "download a debug bundle" affordance shown in the session
+ * header. A quiet download icon packages the whole session (private capture data)
+ * into a `.zip` the user can hand to us; a privacy-warning modal gates the actual
+ * download. It says nothing about where to send the file — that's shared separately.
+ */
+function DebugDownload({ sessionId }: { sessionId: string }) {
+  const [phase, setPhase] = useState<"idle" | "confirm" | "saving" | "saved" | "error">("idle");
+  const [errorMsg, setErrorMsg] = useState("");
+  const dialogRef = useRef<HTMLDivElement>(null);
+
+  const download = useCallback(async () => {
+    setPhase("saving");
+    setErrorMsg("");
+    const res = await window.skillRecorder.exportDebugBundle(sessionId);
+    if (res.ok) setPhase("saved");
+    else if (res.canceled) setPhase("idle");
+    else {
+      setErrorMsg(res.error ?? "Couldn't create the debug bundle.");
+      setPhase("error");
+    }
+  }, [sessionId]);
+
+  // Let the "Saved" acknowledgement fade back to the quiet icon on its own.
+  useEffect(() => {
+    if (phase !== "saved") return;
+    const t = setTimeout(() => setPhase("idle"), 3200);
+    return () => clearTimeout(t);
+  }, [phase]);
+
+  // While the warning is up, focus it and close on Escape — matching the app's sheets.
+  useEffect(() => {
+    if (phase !== "confirm") return;
+    dialogRef.current?.focus({ preventScroll: true });
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setPhase("idle");
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [phase]);
+
+  const label =
+    phase === "saving"
+      ? "Preparing debug bundle…"
+      : phase === "saved"
+        ? "Debug bundle saved"
+        : "Download details for debugging";
+
+  return (
+    <div className="debug-dl">
+      {phase === "error" && (
+        <span className="debug-dl-note" title={errorMsg}>
+          Couldn't save
+        </span>
+      )}
+      <button
+        className={`debug-dl-icon${phase === "saved" ? " is-saved" : ""}`}
+        onClick={() => setPhase("confirm")}
+        disabled={phase === "saving"}
+        aria-label={label}
+        title={label}
+      >
+        {phase === "saving" ? (
+          <span className="spinner" aria-hidden />
+        ) : phase === "saved" ? (
+          <SavedGlyph />
+        ) : (
+          <DownloadGlyph />
+        )}
+      </button>
+
+      {phase === "confirm" && (
+        <div className="sheet-backdrop" onClick={() => setPhase("idle")}>
+          <div
+            ref={dialogRef}
+            className="sheet debug-sheet"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="debug-dl-title"
+            aria-describedby="debug-dl-desc"
+            tabIndex={-1}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <header className="sheet-head">
+              <span className="sheet-icon" aria-hidden>
+                <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
+                  <rect
+                    x="4.4"
+                    y="8.7"
+                    width="11.2"
+                    height="7.9"
+                    rx="1.9"
+                    stroke="currentColor"
+                    strokeWidth="1.4"
+                  />
+                  <path
+                    d="M6.9 8.7V6.7a3.1 3.1 0 0 1 6.2 0v2"
+                    stroke="currentColor"
+                    strokeWidth="1.4"
+                    strokeLinecap="round"
+                  />
+                  <circle cx="10" cy="12.4" r="1.1" fill="currentColor" />
+                </svg>
+              </span>
+              <h2 id="debug-dl-title">Includes private information</h2>
+            </header>
+
+            <p className="sheet-lead" id="debug-dl-desc">
+              This bundle is everything captured in this recording — screen video, screenshots,
+              visited URLs, clipboard contents, and any voice narration and transcript. Share it
+              only with people you trust.
+            </p>
+
+            <div className="sheet-actions">
+              <button className="linky" onClick={() => setPhase("idle")}>
+                Cancel
+              </button>
+              <button className="record-cta" onClick={() => void download()}>
+                Download .zip
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AnalysisWorkspace({
   summary,
   narrationStatus,
@@ -448,6 +607,7 @@ function AnalysisWorkspace({
           <span className="eyebrow">Analysis</span>
           <span className="ws-when">{formatWhen(summary.startedAt)}</span>
         </div>
+        <DebugDownload sessionId={sessionId} />
       </div>
 
       <div className="ws-body">

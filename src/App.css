@@ -1744,6 +1744,58 @@ button:focus-visible,
   color: var(--muted);
 }
 
+/* Subtle per-session debug bundle download, right side of the session header. */
+.debug-dl {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.debug-dl-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--faint);
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.debug-dl-icon:not(:disabled):hover {
+  background: var(--signal-dim);
+  color: var(--signal);
+}
+
+.debug-dl-icon:disabled {
+  cursor: default;
+}
+
+.debug-dl-icon.is-saved {
+  color: var(--go);
+}
+
+.debug-dl-note {
+  font-size: 11px;
+  color: var(--warn);
+}
+
+/* Privacy-warning modal — reuses the .sheet system (see WhatsRecorded). */
+.debug-sheet {
+  max-width: 380px;
+  gap: 12px;
+}
+
+.sheet-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 14px;
+  margin-top: 2px;
+}
+
 .ws-body {
   flex: 1 1 auto;
   overflow-y: auto;

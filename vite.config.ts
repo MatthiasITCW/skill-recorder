@@ -53,10 +53,12 @@ export default defineConfig({
             outDir: "dist-electron",
             rolldownOptions: {
               // Native / binary deps must be required from node_modules at runtime,
-              // never inlined into the main bundle.
+              // never inlined into the main bundle. archiver is pure-JS but pulls a
+              // large CJS dependency graph, so it's required at runtime too.
               external: [
                 "electron",
                 "@github/copilot-sdk",
+                "archiver",
                 "get-windows",
                 "koffi",
                 "sharp",

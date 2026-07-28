@@ -1,4 +1,11 @@
-import { BrowserWindow, dialog, ipcMain, shell, type OpenDialogOptions } from "electron";
+import {
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  shell,
+  type OpenDialogOptions,
+  type SaveDialogOptions,
+} from "electron";
 import os from "node:os";
 import path from "node:path";
 
@@ -9,6 +16,7 @@ import type {
   AutomationBuildInput,
   AutomationCreateResult,
   AutomationPlanResult,
+  DebugBundleResult,
   DeleteSessionResult,
   MicrophoneSettingsResult,
   SkillBuildInput,
@@ -21,6 +29,7 @@ import type { AutomationPlan } from "../common/automation";
 import type { NarrationLanguage } from "../common/narration";
 import type { SkillPlan } from "../common/skill";
 import { AutomationBuilder, loadPersistedAutomation } from "./automationbuilder/builder";
+import { buildDebugInfo, writeDebugBundle } from "./debug-bundle";
 import { Describer, loadPersistedAnalysis } from "./describer/describer";
 import { runDoctor } from "./doctor";
 import { createLogger } from "./logger";
@@ -215,6 +224,44 @@ export function registerIpc(
       return { ok: false, error };
     }
   });
+
+  ipcMain.handle(
+    IPC.exportDebugBundle,
+    async (event, sessionId: string): Promise<DebugBundleResult> => {
+      if (!isValidSessionId(sessionId)) return { ok: false, error: "Unknown session." };
+      // The session folder is still being written while it records; refuse to zip
+      // a moving target. Analyzing/building are read-only, so those are allowed.
+      if (recorder.status().sessionId === sessionId) {
+        return {
+          ok: false,
+          error: "You can't download details while this recording is still in progress.",
+        };
+      }
+      const win = BrowserWindow.fromWebContents(event.sender) ?? undefined;
+      const opts: SaveDialogOptions = {
+        title: "Download session details",
+        defaultPath: path.join(
+          os.homedir(),
+          "Downloads",
+          `skill-recorder-debug-${sessionId}.zip`,
+        ),
+        filters: [{ name: "Zip archive", extensions: ["zip"] }],
+      };
+      const result = win
+        ? await dialog.showSaveDialog(win, opts)
+        : await dialog.showSaveDialog(opts);
+      if (result.canceled || !result.filePath) return { ok: false, canceled: true };
+      try {
+        await writeDebugBundle(sessionId, result.filePath, buildDebugInfo(sessionId));
+        shell.showItemInFolder(result.filePath); // hand the file to the user to attach
+        return { ok: true, path: result.filePath };
+      } catch (err) {
+        const error = err instanceof Error ? err.message : String(err);
+        log.warn("debug bundle failed:", error);
+        return { ok: false, error };
+      }
+    },
+  );
 
   ipcMain.handle(IPC.buildSkill, async (_event, input: SkillBuildInput): Promise<SkillPlanResult> => {
     if (!isValidSessionId(input?.sessionId)) return { ok: false, error: "Unknown session." };

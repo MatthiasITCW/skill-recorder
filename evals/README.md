@@ -211,10 +211,15 @@ each scenario asserts the shape of the proposed `SkillPlan`:
 - **confirmation** — `requiresConfirmation` requires at least one action to set
   `pausesForConfirmation`, i.e. the send/create/delete surface pauses for the user.
 
-**Coverage.** Two scenarios: `price-tracker-skill` (a canonical page URL → **fixed**
-input, `web_fetch` + the `xlsx` skill, calculations then a confirmed append) and
-`github-issue-triage-skill` (the gh-vs-browser case as a skill — must use `gh`,
-forbid the browser, and gate the mutating comment/label actions).
+**Coverage.** Five scenarios. Two target **Scout**: `price-tracker-skill` (a canonical
+page URL → **fixed** input, `web_fetch` + the `xlsx` skill, calculations then a
+confirmed append) and `github-issue-triage-skill` (the gh-vs-browser case as a skill —
+must use `gh`, forbid the browser, and gate the mutating comment/label actions). Three
+target **Cowork** (Microsoft 365 Copilot), whose catalogue has **no browser automation**
+— each asserts the right M365 `server/Tool` is reached for while playwright/`click` and
+the web hosts are forbidden: `cowork-teams-digest` (read a channel then post via
+`m365_teams`), `cowork-outlook-reply` (triage the mailbox then reply via `outlook`), and
+`cowork-calendar-schedule` (find a slot then book via `outlook_calendar`).
 
 ## Mock pages (`evals/mocks/`)
 

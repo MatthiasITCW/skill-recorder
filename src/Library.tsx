@@ -7,6 +7,7 @@ import type {
   NarrationStatus,
   SessionSummary,
   SkillBuildProgress,
+  SkillPlacement,
 } from "../common/ipc";
 import type {
   BuildTarget,
@@ -735,6 +736,7 @@ function SkillBuilderView({
   const [builtName, setBuiltName] = useState("");
   const canceled = useRef(false);
   const inFlight = useRef(false);
+  const [placement, setPlacement] = useState<SkillPlacement>("install");
 
   const updatePlan = useCallback((part: Partial<SkillPlan>) => {
     setPlan((prev) => (prev ? { ...prev, ...part } : prev));
@@ -757,6 +759,9 @@ function SkillBuilderView({
         setBuiltName(s.name);
         setExportedPath(s.exportedPath);
         setArchitecture(s.architecture);
+        // We don't persist how it was placed; Cowork can only export, and Scout defaults
+        // to install (its primary action), so infer from the architecture on reopen.
+        setPlacement(s.architecture === "cowork" ? "export" : "install");
         if (s.plan) setPlan(s.plan);
         setPhase("done");
       } else if (hasSkill) {
@@ -792,24 +797,31 @@ function SkillBuilderView({
     }
   }, [sessionId, architecture]);
 
-  const create = useCallback(async () => {
-    if (!plan) return;
-    canceled.current = false;
-    inFlight.current = true;
-    setError(null);
-    setStatusLine("Writing the skill…");
-    setPhase("creating");
-    const res = await window.skillRecorder.createSkill(sessionId, plan);
-    inFlight.current = false;
-    if (res.ok && res.skill) {
-      setBuiltName(res.skill.name);
-      setExportedPath(res.path ?? res.skill.exportedPath ?? "");
-      setPhase("done");
-    } else if (!canceled.current) {
-      setError(res.error ?? "Could not create the skill");
-      setPhase("plan");
-    }
-  }, [sessionId, plan]);
+  const place = useCallback(
+    async (which: SkillPlacement) => {
+      if (!plan) return;
+      canceled.current = false;
+      inFlight.current = true;
+      setError(null);
+      setStatusLine(which === "export" ? "Exporting the skill…" : "Writing the skill…");
+      setPhase("creating");
+      const res = await window.skillRecorder.createSkill(sessionId, plan, which);
+      inFlight.current = false;
+      if (res.ok && res.skill) {
+        setBuiltName(res.skill.name);
+        setExportedPath(res.path ?? res.skill.exportedPath ?? "");
+        setPlacement(res.placement ?? which);
+        setPhase("done");
+      } else if (res.canceled) {
+        // User dismissed the export folder picker — quietly return to the plan.
+        setPhase("plan");
+      } else if (!canceled.current) {
+        setError(res.error ?? "Could not create the skill");
+        setPhase("plan");
+      }
+    },
+    [sessionId, plan],
+  );
 
   const cancelRun = useCallback(async () => {
     canceled.current = true;
@@ -913,9 +925,12 @@ function SkillBuilderView({
             <div className="sb-check" aria-hidden>
               ✓
             </div>
-            <h2 className="sb-title">Skill ready</h2>
+            <h2 className="sb-title">{placement === "install" ? "Added to Scout" : "Skill exported"}</h2>
             <p>
-              <code className="sb-slug">{builtName}</code> is built for {archLabel(architecture)}.
+              <code className="sb-slug">{builtName}</code>{" "}
+              {placement === "install"
+                ? "is now in Scout — it loads automatically."
+                : `is built for ${archLabel(architecture)}. Install it wherever ${archLabel(architecture)} loads skills.`}
             </p>
             {exportedPath && <p className="sb-path">{exportedPath}</p>}
           </div>
@@ -926,12 +941,25 @@ function SkillBuilderView({
         <div className="ws-foot">
           <span className="foot-status" />
           <div className="ws-foot-actions">
+            {architecture === "scout" && (
+              <button
+                className="ghost"
+                onClick={() => void place("export")}
+                title="Download the skill to a folder you choose"
+              >
+                Export…
+              </button>
+            )}
             <button
               className="record-cta"
-              onClick={() => void create()}
-              title="Create and export the skill"
+              onClick={() => void place(architecture === "scout" ? "install" : "export")}
+              title={
+                architecture === "scout"
+                  ? "Add the skill to Scout so it loads automatically"
+                  : "Download the skill to a folder you choose"
+              }
             >
-              Create &amp; export skill
+              {architecture === "scout" ? "Add to Scout" : "Export skill"}
             </button>
           </div>
         </div>

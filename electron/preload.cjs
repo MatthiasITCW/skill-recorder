@@ -88,7 +88,7 @@ contextBridge.exposeInMainWorld("skillRecorder", {
   listSessions: () => ipcRenderer.invoke(IPC.listSessions),
   deleteSession: (sessionId) => ipcRenderer.invoke(IPC.deleteSession, sessionId),
   buildSkill: (input) => ipcRenderer.invoke(IPC.buildSkill, input),
-  createSkill: (sessionId, plan) => ipcRenderer.invoke(IPC.createSkill, sessionId, plan),
+  createSkill: (sessionId, plan, placement) => ipcRenderer.invoke(IPC.createSkill, sessionId, plan, placement),
   getSkill: (sessionId) => ipcRenderer.invoke(IPC.getSkill, sessionId),
   cancelSkill: (sessionId) => ipcRenderer.invoke(IPC.cancelSkill, sessionId),
   revealSkill: (sessionId) => ipcRenderer.invoke(IPC.revealSkill, sessionId),

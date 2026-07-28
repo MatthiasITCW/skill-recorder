@@ -14,6 +14,12 @@
 //
 // Together they assert the whole new contract: input `source` vocabulary, typed
 // calculation/action steps, native-tool choice, and confirmation on the risky step.
+//
+// A third group targets the **Cowork** (Microsoft 365 Copilot) catalogue. Cowork has
+// NO browser automation, so every recorded web-UI step must map to a first-class M365
+// tool. These three cover the biggest M365 surfaces — Teams, Outlook mail, and
+// Calendar — and each asserts the right `server/Tool` is reached for while the browser
+// (playwright/click and the *.office.com / teams.microsoft.com hosts) is forbidden.
 
 import type { SkillBuilderScenario } from "./scenario";
 
@@ -174,4 +180,235 @@ const githubIssueTriage: SkillBuilderScenario = {
   },
 };
 
-export const skillScenarios: SkillBuilderScenario[] = [priceTracker, githubIssueTriage];
+/* --- Cowork (Microsoft 365 Copilot) scenarios ----------------------------- */
+
+/** Read a Teams channel in the web app, summarize, post a digest — must use the m365_teams tool, never the browser. */
+const coworkTeamsDigest: SkillBuilderScenario = {
+  id: "cowork-teams-digest",
+  title: "Post a morning digest to the leads Teams channel",
+  architecture: "cowork",
+  platform: "darwin",
+  truth:
+    "Every morning the user opens the 'Eng — Announcements' channel in the Teams web app, reads " +
+    "the overnight messages, writes a short 3-bullet digest, and posts it to the 'Leads' channel. " +
+    "Cowork has no browser automation, so the right generalization reads the source channel with " +
+    "m365_teams/ListChannelMessages and posts with m365_teams/PostChannelMessage — summarizing is " +
+    "a calculation and posting is the one mutating action, which pauses for confirmation because it " +
+    "posts on the user's behalf. Driving teams.microsoft.com in a browser is wrong.",
+  analysis: {
+    title: "Post a morning digest to the leads channel",
+    intent:
+      "Each morning, read the overnight messages in the Eng Announcements Teams channel, summarize " +
+      "them into a short digest, and post that digest to the Leads channel for the leads to skim.",
+    intentConfidence: "high",
+    intentRationale:
+      "The Teams web app stayed on the Eng Announcements channel while messages were read, and the " +
+      "same digest text was then posted into the Leads channel.",
+    steps: [
+      {
+        id: "s1",
+        title: "Open the Eng Announcements channel",
+        detail:
+          "Opened the 'Eng — Announcements' channel in the Teams web app to read the messages posted " +
+          "overnight.",
+        apps: ["Microsoft Teams"],
+        evidence: [
+          "browser.url https://teams.microsoft.com/l/channel/19%3Aeng-announcements/Announcements",
+          "title 'Eng — Announcements | Microsoft Teams'",
+        ],
+        confidence: "high",
+      },
+      {
+        id: "s2",
+        title: "Read the overnight messages",
+        detail: "Read the overnight posts in the channel to capture what happened.",
+        apps: ["Microsoft Teams"],
+        evidence: ["clipboard 'Deploy 4.2 shipped; incident #88 resolved; on-call rotates to Priya'"],
+        confidence: "high",
+      },
+      {
+        id: "s3",
+        title: "Write a 3-bullet digest",
+        detail:
+          "Condensed the overnight messages into a short three-bullet digest of what the leads need " +
+          "to know.",
+        apps: ["Microsoft Teams"],
+        evidence: ["clipboard '• Deploy 4.2 shipped • Incident #88 resolved • On-call: Priya'"],
+        confidence: "medium",
+      },
+      {
+        id: "s4",
+        title: "Post the digest to the Leads channel",
+        detail: "Posted the three-bullet digest into the 'Leads' channel.",
+        apps: ["Microsoft Teams"],
+        evidence: [
+          "browser.url https://teams.microsoft.com/l/channel/19%3Aleads/Leads",
+          "clipboard '• Deploy 4.2 shipped • Incident #88 resolved • On-call: Priya'",
+        ],
+        confidence: "medium",
+      },
+    ],
+  },
+  rubric: {
+    mustUseAny: [["m365_teams"], ["postchannelmessage", "postmessage", "replytochannelmessage"]],
+    forbidden: ["playwright", "browser_", "click", "teams.microsoft.com"],
+    minInputs: 1,
+    minCalculations: 1,
+    minActions: 1,
+    requiresConfirmation: true,
+  },
+};
+
+/** Triage unread mail in Outlook web and reply — must use the outlook tool, never the browser. */
+const coworkOutlookReply: SkillBuilderScenario = {
+  id: "cowork-outlook-reply",
+  title: "Acknowledge unread support emails",
+  architecture: "cowork",
+  platform: "darwin",
+  truth:
+    "The user triages the Support mailbox in Outlook on the web: for each unread customer email " +
+    "they send a short acknowledgement reply. Cowork can't drive a browser, so the right tools are " +
+    "outlook/ListMessages + outlook/GetMessage to read the unread mail and outlook/ReplyToMessage " +
+    "(or CreateDraftMessage + SendDraftMessage) to send the acknowledgement — deciding which " +
+    "messages qualify is a calculation, and sending the reply is the mutating action that pauses " +
+    "for confirmation. Replaying outlook.office.com in a browser is wrong.",
+  analysis: {
+    title: "Acknowledge unread support emails",
+    intent:
+      "Triage the Support mailbox: for each unread customer email, send a short acknowledgement " +
+      "reply letting them know their request was received and will be followed up.",
+    intentConfidence: "high",
+    intentRationale:
+      "Outlook on the web stayed in the Support inbox; an unread customer email was opened and the " +
+      "same acknowledgement text was sent as a reply.",
+    steps: [
+      {
+        id: "s1",
+        title: "Open the Support inbox",
+        detail: "Opened the Support shared mailbox in Outlook on the web and filtered to unread mail.",
+        apps: ["Microsoft Outlook"],
+        evidence: ["browser.url https://outlook.office.com/mail/support/", "title 'Inbox — Support'"],
+        confidence: "high",
+      },
+      {
+        id: "s2",
+        title: "Read an unread customer email",
+        detail: "Opened an unread customer email to read the request before acknowledging it.",
+        apps: ["Microsoft Outlook"],
+        evidence: ["clipboard 'Order #5512 still hasn't arrived — can you check?'"],
+        confidence: "high",
+      },
+      {
+        id: "s3",
+        title: "Decide it needs an acknowledgement",
+        detail:
+          "Judged that the unread customer email is a new request that should get an acknowledgement " +
+          "reply.",
+        apps: ["Microsoft Outlook"],
+        evidence: ["clipboard 'Order #5512 still hasn't arrived — can you check?'"],
+        confidence: "medium",
+      },
+      {
+        id: "s4",
+        title: "Send the acknowledgement reply",
+        detail: "Replied to the customer with a short acknowledgement that their request was received.",
+        apps: ["Microsoft Outlook"],
+        evidence: [
+          "clipboard 'Thanks — we've received your request and will follow up within one business day.'",
+          "browser.url https://outlook.office.com/mail/support/",
+        ],
+        confidence: "medium",
+      },
+    ],
+  },
+  rubric: {
+    mustUseAny: [["outlook/"], ["replytomessage", "senddraftmessage", "createdraftmessage", "replyalltomessage"]],
+    forbidden: ["playwright", "browser_", "click", "outlook.office.com", "outlook.office365.com"],
+    minInputs: 1,
+    minCalculations: 1,
+    minActions: 1,
+    requiresConfirmation: true,
+  },
+};
+
+/** Find a slot everyone can make and book a follow-up — must use outlook_calendar, never the browser. */
+const coworkCalendarSchedule: SkillBuilderScenario = {
+  id: "cowork-calendar-schedule",
+  title: "Book a follow-up meeting with the call attendees",
+  architecture: "cowork",
+  platform: "darwin",
+  truth:
+    "After a customer call the user opens Outlook Calendar in the browser, checks the two attendees' " +
+    "availability next week, and books a 30-minute follow-up. Cowork has no browser automation, so " +
+    "the right tools are outlook_calendar/FindMeetingTimes (find a slot everyone can make) and " +
+    "outlook_calendar/CreateEvent (book it) — resolving the slot is a calculation and creating the " +
+    "event is the mutating action that pauses for confirmation because it invites people. Driving " +
+    "the outlook.office.com calendar UI is wrong.",
+  analysis: {
+    title: "Book a follow-up meeting with the attendees",
+    intent:
+      "Schedule a 30-minute follow-up meeting with the two attendees from the call by finding a time " +
+      "that works for everyone next week and creating the calendar event.",
+    intentConfidence: "high",
+    intentRationale:
+      "Outlook Calendar on the web was used to inspect Priya and Sam's availability next week, and a " +
+      "new 30-minute follow-up event was created with both as attendees.",
+    steps: [
+      {
+        id: "s1",
+        title: "Open Outlook Calendar",
+        detail: "Opened Outlook Calendar on the web to look at next week for a follow-up slot.",
+        apps: ["Microsoft Outlook"],
+        evidence: ["browser.url https://outlook.office.com/calendar/view/week", "title 'Calendar — Outlook'"],
+        confidence: "high",
+      },
+      {
+        id: "s2",
+        title: "Check the attendees' availability next week",
+        detail: "Compared Priya and Sam's free/busy next week to find a 30-minute slot they can both make.",
+        apps: ["Microsoft Outlook"],
+        evidence: ["clipboard 'Priya free Tue 2pm, Wed 10am; Sam free Tue 2pm'"],
+        confidence: "high",
+      },
+      {
+        id: "s3",
+        title: "Pick a slot everyone can make",
+        detail: "Chose Tuesday 2:00pm as the slot both attendees are free for.",
+        apps: ["Microsoft Outlook"],
+        evidence: ["clipboard 'Tue 2:00pm works for both'"],
+        confidence: "medium",
+      },
+      {
+        id: "s4",
+        title: "Create the 30-minute follow-up event",
+        detail: "Created a 30-minute 'Follow-up' calendar event at the chosen slot and invited both attendees.",
+        apps: ["Microsoft Outlook"],
+        evidence: [
+          "browser.url https://outlook.office.com/calendar/deeplink/compose",
+          "clipboard 'Follow-up — 30 min — Priya, Sam'",
+        ],
+        confidence: "medium",
+      },
+    ],
+  },
+  rubric: {
+    mustUseAny: [
+      ["outlook_calendar"],
+      ["findmeetingtimes", "listcalendarview", "listevents", "getschedule"],
+      ["createevent"],
+    ],
+    forbidden: ["playwright", "browser_", "click", "outlook.office.com"],
+    minInputs: 1,
+    minCalculations: 1,
+    minActions: 1,
+    requiresConfirmation: true,
+  },
+};
+
+export const skillScenarios: SkillBuilderScenario[] = [
+  priceTracker,
+  githubIssueTriage,
+  coworkTeamsDigest,
+  coworkOutlookReply,
+  coworkCalendarSchedule,
+];

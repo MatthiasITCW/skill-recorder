@@ -11,7 +11,7 @@ import { z } from "zod";
  * *input*); this is the builder's *output*.
  */
 
-/** Agent architectures a skill can target. Only Scout is enabled for now. */
+/** Agent architectures a skill can target. Scout and Cowork are enabled today. */
 export const SkillArchitecture = z.enum(["scout", "cowork", "copilot-studio"]);
 export type SkillArchitecture = z.infer<typeof SkillArchitecture>;
 
@@ -27,7 +27,7 @@ export interface ArchitectureOption {
 
 export const ARCHITECTURES: readonly ArchitectureOption[] = [
   { id: "scout", label: "Scout", enabled: true, note: "Microsoft Scout: native WorkIQ, browser, files, and built-in skills." },
-  { id: "cowork", label: "Cowork", enabled: false, note: "Coming soon." },
+  { id: "cowork", label: "Cowork", enabled: true, note: "Microsoft 365 Copilot (Cowork): native Teams, Outlook, Calendar, SharePoint, files, and built-in skills." },
   { id: "copilot-studio", label: "Copilot Studio", enabled: false, note: "Coming soon." },
 ] as const;
 
@@ -53,11 +53,10 @@ export interface BuildTarget {
 }
 
 /**
- * The build targets shown up front, in order. Only Scout is wired today, so its
- * skill and automation targets are enabled; the other architectures are shown as
- * a single greyed "coming soon" card each (their `kind` is nominal — they can't be
- * selected). Automations are deeply platform-specific, so the target — not just the
- * architecture — is chosen before the builder plans.
+ * The build targets shown up front, in order. Scout has both a skill and an automation
+ * target; Cowork has a skill target (export/download only). Automations are deeply
+ * platform-specific, so the target — not just the architecture — is chosen before the
+ * builder plans. copilot-studio is shown as a single greyed "coming soon" card.
  */
 export const TARGETS: readonly BuildTarget[] = [
   {
@@ -74,7 +73,13 @@ export const TARGETS: readonly BuildTarget[] = [
     enabled: true,
     note: "A scheduled, multi-step automation Scout runs on a trigger.",
   },
-  { kind: "skill", architecture: "cowork", label: "Cowork", enabled: false, note: "Coming soon." },
+  {
+    kind: "skill",
+    architecture: "cowork",
+    label: "Cowork skill",
+    enabled: true,
+    note: "An on-demand skill for Microsoft 365 Copilot (Cowork) you export and install.",
+  },
   {
     kind: "skill",
     architecture: "copilot-studio",

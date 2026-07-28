@@ -50,6 +50,19 @@ function skillsRoot(): string {
   return path.join(os.homedir(), ".copilot", "skills");
 }
 
+/** True when `dir` is `root` or nested inside it (so we can safely re-use it). */
+function isInside(root: string, dir: string): boolean {
+  const rel = path.relative(root, dir);
+  return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
+}
+
+/**
+ * Where {@link SkillBuilder.create} writes the finished SKILL.md:
+ * - **install** — into the agent's live skills folder ({@link skillsRoot}), auto-loaded.
+ * - **export** — into a user-picked folder (a "download"), as `<dir>/<name>/SKILL.md`.
+ */
+export type SkillTarget = { kind: "install" } | { kind: "export"; dir: string };
+
 interface LiveBuild extends BaseLive {
   sessionDir: string;
   architecture: SkillArchitecture;
@@ -94,7 +107,7 @@ export class SkillBuilder extends AgentBuilder<LiveBuild> {
     const { sessionId, architecture, feedback } = input;
     if (this.active.has(sessionId)) throw new Error("A build is already running for this session.");
     if (!catalogueFor(architecture)) {
-      throw new Error("That target architecture isn't available yet. Choose Scout.");
+      throw new Error("That target architecture isn't available yet. Choose Scout or Cowork.");
     }
     const analysis = loadPersistedAnalysis(sessionId);
     if (!analysis) throw new Error("There is no analysis for this recording yet.");
@@ -115,10 +128,15 @@ export class SkillBuilder extends AgentBuilder<LiveBuild> {
     }
   }
 
-  /** Finalize the user-edited plan into a SKILL.md and export it. The edited plan is
+  /** Finalize the user-edited plan into a SKILL.md and place it. The edited plan is
    *  authoritative: its name/description/inputs/steps are used verbatim and only the
-   *  markdown body is written by the agent. */
-  async create(sessionId: string, editedPlan?: SkillPlan): Promise<{ skill: BuiltSkill; path: string }> {
+   *  markdown body is written by the agent. `target` picks the destination — installed
+   *  into the agent's live skills folder, or exported (downloaded) to a user-picked dir. */
+  async create(
+    sessionId: string,
+    editedPlan?: SkillPlan,
+    target: SkillTarget = { kind: "install" },
+  ): Promise<{ skill: BuiltSkill; path: string }> {
     if (this.active.has(sessionId)) throw new Error("Wait for the current step to finish.");
     let held = this.live.get(sessionId);
     // Prefer the user's edited plan from the review tiles; fall back to the last
@@ -153,10 +171,15 @@ export class SkillBuilder extends AgentBuilder<LiveBuild> {
         body: submission.body,
       };
       const built = toBuiltSkill(sessionId, plan.architecture, finalSubmission, plan);
-      const exportPath = this.exportSkill(built);
+      const exportPath =
+        target.kind === "export" ? this.exportSkillTo(built, target.dir) : this.exportSkill(built);
       const finalSkill: BuiltSkill = { ...built, exportedPath: exportPath, exportedAt: Date.now() };
       this.persist(live.sessionDir, finalSkill);
-      this.emit(sessionId, "done", `Skill exported to ${exportPath}`);
+      this.emit(
+        sessionId,
+        "done",
+        target.kind === "export" ? `Skill exported to ${exportPath}` : `Skill added: ${exportPath}`,
+      );
       return { skill: finalSkill, path: exportPath };
     } finally {
       this.active.delete(sessionId);
@@ -236,18 +259,37 @@ export class SkillBuilder extends AgentBuilder<LiveBuild> {
     return plan;
   }
 
-  /** Write the SKILL.md into the target agent's skills folder; returns its path. */
+  /** Write the SKILL.md into the target agent's live skills folder; returns its path. */
   private exportSkill(skill: BuiltSkill): string {
     const root = skillsRoot();
     const name = slugifySkillName(skill.name);
     const prior = loadPersistedSkill(skill.sessionId);
-    // Re-export to the same folder if this session already exported one; otherwise
-    // pick a fresh, non-colliding directory so we never clobber an unrelated skill.
-    let dir = prior?.exportedPath ? path.dirname(prior.exportedPath) : path.join(root, name);
-    if (!prior?.exportedPath && existsSync(dir)) {
+    const priorDir = prior?.exportedPath ? path.dirname(prior.exportedPath) : null;
+    // Re-install over the same folder only when it already lives under the install root;
+    // a prior *export* (download) folder must not be reused here. Otherwise pick a fresh,
+    // non-colliding directory so we never clobber an unrelated skill.
+    const reuse = priorDir !== null && isInside(root, priorDir);
+    let dir = reuse ? (priorDir as string) : path.join(root, name);
+    if (!reuse && existsSync(dir)) {
       let n = 2;
       while (existsSync(path.join(root, `${name}-${n}`))) n++;
       dir = path.join(root, `${name}-${n}`);
+    }
+    mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, "SKILL.md");
+    writeFileSync(file, renderSkillMarkdown(skill));
+    return file;
+  }
+
+  /** Export (download) the SKILL.md into a user-picked folder as `<baseDir>/<name>/SKILL.md`;
+   *  returns its path. Always picks a fresh, non-colliding subfolder within `baseDir`. */
+  private exportSkillTo(skill: BuiltSkill, baseDir: string): string {
+    const name = slugifySkillName(skill.name);
+    let dir = path.join(baseDir, name);
+    if (existsSync(dir)) {
+      let n = 2;
+      while (existsSync(path.join(baseDir, `${name}-${n}`))) n++;
+      dir = path.join(baseDir, `${name}-${n}`);
     }
     mkdirSync(dir, { recursive: true });
     const file = path.join(dir, "SKILL.md");

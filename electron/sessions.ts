@@ -2,8 +2,13 @@ import { access, lstat, readdir, readFile, rm, stat } from "node:fs/promises";
 import path from "node:path";
 
 import { AnalysisSchema, type Analysis } from "../common/analysis";
+import { readAudioNarrationLanguage } from "../common/audio";
 import type { SessionSummary } from "../common/ipc";
-import { NARRATION_FILE, type NarrationTranscript } from "../common/narration";
+import {
+  NARRATION_FILE,
+  type NarrationLanguage,
+  type NarrationTranscript,
+} from "../common/narration";
 import type { SessionMeta } from "../common/types";
 import { createLogger } from "./logger";
 import { isValidSessionId, sessionDir, sessionsRoot } from "./recorder/session-store";
@@ -41,6 +46,15 @@ async function loadNarration(
     if (!Array.isArray(raw?.segments)) return null;
     const info = await stat(file);
     return { segmentCount: raw.segments.length, updatedAt: info.mtimeMs };
+  } catch {
+    return null;
+  }
+}
+
+async function loadAudioLanguage(dir: string): Promise<NarrationLanguage | null> {
+  try {
+    const raw = JSON.parse(await readFile(path.join(dir, "audio.json"), "utf8")) as unknown;
+    return readAudioNarrationLanguage(raw);
   } catch {
     return null;
   }
@@ -114,12 +128,20 @@ async function summarize(root: string, name: string): Promise<SessionSummary | n
   }
   if (!meta?.id) return null;
 
-  const [analysis, processed, hasVideo, hasAudio, narration, hasSkill, hasAutomation, sizeBytes] =
-    await Promise.all([
+  const [
+    analysis,
+    processed,
+    hasVideo,
+    narrationLanguage,
+    narration,
+    hasSkill,
+    hasAutomation,
+    sizeBytes,
+  ] = await Promise.all([
       loadAnalysis(dir),
       exists(path.join(dir, "bundle.json")),
       exists(path.join(dir, "video.json")),
-      exists(path.join(dir, "audio.json")),
+      loadAudioLanguage(dir),
       loadNarration(dir),
       exists(path.join(dir, "skill.json")),
       exists(path.join(dir, "built-automation.json")),
@@ -130,7 +152,7 @@ async function summarize(root: string, name: string): Promise<SessionSummary | n
         );
         return null;
       }),
-    ]);
+  ]);
 
   return {
     id: meta.id,
@@ -140,7 +162,8 @@ async function summarize(root: string, name: string): Promise<SessionSummary | n
     sizeBytes,
     processed,
     hasVideo,
-    hasAudio,
+    hasAudio: narrationLanguage !== null,
+    narrationLanguage,
     hasNarration: narration !== null,
     narrationSegmentCount: narration?.segmentCount ?? null,
     narrationUpdatedAt: narration?.updatedAt ?? null,

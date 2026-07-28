@@ -443,11 +443,18 @@ button:focus-visible,
   min-height: 15px;
 }
 
+.narration-row {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+
 .narrate {
   display: flex;
   align-items: center;
   gap: 12px;
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   text-align: left;
   background: transparent;
   border: 1px solid var(--line);
@@ -534,6 +541,47 @@ button:focus-visible,
 
 .narrate-switch.on .narrate-knob {
   transform: translateX(14px);
+}
+
+.narration-language {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  width: 108px;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.narration-language > span {
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--muted);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.narration-language select {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.narration-language:focus-within {
+  border-color: var(--brand);
+}
+
+.narration-language:has(select:disabled) {
+  opacity: 0.75;
 }
 
 .privacy-note {

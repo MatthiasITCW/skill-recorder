@@ -42,6 +42,7 @@ test("session size includes every artifact and deletion removes the whole direct
     );
     assert.equal(summary?.sizeBytes, expectedBytes);
     assert.equal(summary?.hasAudio, true);
+    assert.equal(summary?.narrationLanguage, "en");
 
     await deleteSession(id);
     await assert.rejects(access(dir), { code: "ENOENT" });

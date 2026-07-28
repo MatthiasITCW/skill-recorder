@@ -1,4 +1,4 @@
-import type { NarrationSegment } from "../../common/narration";
+import type { NarrationLanguage, NarrationSegment } from "../../common/narration";
 import { decodeAudioFile } from "../audio/decode";
 import { createLogger } from "../logger";
 import { detectSilence, type SilenceSpan } from "./audio-analysis";
@@ -21,6 +21,7 @@ export async function transcribeNarration(
   audioPath: string,
   anchorDeltaMs: number,
   durationMs: number,
+  language: NarrationLanguage,
   pipe: AsrPipeline,
 ): Promise<{ model: string; segments: NarrationSegment[] }> {
   const samples = await decodeAudioFile(audioPath);
@@ -30,11 +31,7 @@ export async function transcribeNarration(
 
   const silences = detectSilence(samples);
 
-  const result = await pipe(samples, {
-    return_timestamps: true,
-    chunk_length_s: 30,
-    stride_length_s: 5,
-  });
+  const result = await pipe(samples, narrationTranscriptionOptions(language));
 
   const durationSec = durationMs > 0 ? durationMs / 1000 : samples.length / SAMPLE_RATE;
   const raw = result.chunks?.length
@@ -44,7 +41,7 @@ export async function transcribeNarration(
   const segments: NarrationSegment[] = [];
   for (const chunk of raw) {
     const text = (chunk.text ?? "").trim();
-    if (!isMeaningful(text)) continue;
+    if (!isMeaningfulNarrationText(text)) continue;
 
     const startSec = chunk.timestamp?.[0] ?? 0;
     const endSec = chunk.timestamp?.[1] ?? Math.min(durationSec, startSec + 2);
@@ -74,19 +71,41 @@ const BOILERPLATE = new Set([
   "you",
   "thank you",
   "thanks",
-  "thank you.",
   "thanks for watching",
-  "thanks for watching!",
   "please subscribe",
-  "subtitles by the amara.org community",
+  "subtitles by the amara org community",
   "bye",
-  "bye.",
-  ".",
+  "grazie",
+  "grazie per aver guardato",
+  "iscriviti al canale",
+  "ciao",
+  "merci",
+  "merci d avoir regardé",
+  "abonnez vous",
+  "au revoir",
+  "gracias",
+  "gracias por ver",
+  "suscríbete",
+  "adiós",
 ]);
 
-function isMeaningful(text: string): boolean {
+export function narrationTranscriptionOptions(language: NarrationLanguage) {
+  return {
+    return_timestamps: true,
+    chunk_length_s: 30,
+    stride_length_s: 5,
+    language,
+    task: "transcribe",
+  } as const;
+}
+
+export function isMeaningfulNarrationText(text: string): boolean {
   if (text.length < 2) return false;
-  if (!/[a-z]/i.test(text)) return false;
-  const normalized = text.toLowerCase().replace(/\s+/g, " ").trim();
+  if (!/\p{L}/u.test(text)) return false;
+  const normalized = text
+    .normalize("NFKC")
+    .toLocaleLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
   return !BOILERPLATE.has(normalized);
 }

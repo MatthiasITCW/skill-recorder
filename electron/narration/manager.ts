@@ -3,6 +3,7 @@ import { readdir, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import {
+  readAudioNarrationLanguage,
   readAudioSources,
   type AudioSource,
 } from "../../common/audio";
@@ -10,7 +11,13 @@ import type {
   NarrationActionResult,
   NarrationStatus,
 } from "../../common/ipc";
-import { NARRATION_FILE, type NarrationTranscript } from "../../common/narration";
+import {
+  DEFAULT_NARRATION_LANGUAGE,
+  isNarrationLanguage,
+  NARRATION_FILE,
+  type NarrationLanguage,
+  type NarrationTranscript,
+} from "../../common/narration";
 import type { SessionMeta } from "../../common/types";
 import { createLogger } from "../logger";
 import { isValidSessionId, sessionDir } from "../recorder/session-store";
@@ -19,6 +26,7 @@ import {
   getAsrPipeline,
   isNarrationModelCached,
   narrationModelCacheDir,
+  removeLegacyNarrationModelCache,
   type ModelLoadProgress,
 } from "./whisper";
 
@@ -36,8 +44,11 @@ function readTranscript(file: string): NarrationTranscript | null {
   if (!existsSync(file)) return null;
   try {
     const transcript = readJson<NarrationTranscript>(file);
-    return typeof transcript.model === "string" && Array.isArray(transcript.segments)
-      ? transcript
+    const language = transcript.language ?? DEFAULT_NARRATION_LANGUAGE;
+    return typeof transcript.model === "string" &&
+      isNarrationLanguage(language) &&
+      Array.isArray(transcript.segments)
+      ? { ...transcript, language }
       : null;
   } catch {
     return null;
@@ -100,11 +111,13 @@ export class NarrationManager {
   constructor(private readonly emitStatus: (status: NarrationStatus) => void) {}
 
   initialize(): void {
+    const ready = isNarrationModelCached();
     this.update({
-      model: isNarrationModelCached() ? "ready" : "missing",
+      model: ready ? "ready" : "missing",
       phase: "idle",
       error: null,
     });
+    if (ready) void this.cleanupLegacyModel();
   }
 
   status(): NarrationStatus {
@@ -205,9 +218,12 @@ export class NarrationManager {
 
     let meta: SessionMeta;
     let audioSources: AudioSource[];
+    let narrationLanguage: NarrationLanguage;
     try {
       meta = readJson<SessionMeta>(path.join(dir, "session.json"));
-      audioSources = readAudioSources(readJson<unknown>(audioJson));
+      const audioMetadata = readJson<unknown>(audioJson);
+      audioSources = readAudioSources(audioMetadata);
+      narrationLanguage = readAudioNarrationLanguage(audioMetadata);
     } catch (err) {
       return { ok: false, error: `Could not read narration metadata: ${message(err)}` };
     }
@@ -249,12 +265,17 @@ export class NarrationManager {
         activeSessionId: sessionId,
         error: null,
       });
-      const transcript: NarrationTranscript = { model: "", segments: [] };
+      const transcript: NarrationTranscript = {
+        model: "",
+        language: narrationLanguage,
+        segments: [],
+      };
       for (const source of sourceFiles) {
         const segmentTranscript = await transcribeNarration(
           source.audioPath,
           source.startEpoch - meta.startedAt,
           source.durationMs,
+          narrationLanguage,
           pipe,
         );
         transcript.model ||= segmentTranscript.model;
@@ -312,6 +333,7 @@ export class NarrationManager {
       onProgress: (progress) =>
         this.onModelProgress(progress, activeSessionId, downloading),
     });
+    await this.cleanupLegacyModel();
     this.update({
       model: "ready",
       phase: "idle",
@@ -322,6 +344,14 @@ export class NarrationManager {
       error: null,
     });
     return pipe;
+  }
+
+  private async cleanupLegacyModel(): Promise<void> {
+    try {
+      await removeLegacyNarrationModelCache();
+    } catch (error) {
+      log.warn("could not remove the superseded English narration model:", message(error));
+    }
   }
 
   private onModelProgress(

@@ -16,6 +16,7 @@ import type {
 } from "../common/ipc";
 import { IPC } from "../common/ipc";
 import type { AutomationPlan } from "../common/automation";
+import type { NarrationLanguage } from "../common/narration";
 import type { SkillPlan } from "../common/skill";
 import { AutomationBuilder, loadPersistedAutomation } from "./automationbuilder/builder";
 import { Describer, loadPersistedAnalysis } from "./describer/describer";
@@ -42,6 +43,9 @@ export function registerIpc(
   ipcMain.handle(IPC.discard, () => recorder.discard());
   ipcMain.handle(IPC.microphone, (_event, enabled: boolean) =>
     recorder.setMicrophoneEnabled(enabled),
+  );
+  ipcMain.handle(IPC.narrationLanguage, (_event, language: NarrationLanguage) =>
+    recorder.setNarrationLanguage(language),
   );
   ipcMain.handle(IPC.status, () => recorder.status());
   ipcMain.handle(IPC.marker, (_event, note: string) => recorder.marker(note));

@@ -17,6 +17,11 @@ import type {
 import { ARCHITECTURES, TARGETS } from "../common/skill";
 import type { AutomationPlan, BuiltAutomation } from "../common/automation";
 import {
+  DEFAULT_NARRATION_LANGUAGE,
+  NARRATION_MODEL_DOWNLOAD_LABEL,
+  narrationLanguageLabel,
+} from "../common/narration";
+import {
   AnalysisStepTiles,
   AutomationStepTiles,
   EditableText,
@@ -247,6 +252,9 @@ function AnalysisWorkspace({
 }) {
   const sessionId = summary.id;
   const voicePending = summary.hasAudio && !summary.hasNarration;
+  const voiceLanguage = narrationLanguageLabel(
+    summary.narrationLanguage ?? DEFAULT_NARRATION_LANGUAGE,
+  );
   const voiceEmpty = summary.hasNarration && summary.narrationSegmentCount === 0;
   const voiceBusy =
     narrationStatus?.activeSessionId === sessionId && narrationStatus.phase !== "idle";
@@ -458,10 +466,13 @@ function AnalysisWorkspace({
               <span>
                 {voiceBusy
                   ? narrationWorkLabel(narrationStatus)
-                  : "Your audio is saved. Transcription runs locally and can be done later."}
+                  : `Your audio is saved. Transcription runs locally in ${voiceLanguage} and keeps that language.`}
               </span>
               {!voiceBusy && narrationStatus?.model !== "ready" && (
-                <span>The first use requires a one-time ~250 MB download.</span>
+                <span>
+                  The first use requires a one-time {NARRATION_MODEL_DOWNLOAD_LABEL} multilingual
+                  model download.
+                </span>
               )}
               {!voiceBusy && voiceError && (
                 <span className="voice-card-error">{voiceError}</span>

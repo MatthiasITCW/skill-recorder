@@ -1,14 +1,15 @@
 import { existsSync } from "node:fs";
+import { rm } from "node:fs/promises";
 import path from "node:path";
 
 import { app } from "electron";
 
-// Whisper small.en: English-only, int8 (q8) ONNX weights (~250 MB). Downloaded
-// once into the user-data models cache, then used fully offline. base.en is the
-// lighter fallback if this ever proves too heavy on low-end machines.
-const MODEL_ID = "Xenova/whisper-small.en";
+// Multilingual Whisper small, int8 (q8) ONNX weights (~252 MB). It has the same
+// architecture and runtime profile as the previous English-only checkpoint.
+export const NARRATION_MODEL_ID = "Xenova/whisper-small";
+export const LEGACY_NARRATION_MODEL_ID = "Xenova/whisper-small.en";
 const DTYPE = "q8";
-const REQUIRED_MODEL_FILES = [
+export const NARRATION_MODEL_FILES = [
   "config.json",
   "generation_config.json",
   "preprocessor_config.json",
@@ -25,7 +26,13 @@ const REQUIRED_MODEL_FILES = [
  */
 export type AsrPipeline = (
   audio: Float32Array,
-  options?: Record<string, unknown>,
+  options?: {
+    return_timestamps?: boolean | "word";
+    chunk_length_s?: number;
+    stride_length_s?: number;
+    language?: string;
+    task?: "transcribe" | "translate";
+  },
 ) => Promise<{
   text: string;
   chunks?: Array<{ timestamp: [number, number | null]; text: string }>;
@@ -49,7 +56,7 @@ let pipePromise: Promise<AsrPipeline | null> | null = null;
 
 /** The model id transcripts are tagged with. */
 export function narrationModelId(): string {
-  return MODEL_ID;
+  return NARRATION_MODEL_ID;
 }
 
 export function narrationModelCacheDir(): string {
@@ -58,9 +65,26 @@ export function narrationModelCacheDir(): string {
   return path.join(app.getPath("userData"), "models");
 }
 
+export function isNarrationModelCachedAt(
+  cacheDir: string,
+  modelId = NARRATION_MODEL_ID,
+): boolean {
+  const root = path.join(cacheDir, ...modelId.split("/"));
+  return NARRATION_MODEL_FILES.every((file) => existsSync(path.join(root, file)));
+}
+
 export function isNarrationModelCached(): boolean {
-  const root = path.join(narrationModelCacheDir(), ...MODEL_ID.split("/"));
-  return REQUIRED_MODEL_FILES.every((file) => existsSync(path.join(root, file)));
+  return isNarrationModelCachedAt(narrationModelCacheDir());
+}
+
+/** Remove the superseded English-only weights only after the multilingual model is ready. */
+export async function removeLegacyNarrationModelCache(
+  cacheDir = narrationModelCacheDir(),
+): Promise<void> {
+  await rm(path.join(cacheDir, ...LEGACY_NARRATION_MODEL_ID.split("/")), {
+    recursive: true,
+    force: true,
+  });
 }
 
 async function build(options: WhisperLoadOptions): Promise<AsrPipeline> {
@@ -73,7 +97,7 @@ async function build(options: WhisperLoadOptions): Promise<AsrPipeline> {
   // every run after is offline from this cache. Nothing is bundled with the app.
   tf.env.cacheDir = narrationModelCacheDir();
 
-  const pipe = await tf.pipeline("automatic-speech-recognition", MODEL_ID, {
+  const pipe = await tf.pipeline("automatic-speech-recognition", NARRATION_MODEL_ID, {
     dtype: DTYPE,
     local_files_only: !options.allowDownload,
     progress_callback: options.onProgress,

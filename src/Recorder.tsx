@@ -1,6 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
 
 import type { DoctorReport, NarrationStatus, RecorderStatus } from "../common/ipc";
+import {
+  DEFAULT_NARRATION_LANGUAGE,
+  isNarrationLanguage,
+  NARRATION_LANGUAGE_CODES,
+  NARRATION_LANGUAGE_LABELS,
+  NARRATION_MODEL_DOWNLOAD_LABEL,
+  narrationLanguageLabel,
+  type NarrationLanguage,
+} from "../common/narration";
 import { formatMs } from "./format";
 import { WhatsRecorded } from "./WhatsRecorded";
 
@@ -14,6 +23,8 @@ export function Recorder() {
   const [narrationStatus, setNarrationStatus] = useState<NarrationStatus | null>(null);
   const [showPrivacy, setShowPrivacy] = useState(false);
   const [narrate, setNarrate] = useState(false);
+  const [narrationLanguage, setSelectedNarrationLanguage] =
+    useState<NarrationLanguage>(DEFAULT_NARRATION_LANGUAGE);
   const [elapsed, setElapsed] = useState(0);
   const [sessionCount, setSessionCount] = useState(0);
   const [pendingCount, setPendingCount] = useState(0);
@@ -24,18 +35,23 @@ export function Recorder() {
     setPendingCount(list.filter((s) => !s.analysis).length);
   }, []);
 
+  const applyRecorderStatus = useCallback((next: RecorderStatus) => {
+    setStatus(next);
+    setSelectedNarrationLanguage(next.narrationLanguage);
+  }, []);
+
   useEffect(() => {
-    void window.skillRecorder.status().then(setStatus);
+    void window.skillRecorder.status().then(applyRecorderStatus);
     void window.skillRecorder.doctor().then(setDoctor);
     void window.skillRecorder.narrationStatus().then(setNarrationStatus);
     void refreshCount();
-    const offRecorder = window.skillRecorder.onStatusChanged(setStatus);
+    const offRecorder = window.skillRecorder.onStatusChanged(applyRecorderStatus);
     const offNarration = window.skillRecorder.onNarrationStatusChanged(setNarrationStatus);
     return () => {
       offRecorder();
       offNarration();
     };
-  }, [refreshCount]);
+  }, [applyRecorderStatus, refreshCount]);
 
   // The analyze step happens in the library window, so re-check how many
   // recordings still need analysis whenever the recorder regains focus.
@@ -68,10 +84,24 @@ export function Recorder() {
   const toggle = useCallback(async () => {
     const res = recording
       ? await window.skillRecorder.stop()
-      : await window.skillRecorder.start({ narration: narrate });
+      : await window.skillRecorder.start({ narration: narrate, narrationLanguage });
     if (!res.ok) window.alert(res.error ?? "Action failed");
-    setStatus(await window.skillRecorder.status());
-  }, [recording, narrate]);
+    applyRecorderStatus(await window.skillRecorder.status());
+  }, [applyRecorderStatus, recording, narrate, narrationLanguage]);
+
+  const selectNarrationLanguage = useCallback(
+    async (value: string) => {
+      if (!isNarrationLanguage(value)) {
+        window.alert("Unsupported narration language.");
+        return;
+      }
+      setSelectedNarrationLanguage(value);
+      const result = await window.skillRecorder.setNarrationLanguage(value);
+      if (!result.ok) window.alert(result.error ?? "Could not change the narration language.");
+      applyRecorderStatus(await window.skillRecorder.status());
+    },
+    [applyRecorderStatus],
+  );
 
   const openLibrary = useCallback(() => {
     void window.skillRecorder.openLibrary();
@@ -118,43 +148,74 @@ export function Recorder() {
         </div>
       </div>
 
-      <button
-        className={`narrate ${narrate ? "on" : ""}`}
-        role="switch"
-        aria-checked={narrate}
-        onClick={() => setNarrate((v) => !v)}
-        disabled={recording || transitioning}
-      >
-        <span className="narrate-icon" aria-hidden>
-          <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
-            <rect x="7.5" y="2.5" width="5" height="9" rx="2.5" stroke="currentColor" strokeWidth="1.4" />
-            <path
-              d="M5 9.2a5 5 0 0 0 10 0"
-              stroke="currentColor"
-              strokeWidth="1.4"
-              strokeLinecap="round"
-            />
-            <path d="M10 14.2v3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-          </svg>
-        </span>
-        <span className="narrate-text">
-          <span className="narrate-label">Narrate</span>
-          <span className="narrate-sub">
-            {recording
-              ? narrate
-                ? "Listening to your voice"
-                : "Voice off for this recording"
-              : narrate
-                ? narrationStatus?.model === "ready"
-                  ? "Your voice will be included"
-                  : "Voice saved · transcription needs ~250 MB later"
-                : "Explain out loud (optional)"}
+      <div className="narration-row">
+        <button
+          className={`narrate ${narrate ? "on" : ""}`}
+          role="switch"
+          aria-checked={narrate}
+          onClick={() => setNarrate((v) => !v)}
+          disabled={recording || transitioning}
+        >
+          <span className="narrate-icon" aria-hidden>
+            <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
+              <rect
+                x="7.5"
+                y="2.5"
+                width="5"
+                height="9"
+                rx="2.5"
+                stroke="currentColor"
+                strokeWidth="1.4"
+              />
+              <path
+                d="M5 9.2a5 5 0 0 0 10 0"
+                stroke="currentColor"
+                strokeWidth="1.4"
+                strokeLinecap="round"
+              />
+              <path
+                d="M10 14.2v3"
+                stroke="currentColor"
+                strokeWidth="1.4"
+                strokeLinecap="round"
+              />
+            </svg>
           </span>
-        </span>
-        <span className={`narrate-switch ${narrate ? "on" : ""}`} aria-hidden>
-          <span className="narrate-knob" />
-        </span>
-      </button>
+          <span className="narrate-text">
+            <span className="narrate-label">Narrate</span>
+            <span className="narrate-sub">
+              {recording
+                ? narrate
+                  ? `Listening · ${narrationLanguageLabel(narrationLanguage)}`
+                  : "Voice off for this recording"
+                : narrate
+                  ? narrationStatus?.model === "ready"
+                    ? "Voice saved · local transcript"
+                    : `Voice saved · ${NARRATION_MODEL_DOWNLOAD_LABEL} later`
+                  : "Explain out loud (optional)"}
+            </span>
+          </span>
+          <span className={`narrate-switch ${narrate ? "on" : ""}`} aria-hidden>
+            <span className="narrate-knob" />
+          </span>
+        </button>
+
+        <label className="narration-language">
+          <span>Transcript</span>
+          <select
+            value={narrationLanguage}
+            disabled={recording || transitioning}
+            onChange={(event) => void selectNarrationLanguage(event.currentTarget.value)}
+            title="The transcript stays in this language"
+          >
+            {NARRATION_LANGUAGE_CODES.map((language) => (
+              <option key={language} value={language}>
+                {NARRATION_LANGUAGE_LABELS[language]}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
 
       <button className="privacy-note" onClick={() => setShowPrivacy(true)}>
         <span className="privacy-note-icon" aria-hidden>
@@ -333,13 +394,17 @@ function VoiceModelRow({
     return <Row label="voice transcription" status="warn" note="preparing" />;
   }
   if (status.model === "ready") {
-    return <Row label="voice transcription" status="good" note="offline" />;
+    return <Row label="voice transcription" status="good" note="offline · multilingual" />;
   }
   return (
     <Row
       label="voice transcription"
       status="warn"
-      note={status.model === "error" ? "download failed" : "~250 MB"}
+      note={
+        status.model === "error"
+          ? "download failed"
+          : `${NARRATION_MODEL_DOWNLOAD_LABEL} · multilingual`
+      }
       action={{
         label: status.model === "error" ? "retry" : "download",
         disabled: recording,

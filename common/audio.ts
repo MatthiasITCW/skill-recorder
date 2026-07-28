@@ -1,3 +1,9 @@
+import {
+  DEFAULT_NARRATION_LANGUAGE,
+  isNarrationLanguage,
+  type NarrationLanguage,
+} from "./narration";
+
 /** Version written by new recordings that can toggle the microphone mid-session. */
 export const AUDIO_MANIFEST_VERSION = 2 as const;
 
@@ -18,6 +24,8 @@ export interface AudioSegment {
 
 export interface AudioManifestV2 {
   version: typeof AUDIO_MANIFEST_VERSION;
+  /** Source language selected before recording. Absent in older v2 manifests. */
+  narrationLanguage?: NarrationLanguage;
   segments: AudioSegment[];
 }
 
@@ -67,6 +75,17 @@ export function readAudioSources(value: unknown): AudioSource[] {
     });
   }
   return normalized;
+}
+
+/** Read the session's transcription language, preserving English for older recordings. */
+export function readAudioNarrationLanguage(value: unknown): NarrationLanguage {
+  if (!isAudioManifestV2(value) || value.narrationLanguage === undefined) {
+    return DEFAULT_NARRATION_LANGUAGE;
+  }
+  if (!isNarrationLanguage(value.narrationLanguage)) {
+    throw new Error("Narration metadata contains an unsupported transcription language.");
+  }
+  return value.narrationLanguage;
 }
 
 /** Add video-relative offsets without altering the session-relative timeline. */

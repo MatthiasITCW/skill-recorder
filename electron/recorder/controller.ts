@@ -8,11 +8,17 @@ import type {
   DiscardResult,
   MarkerResult,
   MicrophoneResult,
+  NarrationLanguageResult,
   RecorderStatus,
   StartOptions,
   StartResult,
   StopResult,
 } from "../../common/ipc";
+import {
+  DEFAULT_NARRATION_LANGUAGE,
+  isNarrationLanguage,
+  type NarrationLanguage,
+} from "../../common/narration";
 import type { RecorderState, SessionMeta } from "../../common/types";
 import { createLogger } from "../logger";
 import type { Collector } from "./collector";
@@ -38,7 +44,11 @@ export interface SessionVideoRecorder {
 
 /** Microphone sidecar that can create multiple capture intervals per session. */
 export interface SessionAudioRecorder {
-  start(sessionDir: string, sessionStartedAt: number): Promise<void>;
+  start(
+    sessionDir: string,
+    sessionStartedAt: number,
+    narrationLanguage: NarrationLanguage,
+  ): Promise<void>;
   enable(): Promise<void>;
   disable(): Promise<unknown>;
   finish(videoStartEpoch: number | null): Promise<unknown>;
@@ -82,6 +92,7 @@ export class RecorderController {
   private audio: SessionAudioRecorder | null = null;
   private transition: RecorderStatus["transition"] = "none";
   private microphone: RecorderStatus["microphone"] = { state: "off", error: null };
+  private narrationLanguage = DEFAULT_NARRATION_LANGUAGE;
   private lastFinish: RecorderStatus["lastFinish"] = null;
   private shuttingDown = false;
   private operations: Promise<void> = Promise.resolve();
@@ -122,6 +133,7 @@ export class RecorderController {
       state: this.state,
       sessionId: this.store?.meta.id ?? null,
       startedAt: this.store?.meta.startedAt ?? null,
+      narrationLanguage: this.narrationLanguage,
       eventCount: this.store?.eventCount ?? 0,
       transition: this.transition,
       microphone: { ...this.microphone },
@@ -164,6 +176,23 @@ export class RecorderController {
     });
   }
 
+  setNarrationLanguage(language: NarrationLanguage): Promise<NarrationLanguageResult> {
+    return this.enqueue(async () => {
+      if (this.store || this.transition !== "none") {
+        return {
+          ok: false,
+          error: "Narration language cannot change while recording.",
+        };
+      }
+      if (!isNarrationLanguage(language)) {
+        return { ok: false, error: "Unsupported narration language." };
+      }
+      this.narrationLanguage = language;
+      this.emit();
+      return { ok: true, language };
+    });
+  }
+
   // Marker capture is intentionally retained even though the "Add marker" HUD
   // button was removed in favor of voice narration (see docs/future-features.md).
   marker(note: string): MarkerResult {
@@ -186,6 +215,15 @@ export class RecorderController {
 
   private async startInternal(options?: StartOptions): Promise<StartResult> {
     if (this.store) return { ok: false, error: "Already recording" };
+    if (
+      options?.narrationLanguage !== undefined &&
+      !isNarrationLanguage(options.narrationLanguage)
+    ) {
+      return { ok: false, error: "Unsupported narration language." };
+    }
+    if (options?.narrationLanguage !== undefined) {
+      this.narrationLanguage = options.narrationLanguage;
+    }
 
     this.transition = "starting";
     this.microphone = { state: "off", error: null };
@@ -241,7 +279,7 @@ export class RecorderController {
     if (this.deps.createAudioRecorder) {
       this.audio = this.deps.createAudioRecorder((event) => this.onAudioCaptureEnded(event));
       try {
-        await this.audio.start(store.dir, store.meta.startedAt);
+        await this.audio.start(store.dir, store.meta.startedAt, this.narrationLanguage);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         log.warn("microphone initialization failed:", message);

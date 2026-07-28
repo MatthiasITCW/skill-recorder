@@ -60,15 +60,18 @@ Run a real recording on Windows and verify each source lands in the session's
 5. **Video.** Confirm `video.webm`, `video-frames.json`, snapshots under
    `video-frames/`, and retained images under `frames/`.
 6. **Voice narration.** Turn on the **Narrate** switch before starting or use the
-   microphone control in the floating recording bar. Toggle it off and on around
-   two spoken sentences. After Stop, confirm `audio.json` contains a version-2
-   segment manifest and the referenced `audio/segment-*.webm` files exist. Their
-   session/video offsets should preserve the silent gap while the microphone was
-   off. If the model is not installed, use **Download &
-   transcribe** in Sessions (or the actionable HUD readiness row) to approve the
-   one-time ~250 MB Whisper download. Confirm `narration.json` then contains your
-   words with `atMs` offsets. Later runs are offline. On Windows the mic grant is
-   requested by the OS on first use.
+   microphone control in the floating recording bar. Select English, Italian,
+   French, or Spanish before recording, then toggle the microphone off and on
+   around two spoken sentences. After Stop, confirm `audio.json` contains a
+   version-2 segment manifest with `narrationLanguage` and that the referenced
+   `audio/segment-*.webm` files exist. Their session/video offsets should
+   preserve the silent gap while the microphone was off. If the model is not
+   installed, use **Download & transcribe** in Sessions (or the actionable HUD
+   readiness row) to approve the one-time ~252 MB Whisper download. Confirm
+   `narration.json` records the chosen language and contains the
+   original-language words with `atMs` offsets. Repeat with all four supported
+   languages. Later runs are offline. On Windows the mic grant is requested by
+   the OS on first use.
 7. **Recording controls.** Confirm the floating bar stays above the active app,
    can be dragged without making its buttons unclickable, and does not appear in
    captured frames where Windows capture protection is supported. Canceling the
@@ -89,8 +92,12 @@ modules (`koffi`, `@koromix/*`, `sharp`, `@img/*`,
 are listed under `asarUnpack` so
 their binaries load from disk rather than from inside the asar archive. The
 Whisper model itself is not bundled. It downloads to the app's user-data
-`models` folder only after the user approves the one-time ~250 MB download from
+`models` folder only after the user approves the one-time ~252 MB download from
 the HUD or Sessions; recording and core session processing do not wait for it.
+The multilingual q8 files total about 251.9 MB versus 251.2 MB for the previous
+English-only checkpoint. Both use the same Whisper `small` architecture, so
+runtime memory and transcription speed are expected to remain effectively
+unchanged.
 
 Build each Windows installer on its matching native machine or CI runner so npm
 selects the correct optional packages:

@@ -11,6 +11,22 @@ the other native runtime components.
 The dependency tree is otherwise permissive (MIT, ISC, Apache-2.0, BSD,
 BlueOak-1.0.0) and compatible with distributing this application under MIT.
 
+## Optional downloaded model
+
+### OpenAI Whisper small — `Xenova/whisper-small`
+- The multilingual model is downloaded from
+  [`Xenova/whisper-small`](https://huggingface.co/Xenova/whisper-small) only
+  after explicit user approval; its weights are not bundled with Skill Recorder.
+- The Transformers.js-compatible ONNX conversion is published by Xenova
+  (Joshua Lochner) from OpenAI's
+  [`openai/whisper-small`](https://huggingface.co/openai/whisper-small)
+  checkpoint.
+- The Hugging Face model metadata declares **Apache-2.0**. OpenAI's
+  [Whisper repository](https://github.com/openai/whisper) also states that its
+  code and model weights are released under the **MIT License**. The downloaded
+  model remains subject to its publisher's applicable terms and does not change
+  Skill Recorder's MIT license.
+
 ## Bundled runtime components
 
 ### GitHub Copilot CLI — `@github/copilot` (+ platform binary `@github/copilot-<platform>-<arch>`)

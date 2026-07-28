@@ -12,6 +12,7 @@ import {
   type AudioSegment,
   type LegacyAudioMetadata,
 } from "../../common/audio";
+import type { NarrationLanguage } from "../../common/narration";
 import { createLogger } from "../logger";
 import type { AudioCaptureEnded } from "../recorder/controller";
 
@@ -54,6 +55,7 @@ export class AudioRecorder {
   private win: BrowserWindow | null = null;
   private dir = "";
   private sessionStartedAt = 0;
+  private narrationLanguage: NarrationLanguage = "en";
   private sequence = 0;
   private active: PendingSegment | null = null;
   private disableTask: Promise<AudioSegment | null> | null = null;
@@ -111,10 +113,15 @@ export class AudioRecorder {
   };
 
   /** Prepare the session's hidden audio utility window without touching the mic. */
-  async start(sessionDir: string, sessionStartedAt: number): Promise<void> {
+  async start(
+    sessionDir: string,
+    sessionStartedAt: number,
+    narrationLanguage: NarrationLanguage,
+  ): Promise<void> {
     if (this.win) throw new Error("Microphone recorder is already initialized.");
     this.dir = sessionDir;
     this.sessionStartedAt = sessionStartedAt;
+    this.narrationLanguage = narrationLanguage;
     this.sequence = 0;
     this.segments.length = 0;
     await mkdir(path.join(this.dir, AUDIO_DIR), { recursive: true });
@@ -287,7 +294,13 @@ export class AudioRecorder {
 
     const segments = alignAudioSegmentsToVideo(this.segments, videoStartEpoch);
     const manifest: AudioManifestV2 | null =
-      segments.length > 0 ? { version: AUDIO_MANIFEST_VERSION, segments } : null;
+      segments.length > 0
+        ? {
+            version: AUDIO_MANIFEST_VERSION,
+            narrationLanguage: this.narrationLanguage,
+            segments,
+          }
+        : null;
 
     try {
       if (manifest) {

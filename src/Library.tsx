@@ -24,7 +24,7 @@ import {
   ScheduleEditor,
   SkillStepTiles,
 } from "./plan-edit";
-import { formatDur, formatWhen, shortLabel } from "./format";
+import { formatBytes, formatDur, formatWhen, shortLabel } from "./format";
 
 export function Library() {
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
@@ -145,7 +145,10 @@ function SessionsList({
             <div className="sess-confirm" role="alertdialog" aria-label="Confirm delete">
               <div className="sess-confirm-text">
                 <span className="sess-confirm-title">Delete this recording?</span>
-                <span className="sess-confirm-sub">This cannot be undone.</span>
+                <span className="sess-confirm-sub">
+                  This cannot be undone.
+                  {s.sizeBytes != null && ` Frees ${formatBytes(s.sizeBytes)} from this device.`}
+                </span>
               </div>
               <div className="sess-confirm-actions">
                 <button className="linky" onClick={() => setConfirmId(null)}>
@@ -193,6 +196,14 @@ function SessionsList({
                 </div>
                 <div className="sess-sub">
                   {s.durationMs != null && <span>{formatDur(s.durationMs)}</span>}
+                  {s.sizeBytes != null && (
+                    <span
+                      className="sess-size"
+                      title={`${s.sizeBytes.toLocaleString()} bytes used by this recording`}
+                    >
+                      {formatBytes(s.sizeBytes)}
+                    </span>
+                  )}
                   {s.analysis && <span>{s.analysis.stepCount} steps</span>}
                   {s.hasVideo && <span>video</span>}
                   {s.hasAudio && !s.hasNarration && <span>voice pending</span>}

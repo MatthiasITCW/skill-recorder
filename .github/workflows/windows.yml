@@ -1,0 +1,55 @@
+name: Windows
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  native:
+    name: Windows ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: windows-latest
+            dist_script: dist:win:x64
+          - arch: arm64
+            runner: windows-11-arm
+            dist_script: dist:win:arm64
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          architecture: ${{ matrix.arch }}
+          cache: npm
+
+      - name: Install native dependencies
+        shell: pwsh
+        run: |
+          if ((node -p "process.arch") -ne "${{ matrix.arch }}") {
+            throw "Expected Node ${{ matrix.arch }}"
+          }
+          npm ci
+          node -e "require('sharp'); require('onnxruntime-node'); require('koffi')"
+          if (Select-String -Path package-lock.json -Pattern 'ffmpeg-static' -Quiet) {
+            throw "ffmpeg-static remains in the lockfile"
+          }
+
+      - name: Test and build
+        run: |
+          npm test
+          npm run build
+
+      - name: Package native installer
+        run: npm run ${{ matrix.dist_script }}
+
+      - name: Verify packaged architecture
+        run: node scripts/verify-windows-package.mjs ${{ matrix.arch }}

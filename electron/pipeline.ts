@@ -5,6 +5,7 @@ import { buildBundle } from "../common/bundle";
 import { MEANINGFUL_EVENT_TYPES } from "../common/correlation";
 import type { CorrelationResult } from "../common/correlation";
 import { renderDescription } from "../common/describe";
+import { CAPTURED_FRAME_MANIFEST_VERSION } from "../common/frames";
 import type { SessionMeta } from "../common/types";
 import { CorrelationEngine, readEvents } from "./frames/correlate";
 import { FrameExtractor } from "./frames/extractor";
@@ -44,13 +45,20 @@ async function runFrameStage(sessionDir: string): Promise<CorrelationResult | nu
   }
 
   const videoPath = path.join(sessionDir, video.file);
-  if (!existsSync(videoPath)) {
-    log.warn("video file missing; skipping frame stage");
+  const capturedFramesPath = video.framesFile
+    ? path.join(sessionDir, video.framesFile)
+    : undefined;
+  const hasVideo = existsSync(videoPath);
+  const hasCapturedFrames = Boolean(capturedFramesPath && existsSync(capturedFramesPath));
+  if (!hasVideo && !hasCapturedFrames) {
+    log.warn("video and captured frames missing; skipping frame stage");
     return null;
   }
 
   const extractor = new FrameExtractor({
-    videoPath,
+    ...(hasVideo ? { videoPath } : {}),
+    ...(hasCapturedFrames ? { capturedFramesPath } : {}),
+    capturedFramesExpected: video.framesVersion === CAPTURED_FRAME_MANIFEST_VERSION,
     framesDir: path.join(sessionDir, "frames"),
     anchorEpochMs: video.startEpoch,
     durationSec: video.durationMs > 0 ? video.durationMs / 1000 : undefined,

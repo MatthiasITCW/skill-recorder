@@ -10,12 +10,12 @@ before trusting a Windows build.
 
 | Source | Mechanism on Windows | Parity vs macOS | Permission |
 |--------|----------------------|-----------------|------------|
-| App switches | `get-windows` native addon | Full | None |
-| Window titles | `get-windows` native addon | Full (better: no grant needed) | None |
+| App switches | Koffi calls to Win32 `user32` / `kernel32` | Full | None |
+| Window titles | Koffi calls to Win32 `user32` | Full (better: no grant needed) | None |
 | Browser URLs | UI Automation address bar read (`powershell.exe` host) | Functional, not byte exact | None |
 | Clipboard | Electron clipboard | Full | None |
-| Screen video + frames | `desktopCapturer` + ffmpeg + sharp | Full | Screen capture |
-| Voice narration (opt-in) | hidden-window `getUserMedia` mic + `MediaRecorder`, transcribed offline (Whisper via transformers.js) | Verified on Windows 11 ARM64 with the x64 Electron build | Microphone |
+| Screen video + frames | `desktopCapturer` + Chromium snapshots + Sharp | Full | Screen capture |
+| Voice narration (opt-in) | hidden-window `getUserMedia` + `MediaRecorder`; Chromium decode + offline Whisper | Full | Microphone |
 
 Notes:
 
@@ -28,26 +28,21 @@ Notes:
 
 ## Prerequisites
 
-1. **Native window addon.** `get-windows` ships a prebuilt N-API binary per
-   platform. On a Windows build/dev machine, `npm install` fetches
-   `napi-*-win32-*-x64/node-get-windows.node`. If it is missing, `get-windows`
-   silently returns no-op stubs and app-switch tracking dies with no error, so
-   the doctor check below exists specifically to catch that.
+1. **Native window FFI.** Koffi ships prebuilt N-API packages for both
+   `win32-x64` and `win32-arm64`; no compiler is needed.
 2. **Windows PowerShell.** `powershell.exe` (Windows PowerShell 5.1, in-box on
    every Windows 10/11) is used to host the UI Automation URL reader. No install
    needed.
 3. **Copilot CLI** on `PATH` for the describer (`copilot`).
-4. **ffmpeg** is bundled via `ffmpeg-static`; no system install needed.
+4. No system media package is needed for new recordings.
 
 ## Doctor signals
 
 Open the recorder HUD and read the doctor rows (or call `doctor()` over IPC).
 On Windows, confirm:
 
-- **window tracking** = `native` (not `addon missing`). `addon missing` means the
-  `get-windows` `.node` did not resolve, which is a packaging or install problem.
+- **window tracking** = `koffi` (not `provider missing`).
 - **browser URLs** = `uia` when the capture level includes URLs.
-
 ## Live smoke test
 
 Run a real recording on Windows and verify each source lands in the session's
@@ -62,7 +57,8 @@ Run a real recording on Windows and verify each source lands in the session's
    Typing a partial URL or a search term should not emit a bogus event.
 4. **Clipboard.** Copy some text. Expect a `clipboard.change` event with a
    preview and hash.
-5. **Video.** Confirm a `.webm` is written and `frame.captured` events appear.
+5. **Video.** Confirm `video.webm`, `video-frames.json`, snapshots under
+   `video-frames/`, and retained images under `frames/`.
 6. **Voice narration.** Turn on the **Narrate** switch before starting, then speak
    a sentence or two during the recording. After Stop, confirm `audio.webm` +
    `audio.json` are written. If the model is not installed, use **Download &
@@ -79,24 +75,27 @@ unavailable on this platform", or a reduced-capture notice).
 
 ## Packaging
 
-`package.json` `build` configures electron-builder for both `mac` and `win`
-(nsis x64). Native modules (`get-windows`, `sharp`, `@img/*`, `ffmpeg-static`,
-`@huggingface/transformers`, `onnxruntime-node`) are listed under `asarUnpack` so
+`package.json` configures electron-builder for macOS and Windows NSIS. Native
+modules (`koffi`, `@koromix/*`, `sharp`, `@img/*`,
+`@huggingface/transformers`, `onnxruntime-node`, and Copilot platform packages)
+are listed under `asarUnpack` so
 their binaries load from disk rather than from inside the asar archive. The
 Whisper model itself is not bundled. It downloads to the app's user-data
 `models` folder only after the user approves the one-time ~250 MB download from
 the HUD or Sessions; recording and core session processing do not wait for it.
 
-Build the Windows installer on Windows (or a Windows CI runner) so the native
-binaries for `win32-x64` are present:
+Build each Windows installer on its matching native machine or CI runner so npm
+selects the correct optional packages:
 
 ```powershell
 npm ci
-npm run dist
+npm run dist:win:x64
+# or, on Windows ARM64:
+npm run dist:win:arm64
 ```
 
-Cross building the Windows target from macOS will not fetch the Windows native
-binaries and is not supported here.
+The Windows workflow uses `windows-latest` and `windows-11-arm`, then verifies the
+PE architecture and packaged native payloads.
 
 ## Known limitations
 
@@ -105,15 +104,11 @@ binaries and is not supported here.
   approach is tracked in issue #7.
 - Semantic UI events (focus/invoke/value via UI Automation) are not implemented
   on either platform yet.
-- Voice narration is verified end to end on macOS and Windows 11 ARM64 running the
-  supported x64 Electron build (mic capture -> `audio.webm` -> offline Whisper
-  transcription -> `narration.json`). `onnxruntime-node` ships prebuilt binaries
-  for `win32-x64`/`win32-arm64`, so no compiler is needed there.
-- A live smoke test on Windows 11 ARM64 covered the supported x64 Electron build,
-  `get-windows` native-addon loading, ffmpeg-backed video and frames, microphone
-  audio persistence, explicit Whisper download and offline transcription, and
-  Copilot analysis. Browser URL and clipboard capture were not re-verified in
-  that test; use the checklist above when validating those sources.
+- `onnxruntime-node` ships prebuilt binaries for `win32-x64` and
+  `win32-arm64`, so narration transcription needs no compiler.
+- A standalone system FFmpeg is consulted only for frame extraction from recordings
+  created before `video-frames.json` existed. It is never bundled or downloaded;
+  Electron's standard LGPL `ffmpeg.dll` codec component remains in the runtime.
 - The Windows paths are also validated by typecheck, a PowerShell parse check of
   the UIA script, and a `win32` describer eval
   (`evals/scenarios/windows-deploy.ts`).

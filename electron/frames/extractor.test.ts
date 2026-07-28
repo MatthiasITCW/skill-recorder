@@ -1,0 +1,171 @@
+import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import test from "node:test";
+import sharp from "sharp";
+
+import type { CapturedVideoFrame } from "../../common/frames";
+import { FrameExtractor, nearestCapturedFrame, sampleCapturedFrames } from "./extractor";
+
+const frame = (file: string, tMs: number): CapturedVideoFrame => ({
+  file,
+  tMs,
+  offsetMs: tMs - 1000,
+  width: 1280,
+  height: 720,
+});
+
+test("nearestCapturedFrame chooses the closest source and prefers the earlier tie", () => {
+  const frames = [frame("a.jpg", 1000), frame("b.jpg", 2000), frame("c.jpg", 3000)];
+  assert.equal(nearestCapturedFrame(frames, 1750)?.file, "b.jpg");
+  assert.equal(nearestCapturedFrame(frames, 2500)?.file, "b.jpg");
+  assert.equal(nearestCapturedFrame(frames, 500)?.file, "a.jpg");
+  assert.equal(nearestCapturedFrame(frames, 5000)?.file, "c.jpg");
+});
+
+test("sampleCapturedFrames never duplicates a 1 fps source when asked for 6 fps", () => {
+  const frames = [
+    frame("a.jpg", 1000),
+    frame("b.jpg", 2000),
+    frame("c.jpg", 3000),
+    frame("d.jpg", 4000),
+  ];
+  const samples = sampleCapturedFrames(frames, 1000, 4000, 6, 24);
+  assert.deepEqual(samples.map((sample) => sample.frame.file), [
+    "a.jpg",
+    "b.jpg",
+    "c.jpg",
+    "d.jpg",
+  ]);
+  assert.equal(new Set(samples.map((sample) => sample.frame.file)).size, samples.length);
+});
+
+test("sampleCapturedFrames returns the nearest static heartbeat for an empty window", () => {
+  const samples = sampleCapturedFrames([frame("only.jpg", 1000)], 5000, 6000, 1, 4);
+  assert.equal(samples.length, 1);
+  assert.equal(samples[0].frame.file, "only.jpg");
+  assert.equal(samples[0].targetMs, 5000);
+});
+
+test("FrameExtractor safely reuses one portable source snapshot for multiple events", async (t) => {
+  const root = await mkdtemp(path.join(tmpdir(), "skill-recorder-frames-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const sourceDir = path.join(root, "video-frames");
+  const framesDir = path.join(root, "frames");
+  await Promise.all([
+    mkdir(sourceDir, { recursive: true }),
+    mkdir(framesDir, { recursive: true }),
+  ]);
+  await writeFile(path.join(sourceDir, "source.jpg"), "test frame");
+  const manifestPath = path.join(root, "video-frames.json");
+  await writeFile(
+    manifestPath,
+    JSON.stringify({
+      version: 1,
+      format: "jpeg",
+      heartbeatMs: 5000,
+      frames: [
+        null,
+        {
+          file: "video-frames\\source.jpg",
+          tMs: 1600,
+          offsetMs: 600,
+          width: 1280,
+          height: 720,
+        },
+      ],
+    }),
+  );
+
+  const extractor = new FrameExtractor({
+    capturedFramesPath: manifestPath,
+    framesDir,
+    anchorEpochMs: 1000,
+  });
+  const added = await extractor.extractAtEpochs([{ tMs: 1500 }, { tMs: 2500 }]);
+
+  assert.equal(added.length, 1);
+  assert.equal(extractor.manifest.length, 1);
+  assert.equal(added[0].tMs, 1600);
+  assert.equal(added[0].offsetSec, 0.6);
+  assert.equal(existsSync(path.join(framesDir, added[0].file)), true);
+});
+
+test("FrameExtractor drops malformed retained frame records", async (t) => {
+  const root = await mkdtemp(path.join(tmpdir(), "skill-recorder-retained-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await mkdir(root, { recursive: true });
+  await writeFile(
+    path.join(root, "frames.json"),
+    JSON.stringify([
+      null,
+      {
+        file: "event_500.jpg",
+        tMs: 1500,
+        offsetSec: 0.5,
+        source: "event",
+        phash: "",
+      },
+    ]),
+  );
+
+  const extractor = new FrameExtractor({ framesDir: root, anchorEpochMs: 1000 });
+  assert.deepEqual(extractor.manifest.map((entry) => entry.file), ["event_500.jpg"]);
+});
+
+test("FrameExtractor deduplicates identical source JPEGs without deleting retained files", async (t) => {
+  const root = await mkdtemp(path.join(tmpdir(), "skill-recorder-dedupe-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const sourceDir = path.join(root, "video-frames");
+  const framesDir = path.join(root, "frames");
+  await Promise.all([
+    mkdir(sourceDir, { recursive: true }),
+    mkdir(framesDir, { recursive: true }),
+  ]);
+  const jpeg = await sharp({
+    create: {
+      width: 32,
+      height: 32,
+      channels: 3,
+      background: { r: 30, g: 90, b: 150 },
+    },
+  })
+    .jpeg()
+    .toBuffer();
+  await Promise.all([
+    writeFile(path.join(sourceDir, "one.jpg"), jpeg),
+    writeFile(path.join(sourceDir, "two.jpg"), jpeg),
+  ]);
+  const manifestPath = path.join(root, "video-frames.json");
+  await writeFile(
+    manifestPath,
+    JSON.stringify({
+      version: 1,
+      format: "jpeg",
+      heartbeatMs: 5000,
+      frames: [
+        { file: "video-frames/one.jpg", tMs: 1600, offsetMs: 600, width: 32, height: 32 },
+        { file: "video-frames/two.jpg", tMs: 3600, offsetMs: 2600, width: 32, height: 32 },
+      ],
+    }),
+  );
+  const options = {
+    capturedFramesPath: manifestPath,
+    framesDir,
+    anchorEpochMs: 1000,
+  };
+  const events = [{ tMs: 1600 }, { tMs: 3600 }];
+  const extractor = new FrameExtractor(options);
+
+  assert.equal((await extractor.extractAtEpochs(events)).length, 1);
+  assert.equal(extractor.manifest.length, 1);
+  assert.equal(existsSync(path.join(framesDir, extractor.manifest[0].file)), true);
+  assert.equal((await extractor.extractAtEpochs(events)).length, 0);
+
+  const reloaded = new FrameExtractor(options);
+  assert.equal((await reloaded.extractAtEpochs(events)).length, 0);
+  assert.equal(reloaded.manifest.length, 1);
+  assert.equal(existsSync(path.join(framesDir, reloaded.manifest[0].file)), true);
+});

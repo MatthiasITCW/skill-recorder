@@ -1,7 +1,6 @@
-import { activeWindow, type Result } from "get-windows";
-
 import type { Collector, CollectorContext } from "../recorder/collector";
 import { createUrlProvider, type UrlProvider } from "./url-provider";
+import type { ActiveWindowResult } from "./window-info";
 
 /** Base cadence for app/title polling. Browsers poll slower (see below). */
 const POLL_MS = 1000;
@@ -19,6 +18,11 @@ const URL_MIN_INTERVAL_MS = 1500;
 /** get-windows options for each capture mode. */
 const FULL = { accessibilityPermission: true, screenRecordingPermission: true } as const;
 const DEGRADED = { accessibilityPermission: false, screenRecordingPermission: false } as const;
+const GET_WINDOWS_PACKAGE = "get-windows";
+
+interface GetWindowsModule {
+  activeWindow(options: typeof FULL | typeof DEGRADED): Promise<ActiveWindowResult | undefined>;
+}
 
 interface Bounds {
   x: number;
@@ -106,16 +110,25 @@ export class ActiveWindowCollector implements Collector {
     this.timer = setTimeout(() => void this.poll(), delay);
   }
 
-  private async read(): Promise<Result | undefined> {
+  private async readPlatform(): Promise<ActiveWindowResult | undefined> {
+    if (process.platform === "win32") {
+      const { readWindowsActiveWindow } = await import("./windows-active-window");
+      return readWindowsActiveWindow();
+    }
+    const { activeWindow } = await import(GET_WINDOWS_PACKAGE) as GetWindowsModule;
+    return activeWindow(this.mode === "full" ? FULL : DEGRADED);
+  }
+
+  private async read(): Promise<ActiveWindowResult | undefined> {
     try {
-      return await activeWindow(this.mode === "full" ? FULL : DEGRADED);
+      return await this.readPlatform();
     } catch (err) {
-      if (this.mode === "full") {
+      if (process.platform !== "win32" && this.mode === "full") {
         this.mode = "degraded";
         this.ctx?.log.warn(
           "Reduced capture: window titles/URLs need a screen-capture / accessibility permission.",
         );
-        return activeWindow(DEGRADED);
+        return this.readPlatform();
       }
       throw err;
     }
@@ -138,7 +151,7 @@ export class ActiveWindowCollector implements Collector {
     }
   }
 
-  private process(win: Result): void {
+  private process(win: ActiveWindowResult): void {
     if (!this.ctx) return;
     const owner = (win.owner ?? {}) as {
       name?: string;
@@ -148,7 +161,7 @@ export class ActiveWindowCollector implements Collector {
     };
     const app = owner.name || "unknown";
     const title = this.captureTitles ? (win.title ?? "") : "";
-    const bounds = (win as { bounds?: Bounds }).bounds;
+    const bounds = win.bounds as Bounds | undefined;
 
     const appChanged = app !== this.lastApp;
     const titleChanged = !!title && title !== this.lastTitle;

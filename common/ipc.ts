@@ -16,6 +16,8 @@ export interface SessionSummary {
   startedAt: number | null;
   stoppedAt: number | null;
   durationMs: number | null;
+  /** Total bytes occupied by all files under this session's directory. */
+  sizeBytes: number | null;
   /** True once post-processing produced a bundle. */
   processed: boolean;
   hasVideo: boolean;
@@ -198,22 +200,16 @@ export interface DeleteSessionResult {
   error?: string;
 }
 
-export interface FfmpegInfo {
-  ok: boolean;
-  path: string | null;
-  source: "system" | "bundled" | "missing";
-}
-
 export interface CopilotInfo {
   ok: boolean;
   path: string | null;
 }
 
-/** Whether the native window-tracking addon (get-windows) loaded for this platform. */
+/** Which foreground-window provider is available on this platform. */
 export interface ActiveWindowInfo {
   ok: boolean;
-  /** The prebuilt binding path we resolved, for troubleshooting. */
-  bindingPath: string | null;
+  provider: "koffi" | "get-windows" | "missing";
+  path: string | null;
   error?: string;
 }
 
@@ -237,7 +233,6 @@ export interface DoctorSource {
 
 export interface DoctorReport {
   platform: NodeJS.Platform;
-  ffmpeg: FfmpegInfo;
   copilotCli: CopilotInfo;
   activeWindow: ActiveWindowInfo;
   browserUrl: BrowserUrlInfo;

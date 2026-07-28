@@ -252,7 +252,7 @@ export function Recorder() {
           <Row
             label="window tracking"
             status={doctor.activeWindow.ok ? "good" : "bad"}
-            note={doctor.activeWindow.ok ? "native" : "addon missing"}
+            note={doctor.activeWindow.ok ? doctor.activeWindow.provider : "provider missing"}
           />
           {doctor.activeSources.some((s) => s.key === "browserUrls") && (
             <Row
@@ -261,11 +261,6 @@ export function Recorder() {
               note={doctor.browserUrl.supported ? doctor.browserUrl.kind : "not on this OS"}
             />
           )}
-          <Row
-            label="ffmpeg"
-            status={doctor.ffmpeg.ok ? "good" : "bad"}
-            note={doctor.ffmpeg.ok ? doctor.ffmpeg.source : "missing"}
-          />
           <Row
             label="copilot CLI"
             status={doctor.copilotCli.ok ? "good" : "bad"}

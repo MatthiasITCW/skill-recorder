@@ -93,11 +93,11 @@ export const CORRELATION_DEFAULTS: Required<CorrelationOptions> = {
 
 /** Sampling defaults for the two kinds of opportunistic probe. */
 export const PROBE_DEFAULTS = {
-  /** Unexplained-change probes: zoom in, sample densely. */
-  padFps: 6,
+  /** Unexplained-change probes: inspect every available source snapshot. */
+  padFps: 1,
   padMaxFrames: 24,
   /** Event-less gap probes: cheap low-fps sweep just to notice change. */
-  gapFps: 1.5,
+  gapFps: 1,
   gapMaxFrames: 12,
 } as const;
 

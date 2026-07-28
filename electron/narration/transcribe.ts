@@ -1,27 +1,13 @@
-import { execFile } from "node:child_process";
-import { createRequire } from "node:module";
-import { promisify } from "node:util";
-
 import type { NarrationSegment } from "../../common/narration";
+import { decodeAudioFile } from "../audio/decode";
 import { createLogger } from "../logger";
+import { detectSilence, type SilenceSpan } from "./audio-analysis";
 import { narrationModelId, type AsrPipeline } from "./whisper";
 
 const log = createLogger("Narration/transcribe");
-const require = createRequire(import.meta.url);
-const execFileAsync = promisify(execFile);
-
-const ffmpegPath = require("ffmpeg-static") as string;
 
 // Whisper is trained on 16 kHz mono audio.
 const SAMPLE_RATE = 16_000;
-// f32le at 16 kHz mono is 64 KB per second; 1 GB covers ~4.5 h of narration.
-const MAX_PCM_BUFFER = 1024 * 1024 * 1024;
-
-/** A silence interval in the decoded audio's own clock (seconds). */
-interface SilenceSpan {
-  start: number;
-  end: number;
-}
 
 /**
  * Transcribe one session's narration webm into session-clock segments.
@@ -37,14 +23,12 @@ export async function transcribeNarration(
   durationMs: number,
   pipe: AsrPipeline,
 ): Promise<{ model: string; segments: NarrationSegment[] }> {
-  const samples = await decodePcm(audioPath);
+  const samples = await decodeAudioFile(audioPath);
   if (samples.length === 0) {
     throw new Error("Narration audio decoded to zero samples.");
   }
 
-  // Silence detection runs on the same file and only reads the audio, so its
-  // intervals line up with the decoded samples and never shift timestamps.
-  const silences = await detectSilence(audioPath);
+  const silences = detectSilence(samples);
 
   const result = await pipe(samples, {
     return_timestamps: true,
@@ -76,68 +60,6 @@ export async function transcribeNarration(
   segments.sort((a, b) => a.atMs - b.atMs);
   log.info(`transcribed ${raw.length} chunks -> ${segments.length} narration segments`);
   return { model: narrationModelId(), segments };
-}
-
-/** Decode any container into raw 16 kHz mono float samples (no WAV/dep needed). */
-async function decodePcm(audioPath: string): Promise<Float32Array> {
-  const { stdout } = await execFileAsync(
-    ffmpegPath,
-    [
-      "-hide_banner",
-      "-loglevel", "error",
-      "-i", audioPath,
-      "-ac", "1",
-      "-ar", String(SAMPLE_RATE),
-      "-f", "f32le",
-      "pipe:1",
-    ],
-    { encoding: "buffer", maxBuffer: MAX_PCM_BUFFER },
-  );
-
-  const buf = stdout as unknown as Buffer;
-  // Copy into a fresh, 4-byte-aligned ArrayBuffer before viewing as Float32:
-  // execFile's Buffer offset is not guaranteed aligned.
-  const usableBytes = buf.byteLength - (buf.byteLength % 4);
-  const ab = new ArrayBuffer(usableBytes);
-  new Uint8Array(ab).set(buf.subarray(0, usableBytes));
-  return new Float32Array(ab);
-}
-
-/** Run ffmpeg's silencedetect and parse the intervals it logs to stderr. */
-async function detectSilence(audioPath: string): Promise<SilenceSpan[]> {
-  let stderr = "";
-  try {
-    const res = await execFileAsync(
-      ffmpegPath,
-      [
-        "-hide_banner",
-        "-i", audioPath,
-        "-af", "silencedetect=noise=-35dB:d=0.6",
-        "-f", "null",
-        "-",
-      ],
-      { maxBuffer: 8 * 1024 * 1024 },
-    );
-    stderr = res.stderr;
-  } catch (err) {
-    // silencedetect over the null muxer normally exits 0; treat any failure as
-    // "no silence info" rather than aborting transcription.
-    stderr = (err as { stderr?: string }).stderr ?? "";
-  }
-
-  const spans: SilenceSpan[] = [];
-  let pendingStart: number | null = null;
-  for (const m of stderr.matchAll(/silence_(start|end):\s*(-?[0-9.]+)/g)) {
-    const kind = m[1];
-    const value = Number(m[2]);
-    if (kind === "start") {
-      pendingStart = value;
-    } else if (pendingStart != null) {
-      spans.push({ start: pendingStart, end: value });
-      pendingStart = null;
-    }
-  }
-  return spans;
 }
 
 /** A chunk is dropped when its midpoint sits inside a detected silence span. */

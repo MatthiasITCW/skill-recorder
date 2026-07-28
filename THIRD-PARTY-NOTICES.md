@@ -4,8 +4,9 @@ Skill Recorder is licensed under the MIT License (see [`LICENSE`](./LICENSE)).
 
 Packaged/distributed builds include third-party components that are covered by
 their own license terms. This file summarizes the notable ones. The complete
-license text for every dependency lives in its own directory under
-`node_modules/<package>/` (for example `LICENSE` or `LICENSE.md`).
+license notices retained by Electron are distributed as `LICENSE.electron.txt`
+and `LICENSES.chromium.html`; package metadata and the source links below cover
+the other native runtime components.
 
 The dependency tree is otherwise permissive (MIT, ISC, Apache-2.0, BSD,
 BlueOak-1.0.0) and compatible with distributing this application under MIT.
@@ -22,23 +23,50 @@ BlueOak-1.0.0) and compatible with distributing this application under MIT.
   application's own license, including distribution under an open-source (MIT)
   license.
 
-### FFmpeg — via `ffmpeg-static`
-- ⚠️ `ffmpeg-static` currently ships a **GPL-3.0-or-later** FFmpeg build. This is
-  the one bundled component that is **not** compatible with an MIT-only
-  distribution.
-- Tracked in **issue #11**: planned replacement with an **LGPL-2.1** FFmpeg build
-  (e.g. `@ffmpeg-installer/ffmpeg`). This project only decodes VP8/VP9 WebM and
-  writes JPEG frames, so an LGPL build is fully sufficient.
-- FFmpeg is invoked as a separate subprocess; it is not linked into the app.
+### Electron / Chromium media codecs
+- License: Electron is **MIT**. Its Chromium runtime includes `ffmpeg.dll`
+  (`libffmpeg.dylib` / `libffmpeg.so` on other platforms), a dynamically loaded
+  codec library whose bundled notice identifies FFmpeg as **LGPL-2.1-or-later**.
+  GPL portions require an explicit non-default FFmpeg build configuration.
+- Electron's `LICENSE.electron.txt` and `LICENSES.chromium.html` are retained in
+  every packaged application.
+- The currently pinned source is Electron
+  [`v43.1.1`](https://github.com/electron/electron/tree/v43.1.1), Chromium
+  [`150.0.7871.114`](https://chromium.googlesource.com/chromium/src/+/150.0.7871.114),
+  and Chromium FFmpeg revision
+  [`ad41607c61898cf7150e0fb20fe4bbabd44922a3`](https://chromium.googlesource.com/chromium/third_party/ffmpeg/+/ad41607c61898cf7150e0fb20fe4bbabd44922a3).
+- Chromium records the WebM media, captures screen snapshots, and decodes
+  narration audio. Skill Recorder does **not** distribute `ffmpeg-static` or a
+  standalone FFmpeg executable.
+- A user-installed standalone FFmpeg may be invoked only to read a recording
+  created before snapshot manifests were introduced. That executable is not part
+  of this app.
 
-### libvips — via `sharp` / `@img/sharp-libvips-*`
-- License: **LGPL-3.0-or-later** — a prebuilt shared library loaded dynamically
-  by `sharp`. Compatible with MIT distribution; the library remains replaceable.
-- `sharp` itself is **Apache-2.0**.
+### Sharp / libvips — `sharp` and `@img/sharp-*`
+- `sharp` is **Apache-2.0**. Its Windows native packages are
+  **Apache-2.0 AND LGPL-3.0-or-later**; other platforms load the corresponding
+  **LGPL-3.0-or-later** `@img/sharp-libvips-*` package.
+- The currently pinned source is Sharp
+  [`v0.34.5`](https://github.com/lovell/sharp/tree/v0.34.5), its reproducible
+  packaging scripts
+  [`sharp-libvips v1.2.4`](https://github.com/lovell/sharp-libvips/tree/v1.2.4),
+  and libvips
+  [`v8.17.3`](https://github.com/libvips/libvips/tree/v8.17.3). The unpacked
+  native module remains replaceable in the packaged application.
+
+### LGPL release materials
+
+Before publishing an installer, its release must provide archives of the exact
+source revisions above, the applicable LGPL text, and any build/object material needed
+to relink modified LGPL components. These materials must be available beside
+the installer, or through a written offer valid for at least three years; do
+not rely only on third-party hosting remaining available.
 
 ### Other native modules
 - `get-windows` — MIT
-- `sharp` — Apache-2.0 (retain its `LICENSE` / `NOTICE`)
+- `koffi` / `@koromix/koffi-*` — MIT; used for Win32 foreground-window calls,
+  including the native Windows ARM64 build.
+- `sharp` — Apache-2.0; see the Sharp/libvips section for native payload terms
 
 ## Apache-2.0 components
 Some dependencies (e.g. `sharp`) are Apache-2.0, which requires retaining their

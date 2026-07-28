@@ -1008,6 +1008,11 @@ button:focus-visible,
   color: var(--faint);
 }
 
+.sess-size {
+  font-size: 9px;
+  color: var(--faint);
+}
+
 /* Per-row delete: a quiet trash affordance revealed on hover/focus, plus an
    inline confirm that swaps in so deletion always takes a deliberate second tap. */
 .sess-row {

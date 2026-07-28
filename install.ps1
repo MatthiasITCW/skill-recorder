@@ -42,6 +42,14 @@ function Have($c) { [bool](Get-Command $c -ErrorAction SilentlyContinue) }
 # copilot`). Get-Command alone misses an extensionless `copilot` launcher or a
 # Windows App Execution Alias that `where.exe` — and therefore the app — finds.
 function Test-CopilotAvailable {
+  # 1. Bundled in node_modules (what the Electron app actually uses)
+  $arch = if ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture -eq 'Arm64') { 'arm64' } else { 'x64' }
+  $bundled = Join-Path $InstallDir "node_modules\@github\copilot-win32-$arch\copilot.exe"
+  if (Test-Path -LiteralPath $bundled) { return $true }
+  # 2. GitHub Copilot desktop app
+  $ghcpApp = Join-Path $env:LOCALAPPDATA 'Programs\GitHub Copilot\github.exe'
+  if (Test-Path -LiteralPath $ghcpApp) { return $true }
+  # 3. copilot on PATH (Get-Command or where.exe)
   if (Have 'copilot') { return $true }
   try { $null = & where.exe copilot 2>$null; return ($LASTEXITCODE -eq 0) } catch { return $false }
 }
@@ -124,9 +132,6 @@ function Initialize-NodeRuntime {
 }
 
 # --- prerequisites ---------------------------------------------------------
-if (-not (Test-CopilotAvailable)) {
-  Write-Warning "GitHub Copilot CLI ('copilot') not found on PATH. The app will launch, but recording analysis and skill/automation building need it — install it and sign in first."
-}
 
 # --- fetch source ----------------------------------------------------------
 $versionToken = ''
@@ -177,6 +182,11 @@ if (-not (Test-Path 'node_modules') -or ((Get-Content -LiteralPath $depsStamp -E
   Set-Content -LiteralPath $depsStamp -Value $depsNow
 } else {
   Info "Dependencies already up to date — skipping npm install."
+}
+
+# --- check for Copilot CLI (bundled, desktop app, or PATH) -----------------
+if (-not (Test-CopilotAvailable)) {
+  Write-Warning "No Copilot CLI found. Install GitHub Copilot (https://github.com/features/copilot) or ensure the bundled package installed correctly. The app will launch, but recording analysis needs it."
 }
 
 # --- build (only when the source or dependencies changed) ------------------

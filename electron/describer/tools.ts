@@ -323,15 +323,23 @@ export function createDescriberTools(ctx: ToolContext): Tool[] {
         },
         intent: { type: "string", description: "One sentence naming the user's overall goal." },
         intentConfidence: { type: "string", enum: ["high", "medium", "low"] },
-        intentRationale: { type: "string", description: "1–2 sentences of evidence for the intent." },
+        intentRationale: { type: "string", description: '1–2 sentences of evidence for the intent, in the past tense addressed to the user (e.g. "Navigated to the blog, copied a passage, then searched Google for it"). Avoid the third person.' },
         steps: {
           type: "array",
           items: {
             type: "object",
             properties: {
               id: { type: "string", description: "Stable short id, e.g. \"s1\"." },
-              title: { type: "string" },
-              detail: { type: "string" },
+              title: {
+                type: "string",
+                description:
+                  'A short label naming what the user did, in the past tense addressed to the user (e.g. "Opened the Teams event link", "Searched Google for the passage"). Not imperative or third person.',
+              },
+              detail: {
+                type: "string",
+                description:
+                  'What happened and why it matters, in 1–3 sentences. Write in the past tense addressed to the user, starting with a past-tense verb (e.g. "Opened the Copilot Studio technical guide."). Do not use the third person ("The user…", "User was…") or the present tense.',
+              },
               startMs: { type: "number", description: "Step start (atMs)." },
               endMs: { type: "number", description: "Step end (atMs)." },
               apps: { type: "array", items: { type: "string" } },

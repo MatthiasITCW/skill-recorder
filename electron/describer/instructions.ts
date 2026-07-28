@@ -118,11 +118,19 @@ Guardrails — do not over-prune:
 - **intent**: one sentence naming the user's goal, e.g. "Research and compare
   articles on building better habits" or "Submit an expense report".
 - **intentConfidence**: "high" | "medium" | "low".
-- **intentRationale**: 1–2 sentences citing the evidence for the intent.
+- **intentRationale**: 1–2 sentences citing the evidence for the intent, in the same past-tense
+  voice addressed to the user — e.g. "Navigated from the technical guide to the blog post, copied
+  a passage, then searched Google for it." Avoid the third person ("The user…", "User was…").
 - **steps[]**: ordered; each is:
   - **id**: stable short id you assign, "s1", "s2", …
-  - **title**: short imperative label, e.g. "Search Google for 'atomic habits'".
-  - **detail**: 1–3 sentences of what happened and why it matters.
+  - **title**: a short label naming what the user did, in the **past tense and addressed to the
+    user** — start with a past-tense verb, e.g. "Searched Google for 'atomic habits'" or "Opened
+    the Teams event link". Not imperative ("Search…", "Open…") or third person ("User searched…").
+  - **detail**: 1–3 sentences of what happened and why it matters, written in the **past tense
+    and addressed to the user** — a narration of their own actions. Start with a past-tense verb
+    and omit the subject, e.g. "Opened the Copilot Studio technical guide in Edge." or "Copied a
+    passage from the article and pasted it into Google." Do NOT use the third person ("The user…",
+    "User was…") or the present/continuous tense.
   - **startMs / endMs**: the step's \`atMs\` span when known.
   - **apps[]**: apps involved (e.g. ["Microsoft Edge"]).
   - **evidence[]**: brief refs you relied on — event types, a URL, a frame file, a

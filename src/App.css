@@ -1815,29 +1815,61 @@ button:focus-visible,
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 12px;
+  gap: 14px;
   color: var(--muted);
   font-size: 13px;
 }
 
-.cloud-analysis-note {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  max-width: 610px;
+.ws-empty-lead {
   margin: 0;
-  padding: 12px 14px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--surface-2);
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.45;
+  color: var(--text);
+  font-size: 14px;
 }
 
-.cloud-analysis-note strong {
+.analyze-disclosure {
+  max-width: 620px;
+  margin: -2px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.analyze-disclosure > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  list-style: none;
+  color: var(--muted);
+  user-select: none;
+}
+
+.analyze-disclosure > summary::-webkit-details-marker {
+  display: none;
+}
+
+.analyze-disclosure > summary::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform 0.15s ease;
+}
+
+.analyze-disclosure[open] > summary::before {
+  transform: rotate(45deg);
+}
+
+.analyze-disclosure > summary:hover {
   color: var(--text);
-  font-size: 12.5px;
+}
+
+.analyze-disclosure > p {
+  margin: 8px 0 0;
+  max-width: 620px;
+  line-height: 1.5;
+  color: var(--muted);
 }
 
 .cloud-analysis-caution {
@@ -1854,11 +1886,6 @@ button:focus-visible,
   border-radius: 10px;
   padding: 12px 14px;
   color: var(--text);
-}
-
-.voice-card.quiet {
-  border-color: var(--line);
-  background: var(--surface);
 }
 
 .voice-card-copy {

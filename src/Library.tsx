@@ -415,7 +415,6 @@ function AnalysisWorkspace({
   const voiceLanguage = narrationLanguageLabel(
     summary.narrationLanguage ?? DEFAULT_NARRATION_LANGUAGE,
   );
-  const voiceEmpty = summary.hasNarration && summary.narrationSegmentCount === 0;
   const voiceBusy =
     narrationStatus?.activeSessionId === sessionId && narrationStatus.phase !== "idle";
   const voiceError =
@@ -618,15 +617,6 @@ function AnalysisWorkspace({
           </p>
         )}
 
-        {voiceEmpty && (
-          <div className="voice-card quiet">
-            <div className="voice-card-copy">
-              <strong>No speech detected</strong>
-              <span>The saved voice recording was transcribed, but it contained no usable speech.</span>
-            </div>
-          </div>
-        )}
-
         {voiceStale && !analyzing && (
           <div className="voice-card">
             <div className="voice-card-copy">
@@ -662,19 +652,22 @@ function AnalysisWorkspace({
 
         {summary.processed && !analysis && !analyzing && (
           <div className="ws-empty">
-            <p>See what you did in this recording, step by step.</p>
-            <div className="cloud-analysis-note">
-              <strong>GitHub Copilot cloud analysis</strong>
-              <span>
+            <p className="ws-empty-lead">See what you did in this recording, step by step.</p>
+            <button className="record-cta" onClick={run}>
+              Analyze recording
+            </button>
+            <details className="analyze-disclosure">
+              <summary>What gets sent to GitHub Copilot</summary>
+              <p>
                 Analyze sends the event timeline—including window and document titles, URLs,
                 and clipboard previews—plus extracted screen images, narration text, and other
-                content you provide to GitHub&apos;s cloud service for processing by GitHub Copilot.
-              </span>
-              <span className="cloud-analysis-caution">
-                Do not analyze a recording that may contain passwords, access tokens, API keys,
-                credentials, secrets, or other sensitive or confidential information.
-              </span>
-            </div>
+                content you provide to GitHub&apos;s cloud service for processing by GitHub Copilot.{" "}
+                <span className="cloud-analysis-caution">
+                  Do not analyze a recording that may contain passwords, access tokens, API keys,
+                  credentials, secrets, or other sensitive or confidential information.
+                </span>
+              </p>
+            </details>
             {voicePending && (
               <p className="voice-analysis-note">
                 {narrationStatus?.model === "ready"
@@ -682,9 +675,6 @@ function AnalysisWorkspace({
                   : `Your ${voiceLanguage} voice is transcribed in the same language first, then analyzed. The first run downloads a ${NARRATION_MODEL_DOWNLOAD_LABEL} voice model once.`}
               </p>
             )}
-            <button className="record-cta" onClick={run}>
-              Analyze recording
-            </button>
           </div>
         )}
 

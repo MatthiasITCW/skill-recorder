@@ -16,9 +16,13 @@ export type Confidence = z.infer<typeof Confidence>;
 export const AnalysisStepSchema = z.object({
   /** Stable id assigned by the agent (e.g. "s1"); used to target feedback. */
   id: z.string(),
-  /** Short imperative label, e.g. "Search Google for 'interesting articles'". */
+  /** Short past-tense label addressed to the user, e.g. "Searched Google for 'interesting articles'". */
   title: z.string(),
-  /** 1–3 sentences of what happened and why it matters. */
+  /**
+   * 1–3 sentences of what happened and why it matters, in the past tense and
+   * addressed to the user (verb-first, e.g. "Opened the technical guide."), not
+   * the third person ("The user…").
+   */
   detail: z.string(),
   /** Wall-clock epoch span (ms) this step covers, when known. */
   startMs: z.number().optional(),
@@ -41,7 +45,7 @@ export const AnalysisSubmissionSchema = z.object({
   /** The user's overall goal, e.g. "Submit an expense report". */
   intent: z.string(),
   intentConfidence: Confidence.default("medium"),
-  /** Why the agent believes this is the intent (evidence-grounded). */
+  /** Why the agent believes this is the intent (evidence-grounded), past tense, addressed to the user. */
   intentRationale: z.string().default(""),
   steps: z.array(AnalysisStepSchema).default([]),
 });

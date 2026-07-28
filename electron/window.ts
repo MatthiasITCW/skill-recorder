@@ -9,6 +9,7 @@ import {
   initialRecordingControlsBounds,
   resizeRecordingControlsBounds,
 } from "./recording-controls-bounds";
+import { windowIcon } from "./icons";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -49,6 +50,7 @@ export function createRecorderWindow(): BrowserWindow {
     maximizable: false,
     fullscreenable: false,
     title: "Skill Recorder",
+    icon: windowIcon(),
     backgroundColor: "#faf8f5",
     webPreferences: {
       preload: path.join(dirname, "preload.cjs"),
@@ -183,6 +185,7 @@ export function createLibraryWindow(recorder: BrowserWindow): BrowserWindow {
     minHeight: 480,
     show: false,
     title: "Skill Recorder: Sessions",
+    icon: windowIcon(),
     backgroundColor: "#faf8f5",
     webPreferences: {
       preload: path.join(dirname, "preload.cjs"),

@@ -1,9 +1,10 @@
 import { Menu, Tray, nativeImage } from "electron";
 
+import { trayIcon } from "./icons";
 import type { RecorderController } from "./recorder/controller";
 
-/** Build a 16x16 tray glyph in code so we don't depend on an icon asset yet. */
-function trayIcon(): Electron.NativeImage {
+/** Last-resort tray glyph drawn in code, used only if the icon assets are missing. */
+function fallbackTrayIcon(): Electron.NativeImage {
   const size = 16;
   const buf = Buffer.alloc(size * size * 4);
   const c = (size - 1) / 2;
@@ -13,9 +14,9 @@ function trayIcon(): Electron.NativeImage {
     const x = i % size;
     const y = Math.floor(i / size);
     const inside = (x - c) ** 2 + (y - c) ** 2 <= r * r;
-    buf[o] = 70; // B
-    buf[o + 1] = 70; // G
-    buf[o + 2] = 225; // R
+    buf[o] = 42; // B
+    buf[o + 1] = 54; // G
+    buf[o + 2] = 237; // R
     buf[o + 3] = inside ? 255 : 0; // A
   }
   return nativeImage.createFromBitmap(buf, { width: size, height: size });
@@ -27,7 +28,7 @@ export function createTray(
   showRecorderWindow: () => void,
   showRecordingControls: () => void,
 ): Tray {
-  const tray = new Tray(trayIcon());
+  const tray = new Tray(trayIcon() ?? fallbackTrayIcon());
   tray.setToolTip("Skill Recorder");
 
   const rebuild = () => {

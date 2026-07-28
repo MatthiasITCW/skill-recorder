@@ -1,4 +1,4 @@
-import { copyFileSync, mkdirSync } from "node:fs";
+import { copyFileSync, mkdirSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -15,6 +15,12 @@ function copyStaticAssets(): void {
   mkdirSync(out, { recursive: true });
   mkdirSync(path.join(out, "video"), { recursive: true });
   mkdirSync(path.join(out, "audio"), { recursive: true });
+  const icons = path.join(out, "assets", "icons");
+  mkdirSync(icons, { recursive: true });
+  const iconSrc = path.join(rootDir, "electron", "assets", "icons");
+  for (const file of readdirSync(iconSrc)) {
+    copyFileSync(path.join(iconSrc, file), path.join(icons, file));
+  }
   copyFileSync(path.join(rootDir, "electron", "preload.cjs"), path.join(out, "preload.cjs"));
   copyFileSync(
     path.join(rootDir, "electron", "video", "capture.html"),

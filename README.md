@@ -49,6 +49,10 @@ pipe:
 commit="<40-character-release-commit>"; curl -fsSL "https://raw.githubusercontent.com/adilei/skill-recorder/$commit/install.sh" | SKILL_RECORDER_COMMIT="$commit" SKILL_RECORDER_DETACHED=1 bash
 ```
 
+On macOS the installer also adds a **Skill Recorder (Source)** app to `~/Applications`, so
+you can relaunch it later from Spotlight, Launchpad, or the Dock without re-running the
+command. On Ubuntu it adds a matching application entry.
+
 **Windows**
 
 Use the commit-pinned source installer documented in [`INSTALL.md`](INSTALL.md). The

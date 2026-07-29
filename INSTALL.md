@@ -52,8 +52,9 @@ The source installers:
    lacks reviewed legal material.
 7. Build locally, retain repository/dependency licenses, and record hashes for
    the installed Electron and Copilot executables.
-8. Create a Start Menu shortcut on Windows, a launcher on macOS, and a launcher
-   plus desktop entry on Ubuntu.
+8. Create a Start Menu shortcut on Windows; a launcher plus a `Skill Recorder
+   (Source)` app in `~/Applications` (reachable from Spotlight, Launchpad, and the
+   Dock) on macOS; and a launcher plus desktop entry on Ubuntu.
 
 No administrator access, global Node.js installation, or global Copilot CLI
 installation is required. GitHub Copilot authentication, entitlement, and
@@ -127,6 +128,20 @@ Default installation roots:
 Every revision is installed under `versions/<commit>`. The current launcher is
 updated only after the selected revision passes dependency, license, integrity,
 and build checks.
+
+## Relaunching after it closes
+
+After a successful install you can reopen Skill Recorder without re-running the
+installer:
+
+- Windows: the **Skill Recorder (Source)** Start Menu shortcut.
+- macOS: **Skill Recorder (Source)** in `~/Applications`, searchable from
+  Spotlight and Launchpad and pinnable to the Dock.
+- Ubuntu: the **Skill Recorder (Source)** desktop entry, or run the launcher
+  script directly.
+
+Each entry runs the current launcher, so it always starts the most recently
+installed revision.
 
 ## Manual developer setup
 
@@ -236,6 +251,7 @@ Remove-Item "$env:LOCALAPPDATA\SkillRecorder" -Recurse -Force
 ### macOS uninstall
 
 ```sh
+rm -rf "$HOME/Applications/Skill Recorder (Source).app"
 rm -rf "$HOME/Library/Application Support/SkillRecorder"
 ```
 

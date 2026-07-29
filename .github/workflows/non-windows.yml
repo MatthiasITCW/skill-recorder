@@ -48,6 +48,16 @@ jobs:
           SKILL_RECORDER_NO_LAUNCH: "1"
         run: bash install.sh
 
+      - name: Verify macOS relaunch app bundle
+        if: runner.os == 'macOS'
+        run: |
+          app="$HOME/Applications/Skill Recorder (Source).app"
+          stub="$app/Contents/MacOS/skill-recorder-source"
+          plist="$app/Contents/Info.plist"
+          test -d "$app"
+          test -x "$stub"
+          plutil -lint "$plist"
+
       - run: npm ci
       - run: npm run compliance:licenses
       - name: Verify platform license coverage

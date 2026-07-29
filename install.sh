@@ -349,6 +349,63 @@ build_source_install() {
   STAGING_DIR=""
 }
 
+write_macos_app() {
+  local launcher="$1"
+  local applications="$HOME/Applications"
+  local bundle="$applications/Skill Recorder (Source).app"
+  local contents="$bundle/Contents"
+  local macos_dir="$contents/MacOS"
+  local executable_name="skill-recorder-source"
+  local stub="$macos_dir/$executable_name"
+  local plist="$contents/Info.plist"
+  local stub_temporary plist_temporary
+
+  mkdir -p "$applications"
+  rm -rf -- "$bundle"
+  mkdir -p "$macos_dir"
+
+  stub_temporary="$macos_dir/.skill-recorder-source.$$"
+  {
+    printf '%s\n' '#!/bin/bash'
+    printf 'exec %q "$@"\n' "$launcher"
+  } > "$stub_temporary"
+  chmod 755 "$stub_temporary"
+  mv -f "$stub_temporary" "$stub"
+
+  plist_temporary="$contents/.Info.plist.$$"
+  {
+    printf '%s\n' \
+      '<?xml version="1.0" encoding="UTF-8"?>' \
+      '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' \
+      '<plist version="1.0">' \
+      '<dict>' \
+      '  <key>CFBundleName</key>' \
+      '  <string>Skill Recorder (Source)</string>' \
+      '  <key>CFBundleDisplayName</key>' \
+      '  <string>Skill Recorder (Source)</string>' \
+      '  <key>CFBundleIdentifier</key>' \
+      '  <string>com.skillrecorder.source</string>' \
+      '  <key>CFBundleExecutable</key>' \
+      "  <string>$executable_name</string>" \
+      '  <key>CFBundlePackageType</key>' \
+      '  <string>APPL</string>' \
+      '  <key>CFBundleShortVersionString</key>' \
+      '  <string>1.0</string>' \
+      '  <key>CFBundleVersion</key>' \
+      '  <string>1.0</string>' \
+      '  <key>LSMinimumSystemVersion</key>' \
+      '  <string>10.15</string>' \
+      '  <key>NSHighResolutionCapable</key>' \
+      '  <true/>' \
+      '</dict>' \
+      '</plist>'
+  } > "$plist_temporary"
+  chmod 644 "$plist_temporary"
+  mv -f "$plist_temporary" "$plist"
+
+  APP_BUNDLE="$bundle"
+}
+
 write_launcher() {
   local source_directory="$1"
   local electron="$2"
@@ -385,6 +442,10 @@ write_launcher() {
     mv -f "$desktop_temporary" "$desktop"
     DESKTOP_ENTRY="$desktop"
   fi
+
+  if [ "$PLATFORM" = "darwin" ]; then
+    write_macos_app "$launcher"
+  fi
 }
 
 install_node_runtime
@@ -405,6 +466,9 @@ info "License materials remain in the source tree, dependency packages, and .com
 info "Launcher: $LAUNCHER"
 if [ -n "${DESKTOP_ENTRY:-}" ]; then
   info "Ubuntu desktop entry: $DESKTOP_ENTRY"
+fi
+if [ -n "${APP_BUNDLE:-}" ]; then
+  info "macOS app: $APP_BUNDLE"
 fi
 warn "This locally generated build is for local execution only. Do not redistribute it."
 

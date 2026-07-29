@@ -1,6 +1,7 @@
 import { z } from "zod";
 
-import { SkillArchitecture, SkillInputSchema, slugifySkillName } from "./skill";
+import { SkillArchitecture, slugifySkillName } from "./skill";
+import { migrateLegacyInputsToValues, renderValues, ValueSchema } from "./values";
 
 /**
  * The Automation Builder's contract — the automation-flavoured sibling of
@@ -94,7 +95,9 @@ export type AutomationStepDraft = z.infer<typeof AutomationStepDraftSchema>;
  * The agent's proposed plan, shown to the user before any automation is written.
  * This is what `propose_automation_plan` submits and what the user refines in NL.
  */
-export const AutomationPlanSchema = z.object({
+export const AutomationPlanSchema = z.preprocess(
+  migrateLegacyInputsToValues,
+  z.object({
   /** Target architecture this plan is written for. */
   architecture: SkillArchitecture,
   /** kebab-case automation id, e.g. "daily-lead-digest". */
@@ -109,16 +112,17 @@ export const AutomationPlanSchema = z.object({
   generalization: z.string().default(""),
   /** The proposed trigger (schedule + optional condition). */
   trigger: AutomationTriggerSchema,
-  /** Inputs the automation needs and where each comes from (informational; the
-   *  automation resolves them inside its step prompts). */
-  inputs: z.array(SkillInputSchema).default([]),
+  /** Named fixed literals (URLs / paths / constants) the step prompts reference by
+   *  `{{id}}`; substituted deterministically at export. */
+  values: z.array(ValueSchema).default([]),
   /** The generalized procedure, as ordered label + prompt steps. */
   steps: z.array(AutomationStepDraftSchema).default([]),
   /** Optional per-automation model override. */
   model: z.string().default(""),
   /** Built-in Scout skills the steps rely on (for the user's awareness). */
   skillNames: z.array(z.string()).default([]),
-});
+  }),
+);
 export type AutomationPlan = z.infer<typeof AutomationPlanSchema>;
 
 /**
@@ -136,6 +140,8 @@ export const AutomationSubmissionSchema = z.object({
   condition: z.string().default(""),
   conditionCheckInterval: z.number().int().positive().optional(),
   model: z.string().default(""),
+  /** Fixed values substituted into the step prompts at export (the pill literals). */
+  values: z.array(ValueSchema).default([]),
   /** The generalized, ordered steps (each an NL prompt). */
   steps: z.array(AutomationStepDraftSchema).min(1),
 });
@@ -155,6 +161,8 @@ export const BuiltAutomationSchema = z.object({
   conditionCheckInterval: z.number().int().positive().optional(),
   model: z.string().default(""),
   steps: z.array(AutomationStepDraftSchema),
+  /** Fixed values substituted into the step prompts at export (the pill literals). */
+  values: z.array(ValueSchema).default([]),
   /** The plan the automation was built from (for the UI / re-export). */
   plan: AutomationPlanSchema.nullable().default(null),
   createdAt: z.number(),
@@ -184,6 +192,7 @@ export function toBuiltAutomation(
     conditionCheckInterval: submission.conditionCheckInterval,
     model: submission.model,
     steps: submission.steps,
+    values: submission.values,
     plan,
     createdAt: Date.now(),
   });
@@ -201,6 +210,7 @@ export function planToAutomationSubmission(plan: AutomationPlan): AutomationSubm
     condition: plan.trigger.condition,
     conditionCheckInterval: plan.trigger.conditionCheckInterval,
     model: plan.model,
+    values: plan.values,
     steps: plan.steps,
   });
 }
@@ -249,7 +259,10 @@ export function toAutomationImport(a: BuiltAutomation): Record<string, unknown> 
     description: a.description,
     triggerType: a.triggerType,
     schedule: scheduleToScout(a.schedule),
-    steps: a.steps.map((s) => ({ label: s.label, prompt: s.prompt })),
+    steps: a.steps.map((s) => ({
+      label: renderValues(s.label, a.values),
+      prompt: renderValues(s.prompt, a.values),
+    })),
   };
   if (a.triggerType === "condition" && a.condition) obj.condition = a.condition;
   if (a.conditionCheckInterval) obj.conditionCheckInterval = a.conditionCheckInterval;

@@ -47,8 +47,8 @@ interface LiveBuild extends BaseLive {
   sessionDir: string;
   architecture: SkillArchitecture;
   copilot: CopilotSession;
-  holder: { plan: AutomationPlan | undefined; submission: AutomationSubmission | undefined };
-  /** Last plan proposed this build (kept so submit can reference it). */
+  holder: { plan: AutomationPlan | undefined };
+  /** Last plan proposed this build (kept so create can reference it). */
   lastPlan: AutomationPlan | null;
 }
 
@@ -108,25 +108,31 @@ export class AutomationBuilder extends AgentBuilder<LiveBuild> {
     }
   }
 
-  /** Finalize the user-edited plan into an automation bundle and export it. The plan
-   *  fully determines the bundle (trigger + ordered prompt-steps), so this builds it
-   *  directly — no extra agent turn — and the export matches the reviewed tiles exactly. */
+  /** Finalize the user-edited plan into an automation bundle and export it. The reviewed
+   *  plan fully determines the bundle, so this is deterministic — no agent turn. Each step
+   *  prompt's `{{id}}` value tokens are substituted for their literals at render time
+   *  ({@link toAutomationImport}), so what the user reviewed is exactly what ships. Throws
+   *  if the plan has no steps (a bundle needs ≥1). */
   async create(sessionId: string, editedPlan?: AutomationPlan): Promise<{ automation: BuiltAutomation; path: string }> {
     if (this.active.has(sessionId)) throw new Error("Wait for the current step to finish.");
+    const held = this.live.get(sessionId);
     // Prefer the user's edited plan from the review tiles; fall back to the last
     // proposed plan for older callers that don't pass one.
-    const plan = editedPlan ? AutomationPlanSchema.parse(editedPlan) : this.live.get(sessionId)?.lastPlan ?? null;
+    const plan = editedPlan ? AutomationPlanSchema.parse(editedPlan) : held?.lastPlan ?? null;
     if (!plan) throw new Error("There is no plan to build from yet.");
+    // The reviewed tiles are the whole payload: validate ≥1 step and carry the
+    // trigger/schedule/name/description/model/values verbatim. No second agent turn.
+    let submission: AutomationSubmission;
+    try {
+      submission = planToAutomationSubmission(plan);
+    } catch {
+      throw new Error("Add at least one step before you create the automation.");
+    }
+    if (held) held.lastPlan = plan;
 
     this.active.add(sessionId);
     try {
       this.emit(sessionId, "drafting", "Writing the automation…");
-      let submission: AutomationSubmission;
-      try {
-        submission = planToAutomationSubmission(plan);
-      } catch {
-        throw new Error("Add at least one step before you create the automation.");
-      }
       const built = toBuiltAutomation(sessionId, plan.architecture, submission, plan);
       const exportPath = this.exportAutomation(built);
       const finalAutomation: BuiltAutomation = { ...built, exportedPath: exportPath, exportedAt: Date.now() };
@@ -149,7 +155,7 @@ export class AutomationBuilder extends AgentBuilder<LiveBuild> {
     const analysis = loadPersistedAnalysis(sessionId);
     if (!analysis) throw new Error("There is no analysis for this recording yet.");
 
-    const holder: LiveBuild["holder"] = { plan: undefined, submission: undefined };
+    const holder: LiveBuild["holder"] = { plan: undefined };
     const tools = [
       ...createReadTools({
         sessionDir: dir,
@@ -161,9 +167,6 @@ export class AutomationBuilder extends AgentBuilder<LiveBuild> {
         onProgress: (m) => this.emit(sessionId, "working", m),
         onPlan: (p) => {
           holder.plan = p;
-        },
-        onSubmit: (s) => {
-          holder.submission = s;
         },
       }),
     ];
@@ -239,6 +242,7 @@ export class AutomationBuilder extends AgentBuilder<LiveBuild> {
   }
 }
 
+/** Render the current plan into a compact spec for the refine prompt (the propose turn). */
 function renderRefinePrompt(feedback: string, prior: AutomationPlan | null): string {
   const lines = [
     "The user reviewed your proposed plan and wants changes. Revise the plan and call",

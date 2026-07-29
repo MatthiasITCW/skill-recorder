@@ -1,4 +1,12 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type RefObject,
+} from "react";
+import { createPortal } from "react-dom";
 
 import type { AnalysisStep } from "../common/analysis";
 import {
@@ -7,7 +15,8 @@ import {
   type AutomationStepDraft,
   type TimeOfDay,
 } from "../common/automation";
-import type { PlanStep, SkillInput } from "../common/skill";
+import type { PlanStep } from "../common/skill";
+import { tokenize, type Value } from "../common/values";
 
 /* --- shared array helpers (pure) ----------------------------------------- */
 
@@ -26,27 +35,6 @@ export function moveItem<T>(arr: T[], i: number, dir: -1 | 1): T[] {
   [out[i], out[j]] = [out[j], out[i]];
   return out;
 }
-
-/* --- shared vocab (input source) ----------------------------------------- */
-
-export const SOURCE_LABEL: Record<SkillInput["source"], string> = {
-  fixed: "Fixed value",
-  provided: "You provide it",
-  locate: "The agent finds it",
-};
-
-const SOURCE_OPTIONS: { value: SkillInput["source"]; label: string }[] = [
-  { value: "fixed", label: "Fixed value" },
-  { value: "provided", label: "You provide it" },
-  { value: "locate", label: "The agent finds it" },
-];
-
-const SOURCE_HINT: Record<SkillInput["source"], string> = {
-  fixed: "The exact URL / path / value, baked in",
-  provided: "What to ask you for when it runs",
-  locate: "How the agent should find it on your device",
-};
-
 
 /* --- EditableText: reads as plain text, becomes an input on click --------- */
 
@@ -163,55 +151,6 @@ export function EditableText({
   );
 }
 
-/* --- EditablePill: reads as a tinted pill, becomes a select on click ------ */
-
-function EditablePill<T extends string>({
-  value,
-  options,
-  onChange,
-  pill,
-  selectClassName = "",
-}: {
-  value: T;
-  options: { value: T; label: string }[];
-  onChange: (next: T) => void;
-  pill: ReactNode;
-  selectClassName?: string;
-}) {
-  const [editing, setEditing] = useState(false);
-  const ref = useRef<HTMLSelectElement>(null);
-
-  useEffect(() => {
-    if (editing) ref.current?.focus();
-  }, [editing]);
-
-  if (editing) {
-    return (
-      <select
-        ref={ref}
-        className={`tile-select ${selectClassName}`}
-        value={value}
-        onChange={(e) => {
-          onChange(e.target.value as T);
-          setEditing(false);
-        }}
-        onBlur={() => setEditing(false)}
-      >
-        {options.map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
-        ))}
-      </select>
-    );
-  }
-  return (
-    <button type="button" className="pill-btn" title="Click to change" onClick={() => setEditing(true)}>
-      {pill}
-    </button>
-  );
-}
-
 /* --- reusable row controls (hover-revealed by CSS) ----------------------- */
 
 function RowControls({
@@ -222,7 +161,7 @@ function RowControls({
 }: {
   index: number;
   count: number;
-  /** Omit to hide reorder arrows (e.g. for unordered inputs). */
+  /** Omit to hide reorder arrows (e.g. for an unordered set). */
   onMove?: (dir: -1 | 1) => void;
   onRemove: () => void;
 }) {
@@ -271,55 +210,387 @@ function newId(prefix: string): string {
   return `${prefix}${Date.now().toString(36)}${uidCounter.toString(36)}`;
 }
 
-/* --- Inputs (a SET — editable, add/remove, but NOT reorderable) ----------- */
+/* --- Value pills: a {{token}} rendered as a named, inline-editable chip ---- */
 
-export function InputTiles({
-  inputs,
+/** Size a textarea to its content so a long value (e.g. a URL) is fully visible. */
+function autoGrowTextarea(el: HTMLTextAreaElement) {
+  el.style.height = "auto";
+  el.style.height = `${el.scrollHeight}px`;
+}
+
+/** One `{{id}}` reference. Shows the value's human name as an inline chip; clicking opens a
+ *  small popover (portaled, anchored to the chip) with the value's name as a label and a
+ *  full-width, auto-growing field for the literal that substitutes in at export. Open state
+ *  is controlled by the parent so only one popover is ever open — even when the same token
+ *  appears more than once in a step. An unknown token (no matching value) renders as a
+ *  flagged, non-editable chip so it's caught before shipping. */
+function ValuePill({
+  token,
+  value,
+  open,
+  onOpen,
+  onClose,
   onChange,
 }: {
-  inputs: SkillInput[];
-  onChange: (next: SkillInput[]) => void;
+  token: string;
+  value: Value | undefined;
+  open: boolean;
+  onOpen: () => void;
+  onClose: () => void;
+  onChange: (next: Value) => void;
 }) {
-  const patch = (i: number, part: Partial<SkillInput>) =>
-    onChange(replaceAt(inputs, i, { ...inputs[i], ...part }));
+  const btnRef = useRef<HTMLButtonElement | null>(null);
+
+  // Unknown token: no value to edit — flag it so the user (or agent) fixes it before export.
+  if (!value) {
+    return (
+      <span className="val-pill val-pill-unresolved" title="No value is defined for this token">
+        {`{{${token}}}`}
+      </span>
+    );
+  }
+
+  const label = value.name || token;
+  return (
+    <>
+      <button
+        ref={btnRef}
+        type="button"
+        className={`val-pill${value.value.trim() ? "" : " val-pill-empty"}${open ? " val-pill-active" : ""}`}
+        title={`${label}${value.value ? `: ${value.value}` : ""} — click to edit`}
+        onClick={(e) => {
+          e.stopPropagation();
+          onOpen();
+        }}
+      >
+        {label}
+      </button>
+      {open && (
+        <ValuePopover
+          anchorRef={btnRef}
+          label={label}
+          value={value.value}
+          onCommit={(next) => {
+            onClose();
+            if (next !== value.value) onChange({ ...value, value: next });
+          }}
+          onCancel={onClose}
+        />
+      )}
+    </>
+  );
+}
+
+/** A small floating editor for one value's literal, anchored under its pill and portaled to
+ *  <body> so scroll/overflow containers can't clip it. The sentence layout stays put while
+ *  the card floats above. Commits on Enter or click-outside; Escape cancels. */
+function ValuePopover({
+  anchorRef,
+  label,
+  value,
+  onCommit,
+  onCancel,
+}: {
+  anchorRef: RefObject<HTMLButtonElement | null>;
+  label: string;
+  value: string;
+  onCommit: (next: string) => void;
+  onCancel: () => void;
+}) {
+  const cardRef = useRef<HTMLDivElement | null>(null);
+  const taRef = useRef<HTMLTextAreaElement | null>(null);
+  const [draft, setDraft] = useState(value);
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+
+  const reposition = useCallback(() => {
+    const anchor = anchorRef.current;
+    const card = cardRef.current;
+    if (!anchor || !card) return;
+    const a = anchor.getBoundingClientRect();
+    const cw = card.offsetWidth;
+    const ch = card.offsetHeight;
+    const m = 8; // viewport margin
+    const left = Math.max(m, Math.min(a.left, window.innerWidth - cw - m));
+    let top = a.bottom + 6;
+    if (top + ch > window.innerHeight - m) {
+      const above = a.top - ch - 6;
+      top = above >= m ? above : Math.max(m, window.innerHeight - ch - m);
+    }
+    setPos({ top, left });
+  }, [anchorRef]);
+
+  // Focus the field and grow it to fit the value on open.
+  useEffect(() => {
+    const el = taRef.current;
+    if (!el) return;
+    el.focus();
+    el.setSelectionRange(el.value.length, el.value.length);
+    autoGrowTextarea(el);
+  }, []);
+
+  // Position after layout, and re-measure as the field grows.
+  useLayoutEffect(() => {
+    reposition();
+  }, [reposition, draft]);
+
+  // Stay anchored on scroll/resize; commit when the user clicks outside the card.
+  const commitRef = useRef(onCommit);
+  commitRef.current = onCommit;
+  useEffect(() => {
+    const onScroll = () => reposition();
+    const onDocPointer = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (cardRef.current?.contains(t) || anchorRef.current?.contains(t)) return;
+      commitRef.current(taRef.current?.value ?? "");
+    };
+    window.addEventListener("scroll", onScroll, true);
+    window.addEventListener("resize", onScroll);
+    document.addEventListener("mousedown", onDocPointer, true);
+    return () => {
+      window.removeEventListener("scroll", onScroll, true);
+      window.removeEventListener("resize", onScroll);
+      document.removeEventListener("mousedown", onDocPointer, true);
+    };
+  }, [reposition, anchorRef]);
+
+  return createPortal(
+    <div
+      ref={cardRef}
+      className="val-pop"
+      role="dialog"
+      aria-label={`Edit ${label}`}
+      style={{
+        top: pos?.top ?? -9999,
+        left: pos?.left ?? -9999,
+        visibility: pos ? "visible" : "hidden",
+      }}
+      // The card is portaled to <body>, but React bubbles its synthetic events through the
+      // component tree — so without this, a click inside would reach the step's read-mode
+      // <p onClick> and switch it into the prose editor, unmounting this popover.
+      onMouseDown={(e) => e.stopPropagation()}
+      onClick={(e) => e.stopPropagation()}
+    >
+      <div className="val-pop-label">{label}</div>
+      <textarea
+        ref={taRef}
+        className="val-pop-input"
+        rows={1}
+        value={draft}
+        spellCheck={false}
+        aria-label={`${label} value`}
+        onChange={(e) => {
+          setDraft(e.target.value);
+          autoGrowTextarea(e.target);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") {
+            e.preventDefault();
+            onCancel();
+          } else if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            onCommit(draft);
+          }
+        }}
+      />
+      <div className="val-pop-hint">Esc to cancel · ⏎ to save</div>
+    </div>,
+    document.body,
+  );
+}
+
+/** Serialize the pill editor's DOM back to `{{id}}` template text: text nodes are kept
+ *  verbatim and each atomic pill chip (a `[data-token]` element) becomes its `{{id}}`, so
+ *  the round-trip is exact and the raw token is never typed by the user. */
+function serializeTokenNode(node: Node): string {
+  if (node.nodeType === Node.TEXT_NODE) return node.nodeValue ?? "";
+  if (node.nodeType !== Node.ELEMENT_NODE) return "";
+  const el = node as HTMLElement;
+  const tok = el.dataset.token;
+  if (tok) return `{{${tok}}}`;
+  if (el.tagName === "BR") return "\n";
+  let out = "";
+  el.childNodes.forEach((c) => (out += serializeTokenNode(c)));
+  return out;
+}
+
+function serializeTokenEditor(root: HTMLElement): string {
+  let out = "";
+  root.childNodes.forEach((c) => (out += serializeTokenNode(c)));
+  return out;
+}
+
+/** Populate the pill editor: prose becomes editable text nodes, and each `{{id}}` becomes
+ *  an atomic, non-editable chip that looks exactly like its read-mode pill — so editing the
+ *  wording around a value never exposes the raw `{{token}}`. */
+function buildTokenEditor(root: HTMLElement, text: string, values: Value[]): void {
+  const byId = new Map(values.map((v) => [v.id, v]));
+  root.replaceChildren();
+  for (const seg of tokenize(text)) {
+    if (seg.kind === "text") {
+      root.appendChild(document.createTextNode(seg.text));
+      continue;
+    }
+    const v = byId.get(seg.id);
+    const chip = document.createElement("span");
+    chip.dataset.token = seg.id;
+    chip.contentEditable = "false";
+    if (!v) {
+      chip.className = "val-pill val-pill-unresolved";
+      chip.textContent = `{{${seg.id}}}`;
+    } else {
+      chip.className = `val-pill${v.value.trim() ? "" : " val-pill-empty"}`;
+      chip.textContent = v.name || seg.id;
+    }
+    root.appendChild(chip);
+  }
+}
+
+/** Step body that renders `{{id}}` tokens as editable {@link ValuePill}s. In read mode a
+ *  pill shows the value's name and click-edits its literal; clicking the prose opens an
+ *  inline editor where pills stay atomic chips (never raw tokens) and only the surrounding
+ *  wording is editable. Editing prose updates the step text; editing a pill updates the
+ *  shared value. */
+function TokenText({
+  text,
+  onChangeText,
+  values,
+  onChangeValues,
+  placeholder,
+  ariaLabel,
+}: {
+  text: string;
+  onChangeText: (next: string) => void;
+  values: Value[];
+  onChangeValues: (next: Value[]) => void;
+  placeholder: string;
+  ariaLabel: string;
+}) {
+  const [editing, setEditing] = useState(false);
+  const editorRef = useRef<HTMLDivElement | null>(null);
+  const cancelRef = useRef(false);
+  // Index (into `segments`) of the token whose editor popover is open, or null. Kept here so
+  // at most one popover is ever open — even when a token appears more than once in the step.
+  const [openIndex, setOpenIndex] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!editing) return;
+    const el = editorRef.current;
+    if (!el) return;
+    // Snapshot the current text/values into the editor once; it stays uncontrolled while
+    // focused so keystrokes and the caret aren't clobbered by re-renders.
+    buildTokenEditor(el, text, values);
+    el.focus();
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    range.collapse(false);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editing]);
+
+  const begin = () => {
+    setOpenIndex(null);
+    setEditing(true);
+  };
+  const commit = () => {
+    if (cancelRef.current) {
+      cancelRef.current = false;
+      setEditing(false);
+      return;
+    }
+    const el = editorRef.current;
+    const next = el ? serializeTokenEditor(el) : text;
+    setEditing(false);
+    if (next !== text) onChangeText(next);
+  };
+  const updateValue = (next: Value) =>
+    onChangeValues(values.map((v) => (v.id === next.id ? next : v)));
+
+  if (editing) {
+    return (
+      <div
+        ref={editorRef}
+        className="ed-input ed-input-multi ed-detail token-edit has-pills"
+        contentEditable
+        suppressContentEditableWarning
+        role="textbox"
+        aria-multiline="true"
+        aria-label={ariaLabel}
+        onBlur={commit}
+        onMouseDown={(e) => {
+          // Clicking a pill chip inside the editor edits that value (not the prose): commit
+          // the wording, then open that token's popover (first occurrence) in read mode.
+          const chip = (e.target as HTMLElement).closest("[data-token]") as HTMLElement | null;
+          if (!chip) return;
+          e.preventDefault();
+          const id = chip.dataset.token ?? null;
+          const el = editorRef.current;
+          const next = el ? serializeTokenEditor(el) : text;
+          cancelRef.current = true; // neutralize the blur-commit that unmounting would fire
+          setEditing(false);
+          if (next !== text) onChangeText(next);
+          if (id) {
+            const idx = tokenize(next).findIndex((s) => s.kind === "token" && s.id === id);
+            if (idx >= 0) setOpenIndex(idx);
+          }
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") {
+            e.preventDefault();
+            cancelRef.current = true;
+            editorRef.current?.blur();
+          } else if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            editorRef.current?.blur();
+          }
+        }}
+      />
+    );
+  }
+
+  const empty = text.trim().length === 0;
+  const segments = empty ? [] : tokenize(text);
+  const byId = new Map(values.map((v) => [v.id, v]));
 
   return (
-    <div className="tiles">
-      {inputs.map((inp, i) => (
-        <div key={i} className="tile input-tile">
-          <div className="tile-head">
-            <EditableText
-              className="ed-name"
-              value={inp.name}
-              placeholder="Input name"
-              ariaLabel="Input name"
-              onChange={(v) => patch(i, { name: v })}
-            />
-            <EditablePill
-              value={inp.source}
-              options={SOURCE_OPTIONS}
-              onChange={(v) => patch(i, { source: v })}
-              pill={<span className={`src-badge src-${inp.source}`}>{SOURCE_LABEL[inp.source]}</span>}
-            />
-            <RowControls index={i} count={inputs.length} onRemove={() => onChange(removeAt(inputs, i))} />
-          </div>
-          <EditableText
-            as="p"
-            multiline
-            className="ed-detail"
-            value={inp.detail}
-            placeholder={SOURCE_HINT[inp.source]}
-            ariaLabel="Input detail"
-            hideEmpty
-            onChange={(v) => patch(i, { detail: v })}
-          />
-        </div>
-      ))}
-      <AddTile
-        label="Add input"
-        onAdd={() => onChange([...inputs, { name: "", description: "", source: "provided", detail: "" }])}
-      />
-    </div>
+    <p
+      className={`ed-read ed-read-multi ed-detail${empty ? " ed-empty" : " has-pills"}`}
+      tabIndex={0}
+      role="textbox"
+      aria-label={ariaLabel}
+      title="Click to edit"
+      onClick={(e) => {
+        // A click on a pill edits its value (via popover), not the surrounding prose.
+        const t = e.target as HTMLElement;
+        if (t.closest(".val-pill")) return;
+        begin();
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          begin();
+        }
+      }}
+    >
+      {empty
+        ? placeholder
+        : segments.map((seg, i) =>
+            seg.kind === "token" ? (
+              <ValuePill
+                key={i}
+                token={seg.id}
+                value={byId.get(seg.id)}
+                open={openIndex === i}
+                onOpen={() => setOpenIndex(i)}
+                onClose={() => setOpenIndex(null)}
+                onChange={updateValue}
+              />
+            ) : (
+              <span key={i}>{seg.text}</span>
+            ),
+          )}
+    </p>
   );
 }
 
@@ -328,9 +599,13 @@ export function InputTiles({
 export function SkillStepTiles({
   steps,
   onChange,
+  values,
+  onChangeValues,
 }: {
   steps: PlanStep[];
   onChange: (next: PlanStep[]) => void;
+  values: Value[];
+  onChangeValues: (next: Value[]) => void;
 }) {
   const patch = (i: number, part: Partial<PlanStep>) =>
     onChange(replaceAt(steps, i, { ...steps[i], ...part }));
@@ -355,25 +630,21 @@ export function SkillStepTiles({
               onRemove={() => onChange(removeAt(steps, i))}
             />
           </div>
-          <EditableText
-            as="p"
-            multiline
-            className="ed-detail"
-            value={s.text}
+          <TokenText
+            text={s.text}
+            onChangeText={(v) => patch(i, { text: v })}
+            values={values}
+            onChangeValues={onChangeValues}
             placeholder="What happens in this step?"
             ariaLabel="Step description"
-            onChange={(v) => patch(i, { text: v })}
           />
-          <div className="tile-foot">
-            <EditableText
-              className="ed-tool"
-              value={s.tool}
-              placeholder="+ native tool"
-              ariaLabel="Native tool"
-              hideEmpty
-              onChange={(v) => patch(i, { tool: v })}
-            />
-          </div>
+          {s.tool?.trim() && (
+            <div className="tile-foot">
+              <span className="step-tool" title="Native tool this step uses">
+                {s.tool}
+              </span>
+            </div>
+          )}
         </div>
       ))}
       <AddTile
@@ -389,9 +660,13 @@ export function SkillStepTiles({
 export function AutomationStepTiles({
   steps,
   onChange,
+  values,
+  onChangeValues,
 }: {
   steps: AutomationStepDraft[];
   onChange: (next: AutomationStepDraft[]) => void;
+  values: Value[];
+  onChangeValues: (next: Value[]) => void;
 }) {
   const patch = (i: number, part: Partial<AutomationStepDraft>) =>
     onChange(replaceAt(steps, i, { ...steps[i], ...part }));
@@ -416,14 +691,13 @@ export function AutomationStepTiles({
               onRemove={() => onChange(removeAt(steps, i))}
             />
           </div>
-          <EditableText
-            as="p"
-            multiline
-            className="ed-detail"
-            value={s.prompt}
+          <TokenText
+            text={s.prompt}
+            onChangeText={(v) => patch(i, { prompt: v })}
+            values={values}
+            onChangeValues={onChangeValues}
             placeholder="The instruction the agent runs for this step"
             ariaLabel="Step instruction"
-            onChange={(v) => patch(i, { prompt: v })}
           />
         </div>
       ))}

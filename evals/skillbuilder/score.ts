@@ -2,12 +2,13 @@
 //
 // Where the automation scorer only checks native-tool choice over free-text step
 // prompts, a SkillPlan is structured — so we score both the tool choice AND the
-// shape the builder is now supposed to produce: inputs classified with the right
-// `source`, an ordered procedure split into calculations and actions, and a
-// confirmation pause on the risky ones. Each is a cheap, exact check so a run is
-// repeatable and a failure names the missing piece.
+// shape the builder is now supposed to produce: genuinely fixed literals pulled out
+// as `values` (with every `{{token}}` a step references resolving to one), and an
+// ordered procedure split into calculations and actions. Each is a cheap, exact check
+// so a run is repeatable and a failure names the missing piece.
 
 import type { SkillPlan } from "../../common/skill";
+import { unresolvedTokens } from "../../common/values";
 import type { SkillRubric } from "./scenario";
 
 export interface SkillCheck {
@@ -53,23 +54,19 @@ export function scoreSkill(plan: SkillPlan, rubric: SkillRubric): SkillScoreResu
     });
   }
 
-  // Inputs: at least N, and every expected source classified on at least one input.
-  const minInputs = rubric.minInputs ?? 1;
+  // Values: at least N declared, and every {{token}} used in a step resolves to one.
+  const minValues = rubric.minValues ?? 0;
   checks.push({
-    name: `declares >= ${minInputs} input(s)`,
-    pass: plan.inputs.length >= minInputs,
-    detail: `found ${plan.inputs.length}`,
+    name: `declares >= ${minValues} value(s)`,
+    pass: plan.values.length >= minValues,
+    detail: `found ${plan.values.length}`,
   });
-  for (const source of rubric.expectInputSources ?? []) {
-    const hit = plan.inputs.filter((i) => i.source === source);
-    checks.push({
-      name: `an input is source "${source}"`,
-      pass: hit.length > 0,
-      detail: hit.length
-        ? `${hit.map((i) => JSON.stringify(i.name)).join(", ")}`
-        : `sources present: ${[...new Set(plan.inputs.map((i) => i.source))].join(", ") || "none"}`,
-    });
-  }
+  const unresolved = [...new Set(plan.steps.flatMap((s) => unresolvedTokens(s.text, plan.values)))];
+  checks.push({
+    name: "every {{token}} in steps resolves to a value",
+    pass: unresolved.length === 0,
+    detail: unresolved.length ? `unresolved: ${unresolved.map((t) => `{{${t}}}`).join(", ")}` : undefined,
+  });
 
   // Steps: split into calculations and actions.
   const calculations = plan.steps.filter((s) => s.kind === "calculation");

@@ -203,15 +203,16 @@ the builder, not the describer.
 **Rubric** (`score.ts`) — beyond the `mustUseAny` / `forbidden` native-tool checks,
 each scenario asserts the shape of the proposed `SkillPlan`:
 
-- **input sources** — `expectInputSources` requires the plan to classify at least
-  one input with each listed `source` (`fixed` / `provided` / `locate`), proving the
-  vocabulary is applied, not just present.
+- **fixed values** — `minValues` requires the plan to declare at least that many fixed
+  `values`, and the scorer additionally checks that every `{{token}}` a step references
+  resolves to a declared value (no stale/unknown tokens survive to the artifact).
 - **typed steps** — `minCalculations` / `minActions` require the procedure to be
   split into `calculation` (no side effect) and `action` (changes the world) steps.
 
 **Coverage.** Five scenarios. Two target **Scout**: `price-tracker-skill` (a canonical
-page URL → **fixed** input, `web_fetch` + the `xlsx` skill, calculations then an
-append) and `github-issue-triage-skill` (the gh-vs-browser case as a skill —
+page URL → a fixed **value** referenced as `{{…}}`, `web_fetch` + the `xlsx` skill,
+calculations then an append) and `github-issue-triage-skill` (the gh-vs-browser case as a
+skill —
 must use `gh`, forbid the browser, and drive the mutating comment/label actions). Three
 target **Cowork** (Microsoft 365 Copilot), whose catalogue has **no browser automation**
 — each asserts the right M365 `server/Tool` is reached for while playwright/`click` and

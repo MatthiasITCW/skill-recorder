@@ -1,8 +1,8 @@
 // Skill builder eval harness: runs the real SkillBuilder against each fixed
 // scenario and scores the PROPOSED PLAN's shape — the richer contract the builder
-// now emits: typed inputs (each with a `source`), and an ordered list of typed
-// steps (calculation vs action, each with its native tool and an optional
-// confirmation pause).
+// now emits: fixed **values** referenced from step text as `{{id}}` tokens, and an
+// ordered list of typed steps (calculation vs action, each with its native tool and an
+// optional confirmation pause).
 //
 // For every scenario it seeds the scenario's FIXED approved analysis (analysis.json)
 // + a minimal timeline (bundle.json) into a temp sessions root, runs the real
@@ -123,8 +123,8 @@ function printResult(r: Result): void {
     console.error(`   ✗ error: ${r.error}`);
     return;
   }
-  for (const inp of r.plan?.inputs ?? []) {
-    console.error(`   input · ${inp.name} [${inp.source}]`);
+  for (const val of r.plan?.values ?? []) {
+    console.error(`   value · {{${val.id}}} ${val.name}${val.value ? ` = ${val.value}` : ""}`);
   }
   for (const [i, s] of (r.plan?.steps ?? []).entries()) {
     const tool = s.tool ? ` {${s.tool}}` : "";

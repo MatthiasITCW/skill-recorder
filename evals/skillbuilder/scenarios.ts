@@ -91,8 +91,7 @@ const priceTracker: SkillBuilderScenario = {
   rubric: {
     mustUseAny: [["web_fetch"], ["xlsx"]],
     forbidden: [],
-    expectInputSources: ["fixed"],
-    minInputs: 1,
+    minValues: 1,
     minCalculations: 1,
     minActions: 1,
   },
@@ -172,7 +171,7 @@ const githubIssueTriage: SkillBuilderScenario = {
   rubric: {
     mustUseAny: [["gh "], ["gh issue", "gh api"]],
     forbidden: ["playwright", "browser_", "click", "navigate to github", "github.com/acme"],
-    minInputs: 1,
+    minValues: 1,
     minCalculations: 1,
     minActions: 1,
   },
@@ -250,7 +249,6 @@ const coworkTeamsDigest: SkillBuilderScenario = {
   rubric: {
     mustUseAny: [["m365_teams"], ["postchannelmessage", "postmessage", "replytochannelmessage"]],
     forbidden: ["playwright", "browser_", "click", "teams.microsoft.com"],
-    minInputs: 1,
     minCalculations: 1,
     minActions: 1,
   },
@@ -321,7 +319,6 @@ const coworkOutlookReply: SkillBuilderScenario = {
   rubric: {
     mustUseAny: [["outlook/"], ["replytomessage", "senddraftmessage", "createdraftmessage", "replyalltomessage"]],
     forbidden: ["playwright", "browser_", "click", "outlook.office.com", "outlook.office365.com"],
-    minInputs: 1,
     minCalculations: 1,
     minActions: 1,
   },
@@ -394,7 +391,6 @@ const coworkCalendarSchedule: SkillBuilderScenario = {
       ["createevent"],
     ],
     forbidden: ["playwright", "browser_", "click", "outlook.office.com"],
-    minInputs: 1,
     minCalculations: 1,
     minActions: 1,
   },

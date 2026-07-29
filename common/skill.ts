@@ -1,9 +1,11 @@
 import { z } from "zod";
 
+import { migrateLegacyInputsToValues, renderValues, ValueSchema } from "./values";
+
 /**
  * The Skill Builder's contract. From an *approved* {@link Analysis} the multi-turn
  * Copilot agent first proposes a **plan** ({@link SkillPlan}) — how it will
- * generalize the recorded task, what inputs it needs, and which of the target
+ * generalize the recorded task, what fixed values it needs, and which of the target
  * architecture's native tools it will use — which the user refines in natural
  * language. On confirmation the agent submits the final **built skill**
  * ({@link BuiltSkill}), which is rendered to a `SKILL.md` and exported into the
@@ -90,45 +92,6 @@ export const TARGETS: readonly BuildTarget[] = [
 ] as const;
 
 /**
- * Where a skill's input comes from at run time — a small spectrum of "known now /
- * known at run time / found by the agent":
- * - **fixed** — a genuinely constant value baked into the skill: a canonical URL or
- *   a specific file path that is the SAME on every run.
- * - **provided** — the skill asks the user for it when it runs (a path, URL, value).
- * - **locate** — the agent finds it on the device with native file tools (e.g. "the
- *   most recent *.csv in ~/Downloads") because it varies run-to-run.
- */
-export const SkillInputSource = z.enum(["fixed", "provided", "locate"]);
-export type SkillInputSource = z.infer<typeof SkillInputSource>;
-
-/** Source values from earlier builds (`ask/discover/constant`), mapped to current names. */
-const LEGACY_INPUT_SOURCE: Record<string, SkillInputSource> = {
-  ask: "provided",
-  discover: "locate",
-  constant: "fixed",
-};
-
-/** Accepts both current and legacy source strings, so older persisted plans/skills load. */
-export const SkillInputSourceCompat = z.preprocess(
-  (v) => (typeof v === "string" && v in LEGACY_INPUT_SOURCE ? LEGACY_INPUT_SOURCE[v] : v),
-  SkillInputSource,
-);
-
-export const SkillInputSchema = z.object({
-  /** Short name for the input, e.g. "records spreadsheet". */
-  name: z.string(),
-  /** What it is and how it's used in the task. */
-  description: z.string().default(""),
-  source: SkillInputSourceCompat,
-  /**
-   * Source-specific detail: the fixed value or path (for `fixed`), what to ask the
-   * user for (for `provided`), or how to find it on the device (for `locate`).
-   */
-  detail: z.string().default(""),
-});
-export type SkillInput = z.infer<typeof SkillInputSchema>;
-
-/**
  * A generalized step is either a **calculation** (reads, derives, decides, or formats
  * — no external side effect) or an **action** (changes the world: submit, send, create,
  * delete). Splitting them keeps the plan honest about side effects; the actions are the
@@ -156,7 +119,9 @@ export type PlanStep = z.infer<typeof PlanStepSchema>;
  * The agent's proposed plan, shown to the user before any skill is written.
  * This is what `propose_plan` submits and what the user refines in NL.
  */
-export const SkillPlanSchema = z.object({
+export const SkillPlanSchema = z.preprocess(
+  migrateLegacyInputsToValues,
+  z.object({
   /** Target architecture this plan is written for. */
   architecture: SkillArchitecture,
   /** kebab-case skill id, e.g. "submit-expense-records". */
@@ -169,12 +134,14 @@ export const SkillPlanSchema = z.object({
   summary: z.string().default(""),
   /** How the recorded specifics are generalized (the loop/collection insight). */
   generalization: z.string().default(""),
-  inputs: z.array(SkillInputSchema).default([]),
+  /** Named fixed literals (URLs / paths / constants) the steps reference by `{{id}}`. */
+  values: z.array(ValueSchema).default([]),
   /** The generalized procedure as ordered, typed steps (calculations + actions). */
   steps: z.array(PlanStepSchema).default([]),
   /** Proposed `allowed-tools` frontmatter patterns, e.g. "Bash(git *)". */
   allowedTools: z.array(z.string()).default([]),
-});
+  }),
+);
 export type SkillPlan = z.infer<typeof SkillPlanSchema>;
 
 /**
@@ -203,6 +170,8 @@ export const BuiltSkillSchema = z.object({
   allowedTools: z.array(z.string()).default([]),
   /** The markdown instructions body. */
   body: z.string(),
+  /** Fixed values substituted into the body at render time (the pill literals). */
+  values: z.array(ValueSchema).default([]),
   /** The plan the skill was built from (for the UI / re-export). */
   plan: SkillPlanSchema.nullable().default(null),
   createdAt: z.number(),
@@ -238,6 +207,7 @@ export function toBuiltSkill(
     description: submission.description,
     allowedTools: submission.allowedTools,
     body: submission.body,
+    values: plan?.values ?? [],
     plan,
     createdAt: Date.now(),
   });
@@ -246,8 +216,9 @@ export function toBuiltSkill(
 /**
  * Render a {@link BuiltSkill} to the exact `SKILL.md` text Scout parses:
  * YAML frontmatter (`name`, `description`, optional `allowed-tools`) followed by
- * the instructions body. The description is emitted as a double-quoted scalar so
- * colons/commas in it never break the YAML.
+ * the instructions body, with each `{{id}}` value token substituted for its literal.
+ * The description is emitted as a double-quoted scalar so colons/commas in it never
+ * break the YAML.
  */
 export function renderSkillMarkdown(skill: BuiltSkill): string {
   const lines: string[] = ["---", `name: ${slugifySkillName(skill.name)}`];
@@ -259,6 +230,6 @@ export function renderSkillMarkdown(skill: BuiltSkill): string {
     for (const t of tools) lines.push(`  - ${t}`);
   }
   lines.push("---", "");
-  lines.push(skill.body.trim(), "");
+  lines.push(renderValues(skill.body, skill.values).trim(), "");
   return lines.join("\n");
 }

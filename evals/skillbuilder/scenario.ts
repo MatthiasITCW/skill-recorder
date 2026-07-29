@@ -3,19 +3,19 @@
 // A sibling of evals/builder/ (which guards the AutomationBuilder). This one guards
 // the SkillBuilder — the stage that turns an approved analysis into a reusable
 // SKILL.md plan. It exists to exercise the richer skill *plan* shape the builder now
-// proposes: typed inputs (each with a `source`), and an ordered list of typed
-// `steps` (calculation vs action, each with its native tool and an optional
-// confirmation pause). Like the automation harness, each scenario ships a FIXED
-// approved analysis so a failure points at the builder, not the describer.
+// proposes: fixed **values** referenced from step text as `{{id}}` tokens, and an
+// ordered list of typed `steps` (calculation vs action, each with its native tool and
+// an optional confirmation pause). Like the automation harness, each scenario ships a
+// FIXED approved analysis so a failure points at the builder, not the describer.
 
 import type { AnalysisSubmission } from "../../common/analysis";
-import type { SkillArchitecture, SkillInputSource } from "../../common/skill";
+import type { SkillArchitecture } from "../../common/skill";
 
 /**
  * Deterministic rubric for a proposed SkillPlan. Beyond the native-tool check the
- * automation harness does, it asserts the plan's *structure* — that inputs are
- * classified with the right source vocabulary and that the procedure is split into
- * calculations and actions with confirmation on the risky ones.
+ * automation harness does, it asserts the plan's *structure* — that genuinely fixed
+ * literals are pulled out as `values` (and every `{{token}}` a step references resolves
+ * to one), and that the procedure is split into calculations and actions.
  */
 export interface SkillRubric {
   /**
@@ -26,10 +26,8 @@ export interface SkillRubric {
   mustUseAny: string[][];
   /** None of these may appear in the steps or allowed-tools — signals of the WRONG tool. */
   forbidden: string[];
-  /** Each listed source must be assigned to at least one input (proves the vocabulary is used). */
-  expectInputSources?: SkillInputSource[];
-  /** The plan must declare at least this many inputs. Default 1. */
-  minInputs?: number;
+  /** The plan must declare at least this many fixed values. Default 0. */
+  minValues?: number;
   /** The plan must contain at least this many `calculation` steps. Default 1. */
   minCalculations?: number;
   /** The plan must contain at least this many `action` steps. Default 1. */

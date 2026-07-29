@@ -2,9 +2,7 @@ import type { Tool } from "@github/copilot-sdk";
 
 import {
   AutomationPlanSchema,
-  AutomationSubmissionSchema,
   type AutomationPlan,
-  type AutomationSubmission,
 } from "../../common/automation";
 import type { SkillArchitecture } from "../../common/skill";
 
@@ -15,8 +13,6 @@ export interface AutomationToolContext {
   onProgress?: (message: string) => void;
   /** Called when the agent proposes a (validated) plan for review. */
   onPlan: (plan: AutomationPlan) => void;
-  /** Called when the agent submits the final (validated) automation. */
-  onSubmit: (submission: AutomationSubmission) => void;
 }
 
 /** A wall-clock time-of-day object, reused across the schedule fields. */
@@ -84,7 +80,7 @@ const stepsSchema = {
       prompt: {
         type: "string" as const,
         description:
-          "The natural-language instruction to the agent for this step: generalized over the whole collection, native-tool-first, resolving inputs itself (an automation runs unattended).",
+          "The natural-language instruction to the agent for this step: generalized over the whole collection, native-tool-first, and self-resolving (an automation runs unattended). Reference any fixed value by its {{id}} token instead of writing the literal (e.g. \"gh pr list -R {{repo}}\").",
       },
     },
     required: ["prompt"],
@@ -95,18 +91,19 @@ const stepsSchema = {
 /**
  * Build the automation-specific tools exposed to one Automation Builder session. The
  * agent reads the recording via the shared read-tools (get_analysis / get_timeline),
- * proposes a reviewable plan (propose_automation_plan) with a default schedule, then —
- * once the user approves — submits the final automation (submit_automation). Both
- * submissions are zod-validated; the architecture is injected server-side.
+ * then proposes a reviewable plan (propose_automation_plan) with a default schedule and
+ * STOPS. The reviewed plan is the whole payload — the build is deterministic, so there is
+ * no separate submit tool. The plan is zod-validated; the architecture is injected
+ * server-side.
  */
 export function createAutomationBuilderTools(ctx: AutomationToolContext): Tool[] {
-  const { architecture, onPlan, onSubmit } = ctx;
+  const { architecture, onPlan } = ctx;
   const progress = (m: string) => ctx.onProgress?.(m);
 
   const proposePlan: Tool = {
     name: "propose_automation_plan",
     description:
-      "Propose your reviewable plan for the automation: how you'll generalize the task, the trigger (propose a sensible default schedule), the inputs it needs, and the generalized ordered prompt-steps. Call this once per turn, then STOP so the user can review or refine it (especially the schedule). Do NOT submit the automation yet.",
+      "Propose your reviewable plan for the automation: how you'll generalize the task, the trigger (propose a sensible default schedule), the fixed values it hard-codes (each referenced by a {{id}} token in the step prompts), and the generalized ordered prompt-steps. Call this once per turn, then STOP so the user can review or refine it (especially the schedule).",
     parameters: {
       type: "object",
       properties: {
@@ -144,25 +141,27 @@ export function createAutomationBuilderTools(ctx: AutomationToolContext): Tool[]
           required: ["schedule"],
           additionalProperties: false,
         },
-        inputs: {
+        values: {
           type: "array",
-          description: "Inputs the automation needs (informational; resolved inside the step prompts).",
+          description:
+            "Genuinely FIXED literals the procedure hard-codes — a canonical URL, file path, repo slug, or constant that is the SAME every run. Each becomes an inline, editable pill in the review UI and is substituted for its {{id}} token when the automation is built. Do NOT create a value for anything discovered at run time or that varies run-to-run — write those as plain step instructions.",
           items: {
             type: "object",
             properties: {
-              name: { type: "string" },
-              description: { type: "string" },
-              source: {
+              id: {
                 type: "string",
-                enum: ["fixed", "provided", "locate"],
-                description: "Prefer locate/fixed — an automation runs unattended and can't ask the user.",
+                description: "snake_case token key referenced in step prompts as {{id}}, e.g. \"repo\".",
               },
-              detail: {
+              name: {
                 type: "string",
-                description: "For fixed: the value/path. For locate: how to find it.",
+                description: "Short human label shown on the pill, e.g. \"Target repo\".",
+              },
+              value: {
+                type: "string",
+                description: "The exact fixed literal (the URL / path / repo slug / constant).",
               },
             },
-            required: ["name", "source"],
+            required: ["id", "name", "value"],
             additionalProperties: false,
           },
         },
@@ -194,51 +193,5 @@ export function createAutomationBuilderTools(ctx: AutomationToolContext): Tool[]
     },
   };
 
-  const submitAutomation: Tool = {
-    name: "submit_automation",
-    description:
-      "Submit the final automation AFTER the user approves the plan: name, description, the trigger (triggerType + schedule, plus condition for condition triggers), and the generalized ordered prompt-steps.",
-    parameters: {
-      type: "object",
-      properties: {
-        name: { type: "string", description: "kebab-case automation id (matches the approved plan)." },
-        description: { type: "string", description: "What the automation does and when it runs." },
-        triggerType: {
-          type: "string",
-          enum: ["schedule", "condition"],
-          description: "schedule (default) or condition.",
-        },
-        schedule: scheduleSchema,
-        condition: {
-          type: "string",
-          description: "For triggerType=condition: the NL condition to check before running.",
-        },
-        conditionCheckInterval: {
-          type: "integer",
-          minimum: 1,
-          description: "For triggerType=condition: minutes between condition checks.",
-        },
-        model: { type: "string", description: "Optional per-automation model override." },
-        steps: stepsSchema,
-      },
-      required: ["name", "schedule", "steps"],
-      additionalProperties: false,
-    },
-    handler: (raw) => {
-      const parsed = AutomationSubmissionSchema.safeParse(raw);
-      if (!parsed.success) {
-        return {
-          textResultForLlm:
-            "submit_automation rejected — the payload did not match the schema. Fix these and call again:\n" +
-            parsed.error.issues.map((i) => `- ${i.path.join(".") || "(root)"}: ${i.message}`).join("\n"),
-          resultType: "failure",
-        };
-      }
-      progress("Received the finished automation.");
-      onSubmit(parsed.data);
-      return "Automation recorded. You may stop now.";
-    },
-  };
-
-  return [proposePlan, submitAutomation];
+  return [proposePlan];
 }

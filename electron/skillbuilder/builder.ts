@@ -15,6 +15,7 @@ import {
   type SkillPlan,
   type SkillSubmission,
 } from "../../common/skill";
+import { unresolvedTokens } from "../../common/values";
 import type { SkillBuildInput, SkillBuildProgress } from "../../common/ipc";
 import { AgentBuilder, type BaseLive } from "../builders/agent-builder";
 import { createReadTools } from "../builders/read-tools";
@@ -31,15 +32,16 @@ const TURN_TIMEOUT_MS = 180_000;
 
 const KICKOFF_PROMPT =
   "Read get_analysis (and get_timeline where the tool mapping needs evidence), then call " +
-  "propose_plan with how you'll generalize this task, its inputs (fixed / provided / locate), and its " +
-  "ordered steps (each a short title + description, with the native tool it uses). " +
-  "Stop after propose_plan so the user can review it.";
+  "propose_plan with how you'll generalize this task, its fixed values (each an id + name + " +
+  "value, referenced from steps as {{id}}), and its ordered steps (each a short title + " +
+  "description, with the native tool it uses). Stop after propose_plan so the user can review it.";
 
 const CREATE_PROMPT =
   "The user reviewed and edited the plan below. Build the SKILL.md from EXACTLY this plan — do not " +
-  "add, drop, reorder, or rename its inputs or steps. Call submit_skill with a generalized, " +
-  "native-tool-first instructions body that follows these inputs and steps faithfully (the name and " +
-  "description are already decided — you may echo them).";
+  "add, drop, reorder, or rename its values or steps. Call submit_skill with a generalized, " +
+  "native-tool-first instructions body that follows these steps faithfully and references each fixed " +
+  "value by its {{id}} token (never inline the literal). The name and description are already decided — " +
+  "you may echo them.";
 
 const msg = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
@@ -129,9 +131,11 @@ export class SkillBuilder extends AgentBuilder<LiveBuild> {
   }
 
   /** Finalize the user-edited plan into a SKILL.md and place it. The edited plan is
-   *  authoritative: its name/description/inputs/steps are used verbatim and only the
-   *  markdown body is written by the agent. `target` picks the destination — installed
-   *  into the agent's live skills folder, or exported (downloaded) to a user-picked dir. */
+   *  authoritative: its name/description/values/steps are used verbatim and only the
+   *  markdown body is written by the agent (which references each fixed value by its
+   *  `{{id}}` token; `renderSkillMarkdown` substitutes the literals). `target` picks the
+   *  destination — installed into the agent's live skills folder, or exported (downloaded)
+   *  to a user-picked dir. */
   async create(
     sessionId: string,
     editedPlan?: SkillPlan,
@@ -161,6 +165,13 @@ export class SkillBuilder extends AgentBuilder<LiveBuild> {
       }
       const submission = live.holder.submission as SkillSubmission | undefined;
       if (!submission) throw new Error("The agent finished without submitting a skill.");
+      // Lint the authored body: the agent is given each value as `{{id}} — name` (never the
+      // literal), so it can only reference tokens. Any token that doesn't match a declared
+      // value would ship un-substituted, so surface it (the render leaves unknown tokens as-is).
+      const unknownTokens = unresolvedTokens(submission.body, plan.values);
+      if (unknownTokens.length) {
+        log.warn(`skill body references unknown value tokens: ${unknownTokens.map((t) => `{{${t}}}`).join(", ")}`);
+      }
       // The frontmatter comes from the edited plan (authoritative); only the body is
       // the agent's generated prose. allowed-tools may be tightened by the agent to the
       // final steps, but never emptied below what the plan declared.
@@ -310,9 +321,12 @@ export class SkillBuilder extends AgentBuilder<LiveBuild> {
 function renderPlanForPrompt(plan: SkillPlan): string {
   const lines = [`Title: ${plan.title}`, `Name: ${plan.name}`, `Description: ${plan.description}`];
   if (plan.generalization) lines.push(`Generalization: ${plan.generalization}`);
-  if (plan.inputs.length) {
-    lines.push("", "Inputs:");
-    for (const i of plan.inputs) lines.push(`- ${i.name} [${i.source}]${i.detail ? `: ${i.detail}` : ""}`);
+  if (plan.values.length) {
+    lines.push(
+      "",
+      "Values (reference each by its {{id}} token in the body — never write the literal value yourself):",
+    );
+    for (const v of plan.values) lines.push(`- {{${v.id}}}${v.name ? ` — ${v.name}` : ""}`);
   }
   if (plan.steps.length) {
     lines.push("", "Steps (in order):");
@@ -336,8 +350,8 @@ function renderRefinePrompt(feedback: string, prior: SkillPlan | null): string {
   if (prior) {
     lines.push(`Current plan: ${prior.title} (${prior.name})`);
     lines.push(`- generalization: ${prior.generalization || "(none)"}`);
-    if (prior.inputs.length) {
-      lines.push(`- inputs: ${prior.inputs.map((i) => `${i.name} [${i.source}]`).join(", ")}`);
+    if (prior.values.length) {
+      lines.push(`- values: ${prior.values.map((v) => v.name || v.id).join(", ")}`);
     }
     lines.push("");
   }

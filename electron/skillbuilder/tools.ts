@@ -33,7 +33,7 @@ export function createSkillBuilderTools(ctx: SkillToolContext): Tool[] {
   const proposePlan: Tool = {
     name: "propose_plan",
     description:
-      "Propose your reviewable plan for the skill: how you'll generalize the task, the inputs it needs and where each comes from (fixed / provided / locate), the ordered steps (each with a short title, a description, and the native tool it uses), and the allowed-tools. Call this once per turn, then STOP so the user can review or refine it. Do NOT write the skill body yet.",
+      "Propose your reviewable plan for the skill: how you'll generalize the task, the fixed values it hard-codes (each a small id + human name + the literal, referenced from the steps by a {{id}} token), the ordered steps (each with a short title, a description, and the native tool it uses), and the allowed-tools. Call this once per turn, then STOP so the user can review or refine it. Do NOT write the skill body yet.",
     parameters: {
       type: "object",
       properties: {
@@ -49,26 +49,27 @@ export function createSkillBuilderTools(ctx: SkillToolContext): Tool[] {
           description:
             "How the recorded specifics become a repeatable procedure (the loop/collection insight).",
         },
-        inputs: {
+        values: {
           type: "array",
+          description:
+            "Genuinely FIXED literals the procedure hard-codes — a canonical URL, file path, repo slug, or constant that is the SAME every run. Each becomes an inline, editable pill in the review UI and is substituted for its {{id}} token when the skill is written. Do NOT create a value for anything discovered at run time or that varies run-to-run — write those as plain step instructions.",
           items: {
             type: "object",
             properties: {
-              name: { type: "string" },
-              description: { type: "string" },
-              source: {
+              id: {
                 type: "string",
-                enum: ["fixed", "provided", "locate"],
-                description:
-                  "fixed = a URL/path/value that's the SAME every run; provided = ask the user at run time; locate = the agent finds it on the device (varies run-to-run).",
+                description: "snake_case token key referenced in step text as {{id}}, e.g. \"backlog_url\".",
               },
-              detail: {
+              name: {
                 type: "string",
-                description:
-                  "For fixed: the value/path. For provided: what to ask for. For locate: how to find it.",
+                description: "Short human label shown on the pill, e.g. \"Blog Backlog v2 URL\".",
+              },
+              value: {
+                type: "string",
+                description: "The exact fixed literal (the URL / path / repo slug / constant).",
               },
             },
-            required: ["name", "source"],
+            required: ["id", "name", "value"],
             additionalProperties: false,
           },
         },
@@ -90,7 +91,8 @@ export function createSkillBuilderTools(ctx: SkillToolContext): Tool[] {
               },
               text: {
                 type: "string",
-                description: "Imperative, generalized description of the step.",
+                description:
+                  "Imperative, generalized description of the step. Reference any fixed value by its {{id}} token instead of writing the literal (e.g. \"open {{backlog_url}} and read the table\").",
               },
               tool: {
                 type: "string",
@@ -145,7 +147,7 @@ export function createSkillBuilderTools(ctx: SkillToolContext): Tool[] {
         body: {
           type: "string",
           description:
-            "The SKILL.md instructions body (markdown, everything after the frontmatter): when to use it, the generalized ordered procedure, how each input is resolved, and which native tools/skills to use.",
+            "The SKILL.md instructions body (markdown, everything after the frontmatter): when to use it, the generalized ordered procedure, and which native tools/skills to use. Reference each fixed value by its {{id}} token exactly (e.g. {{backlog_url}}) — never write the literal value yourself; it is substituted in when the skill is written.",
         },
       },
       required: ["name", "description", "body"],

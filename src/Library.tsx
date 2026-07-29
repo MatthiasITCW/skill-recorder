@@ -26,7 +26,6 @@ import {
   AnalysisStepTiles,
   AutomationStepTiles,
   EditableText,
-  InputTiles,
   ScheduleEditor,
   SkillStepTiles,
 } from "./plan-edit";
@@ -1065,19 +1064,16 @@ function SkillBuilderView({
             />
 
             <div className="sb-sec">
-              <span className="eyebrow">Inputs</span>
-              <p className="sb-refine-hint">
-                What the skill needs each run. Click a field to edit; set each as fixed, provided by you, or found by the agent.
-              </p>
-              <InputTiles inputs={plan.inputs} onChange={(inputs) => updatePlan({ inputs })} />
-            </div>
-
-            <div className="sb-sec">
               <span className="eyebrow">What the skill will do</span>
               <p className="sb-refine-hint">
-                Click any step to edit. Reorder, add or remove as needed.
+                Click any step to edit, or a highlighted value to change it. Reorder, add or remove as needed.
               </p>
-              <SkillStepTiles steps={plan.steps} onChange={(steps) => updatePlan({ steps })} />
+              <SkillStepTiles
+                steps={plan.steps}
+                onChange={(steps) => updatePlan({ steps })}
+                values={plan.values}
+                onChangeValues={(values) => updatePlan({ values })}
+              />
             </div>
           </div>
         )}
@@ -1338,19 +1334,16 @@ function AutomationBuilderView({
             </div>
 
             <div className="sb-sec">
-              <span className="eyebrow">Inputs</span>
-              <p className="sb-refine-hint">
-                What the automation needs each run. Click a field to edit; set each as fixed, provided by you, or found by the agent.
-              </p>
-              <InputTiles inputs={plan.inputs} onChange={(inputs) => updatePlan({ inputs })} />
-            </div>
-
-            <div className="sb-sec">
               <span className="eyebrow">What the automation will do</span>
               <p className="sb-refine-hint">
-                Click any step to edit. Reorder, add or remove as needed.
+                Click any step to edit, or a highlighted value to change it. Reorder, add or remove as needed.
               </p>
-              <AutomationStepTiles steps={plan.steps} onChange={(steps) => updatePlan({ steps })} />
+              <AutomationStepTiles
+                steps={plan.steps}
+                onChange={(steps) => updatePlan({ steps })}
+                values={plan.values}
+                onChangeValues={(values) => updatePlan({ values })}
+              />
             </div>
           </div>
         )}

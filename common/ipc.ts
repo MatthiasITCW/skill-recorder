@@ -427,7 +427,7 @@ export interface SkillRecorderApi {
   buildSkill(input: SkillBuildInput): Promise<SkillPlanResult>;
   /**
    * Finalize the (user-edited) skill plan and place its SKILL.md. The edited plan the
-   * user sees is authoritative — the body is written from exactly these inputs and steps.
+   * user sees is authoritative — the body is written from exactly these values and steps.
    * `placement` picks the destination: `"install"` writes into the target agent's live
    * skills folder (Scout); `"export"` prompts for a folder and downloads it there (the
    * only option for Cowork). Defaults to `"install"`.

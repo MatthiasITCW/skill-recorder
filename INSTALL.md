@@ -52,9 +52,10 @@ The source installers:
    lacks reviewed legal material.
 7. Build locally, retain repository/dependency licenses, and record hashes for
    the installed Electron and Copilot executables.
-8. Create a Start Menu shortcut on Windows; a launcher plus a `Skill Recorder
-   (Source)` app in `~/Applications` (reachable from Spotlight, Launchpad, and the
-   Dock) on macOS; and a launcher plus desktop entry on Ubuntu.
+8. Create Start Menu **and** desktop shortcuts on Windows; a launcher plus a
+   `Skill Recorder (Source)` app in `~/Applications` (reachable from Spotlight,
+   Launchpad, and the Dock) on macOS; and a launcher plus desktop entry on Ubuntu.
+9. Print a final confirmation listing the shortcuts that were created.
 
 No administrator access, global Node.js installation, or global Copilot CLI
 installation is required. GitHub Copilot authentication, entitlement, and
@@ -116,6 +117,7 @@ rm -f "$script"
 | `SKILL_RECORDER_COMMIT` | all | Required full 40-character source commit |
 | `SKILL_RECORDER_INSTALL_ROOT` | all | Override the per-user source/runtime directory |
 | `SKILL_RECORDER_NO_LAUNCH=1` | all | Install and validate without launching |
+| `SKILL_RECORDER_NO_DESKTOP_SHORTCUT=1` | Windows | Create only the Start Menu shortcut |
 | `SKILL_RECORDER_DETACHED=1` | macOS, Ubuntu | Launch in the background with file logging |
 | `SKILL_RECORDER_LOG_KEEP` | macOS, Ubuntu | Number of detached launch logs to retain; default `5` |
 
@@ -129,12 +131,26 @@ Every revision is installed under `versions/<commit>`. The current launcher is
 updated only after the selected revision passes dependency, license, integrity,
 and build checks.
 
+## Re-running the same command
+
+Running the Windows command again with the same commit does not download or
+rebuild anything. The installer verifies the existing `versions/<commit>`
+installation, refreshes the Start Menu and desktop shortcuts, and launches.
+
+If an earlier attempt failed part-way, the portable Node.js archive and the
+source archive it had already fetched are kept in `<install root>\cache` and
+reused on the next attempt. Cached files are re-verified by SHA-256 before use —
+the Node.js archive against the checksums published by nodejs.org on every run —
+and are deleted once the revision is installed. Deleting the `cache` directory is
+always safe.
+
 ## Relaunching after it closes
 
 After a successful install you can reopen Skill Recorder without re-running the
 installer:
 
-- Windows: the **Skill Recorder (Source)** Start Menu shortcut.
+- Windows: the **Skill Recorder (Source)** desktop shortcut, or the matching
+  Start Menu entry.
 - macOS: **Skill Recorder (Source)** in `~/Applications`, searchable from
   Spotlight and Launchpad and pinnable to the Dock.
 - Ubuntu: the **Skill Recorder (Source)** desktop entry, or run the launcher
@@ -245,6 +261,7 @@ Test the new revision before deleting an older revision.
 
 ```powershell
 Remove-Item "$([Environment]::GetFolderPath('Programs'))\Skill Recorder (Source).lnk" -Force
+Remove-Item "$([Environment]::GetFolderPath('DesktopDirectory'))\Skill Recorder (Source).lnk" -Force
 Remove-Item "$env:LOCALAPPDATA\SkillRecorder" -Recurse -Force
 ```
 

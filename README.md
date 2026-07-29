@@ -58,8 +58,10 @@ command. On Ubuntu it adds a matching application entry.
 Use the commit-pinned source installer documented in [`INSTALL.md`](INSTALL.md). The
 published command must identify a full 40-character release commit. It downloads a
 verified portable Node.js 24 runtime, builds that exact source revision locally, preserves
-the required license materials, and creates a Start Menu shortcut without installing Node
-system-wide.
+the required license materials, and creates **Skill Recorder (Source)** shortcuts on your
+desktop and in the Start Menu — all without installing Node system-wide. When it finishes
+it prints where both shortcuts were saved. Re-running the same command with the same
+commit reuses the installed revision instead of downloading and rebuilding it again.
 
 Both paths install dependencies from their publishers and build Skill Recorder locally.
 The platform-specific Copilot CLI is installed with the application dependencies; a global
@@ -84,6 +86,7 @@ Set any of these environment variables when you run the command:
 | `SKILL_RECORDER_COMMIT` | *(required)* | exact 40-character source commit |
 | `SKILL_RECORDER_INSTALL_ROOT` | per-user platform path | source and portable runtime location |
 | `SKILL_RECORDER_NO_LAUNCH` | *(unset)* | set to `1` to install without launching |
+| `SKILL_RECORDER_NO_DESKTOP_SHORTCUT` | *(unset)* | Windows: set to `1` to skip the desktop shortcut |
 | `SKILL_RECORDER_DETACHED` | *(unset)* | macOS/Ubuntu background launch with rolling logs |
 | `SKILL_RECORDER_LOG_KEEP` | `5` | macOS/Ubuntu detached log retention |
 

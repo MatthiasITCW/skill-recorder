@@ -9,7 +9,12 @@ Builds and installs Skill Recorder from an exact source commit.
 This script does not download a prebuilt Skill Recorder application. It obtains
 an official portable Node.js 24 runtime, downloads the exact requested source
 commit from GitHub, installs lockfile-pinned dependencies from their publishers,
-validates license materials, builds locally, and creates a Start Menu shortcut.
+validates license materials, builds locally, and creates Start Menu and desktop
+shortcuts.
+
+Re-running the same commit reuses the verified installation instead of
+downloading and rebuilding it again. Downloads interrupted by an earlier failed
+run are resumed from a checksum-verified cache rather than fetched twice.
 #>
 
 & {
@@ -19,6 +24,7 @@ $ProgressPreference = "SilentlyContinue"
 $Commit = $env:SKILL_RECORDER_COMMIT
 $InstallRoot = $env:SKILL_RECORDER_INSTALL_ROOT
 $skipLaunch = $env:SKILL_RECORDER_NO_LAUNCH -eq "1"
+$createDesktopShortcut = $env:SKILL_RECORDER_NO_DESKTOP_SHORTCUT -ne "1"
 
 function Write-Step {
   param([Parameter(Mandatory)][string]$Message)
@@ -58,6 +64,60 @@ function Invoke-Download {
   }
   if ((Get-Item -LiteralPath $Destination).Length -eq 0) {
     throw "Downloaded file is empty: $Uri"
+  }
+}
+
+function Get-CachedDownload {
+  param(
+    [Parameter(Mandatory)][string]$Uri,
+    [Parameter(Mandatory)][string]$CachePath,
+    [string]$ExpectedSha256
+  )
+
+  $digestPath = "$CachePath.sha256"
+  $expected = ""
+  if (-not [string]::IsNullOrWhiteSpace($ExpectedSha256)) {
+    $expected = $ExpectedSha256.ToLowerInvariant()
+  }
+
+  if (Test-Path -LiteralPath $CachePath -PathType Leaf) {
+    $reference = $expected
+    if ([string]::IsNullOrWhiteSpace($reference) -and (Test-Path -LiteralPath $digestPath -PathType Leaf)) {
+      $reference = (Get-Content -LiteralPath $digestPath -Raw).Trim().ToLowerInvariant()
+    }
+
+    $cachedHash = (Get-FileHash -LiteralPath $CachePath -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($reference -match "^[0-9a-f]{64}$" -and $cachedHash -eq $reference) {
+      Write-Step "Reusing the cached download $(Split-Path -Leaf $CachePath) instead of downloading it again."
+      return $cachedHash
+    }
+
+    Write-Step "Discarding an unverifiable cached download: $(Split-Path -Leaf $CachePath)"
+    Remove-Item -LiteralPath $CachePath -Force
+    if (Test-Path -LiteralPath $digestPath -PathType Leaf) {
+      Remove-Item -LiteralPath $digestPath -Force
+    }
+  }
+
+  New-Item -ItemType Directory -Path (Split-Path -Parent $CachePath) -Force | Out-Null
+  Invoke-Download -Uri $Uri -Destination $CachePath
+  $downloadHash = (Get-FileHash -LiteralPath $CachePath -Algorithm SHA256).Hash.ToLowerInvariant()
+  if (-not [string]::IsNullOrWhiteSpace($expected) -and $downloadHash -ne $expected) {
+    Remove-Item -LiteralPath $CachePath -Force
+    throw "Download SHA-256 mismatch for $Uri. Expected $expected, got $downloadHash."
+  }
+
+  Set-Content -LiteralPath $digestPath -Value $downloadHash -Encoding ASCII
+  return $downloadHash
+}
+
+function Remove-CachedDownload {
+  param([Parameter(Mandatory)][string]$CachePath)
+
+  foreach ($path in @($CachePath, "$CachePath.sha256")) {
+    if (Test-Path -LiteralPath $path -PathType Leaf) {
+      Remove-Item -LiteralPath $path -Force
+    }
   }
 }
 
@@ -228,7 +288,8 @@ function Get-NodeRuntime {
   param(
     [Parameter(Mandatory)][string]$Architecture,
     [Parameter(Mandatory)][string]$RuntimeRoot,
-    [Parameter(Mandatory)][string]$StagingRoot
+    [Parameter(Mandatory)][string]$StagingRoot,
+    [Parameter(Mandatory)][string]$CacheRoot
   )
 
   Write-Step "Resolving the latest Node.js 24 LTS release for Windows $Architecture."
@@ -258,22 +319,25 @@ function Get-NodeRuntime {
   $npmCmd = Join-Path $runtimeDirectory "npm.cmd"
 
   if (-not (Test-Path -LiteralPath $runtimeDirectory -PathType Container)) {
-    Write-Step "Downloading $archiveName from nodejs.org."
-    $archivePath = Join-Path $StagingRoot $archiveName
+    $archivePath = Join-Path $CacheRoot $archiveName
     $sumsPath = Join-Path $StagingRoot "SHASUMS256.txt"
     $baseUri = "https://nodejs.org/dist/$version"
-    Invoke-Download -Uri "$baseUri/$archiveName" -Destination $archivePath
     Invoke-Download -Uri "$baseUri/SHASUMS256.txt" -Destination $sumsPath
-    Assert-ZipArchive -Path $archivePath
 
     $hashPattern = "(?m)^([0-9a-fA-F]{64})\s+" + [regex]::Escape($archiveName) + "\s*$"
     $hashMatch = [regex]::Match((Get-Content -LiteralPath $sumsPath -Raw), $hashPattern)
     if (-not $hashMatch.Success) {
       throw "Official Node.js checksums do not list $archiveName."
     }
-
     $expectedHash = $hashMatch.Groups[1].Value.ToLowerInvariant()
-    $actualHash = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
+
+    Write-Step "Obtaining $archiveName from nodejs.org."
+    $actualHash = Get-CachedDownload `
+      -Uri "$baseUri/$archiveName" `
+      -CachePath $archivePath `
+      -ExpectedSha256 $expectedHash
+    Assert-ZipArchive -Path $archivePath
+
     if ($actualHash -ne $expectedHash) {
       throw "Node.js archive SHA-256 mismatch. Expected $expectedHash, got $actualHash."
     }
@@ -289,6 +353,9 @@ function Get-NodeRuntime {
 
     New-Item -ItemType Directory -Path $RuntimeRoot -Force | Out-Null
     Move-Item -LiteralPath $expandedDirectory -Destination $runtimeDirectory
+    Remove-CachedDownload -CachePath $archivePath
+  } else {
+    Write-Step "Reusing the verified Node.js $version runtime already installed at $runtimeDirectory."
   }
 
   Assert-TrustedSignature `
@@ -318,18 +385,30 @@ function Get-NodeRuntime {
   }
 }
 
+function Get-ShortcutFolder {
+  param(
+    [Parameter(Mandatory)][string]$SpecialFolder,
+    [Parameter(Mandatory)][string]$Description
+  )
+
+  $folder = [Environment]::GetFolderPath([Environment+SpecialFolder]$SpecialFolder)
+  if ([string]::IsNullOrWhiteSpace($folder)) {
+    throw "The current user does not have a $Description directory."
+  }
+  if (-not (Test-Path -LiteralPath $folder -PathType Container)) {
+    New-Item -ItemType Directory -Path $folder -Force | Out-Null
+  }
+  return $folder
+}
+
 function New-SourceShortcut {
   param(
+    [Parameter(Mandatory)][string]$Folder,
     [Parameter(Mandatory)][string]$SourceDirectory,
     [Parameter(Mandatory)][string]$ElectronExecutable
   )
 
-  $programs = [Environment]::GetFolderPath([Environment+SpecialFolder]::Programs)
-  if ([string]::IsNullOrWhiteSpace($programs)) {
-    throw "The current user does not have a Start Menu Programs directory."
-  }
-
-  $shortcutPath = Join-Path $programs "Skill Recorder (Source).lnk"
+  $shortcutPath = Join-Path $Folder "Skill Recorder (Source).lnk"
   $shell = New-Object -ComObject WScript.Shell
   $shortcut = $shell.CreateShortcut($shortcutPath)
   $shortcut.TargetPath = $ElectronExecutable
@@ -338,6 +417,9 @@ function New-SourceShortcut {
   $shortcut.IconLocation = "$ElectronExecutable,0"
   $shortcut.Description = "Skill Recorder built locally from pinned source"
   $shortcut.Save()
+  if (-not (Test-Path -LiteralPath $shortcutPath -PathType Leaf)) {
+    throw "Windows did not create the shortcut at $shortcutPath."
+  }
   return $shortcutPath
 }
 
@@ -364,6 +446,7 @@ $InstallRoot = [IO.Path]::GetFullPath($InstallRoot)
 
 $runtimeRoot = Join-Path $InstallRoot "runtime"
 $versionsRoot = Join-Path $InstallRoot "versions"
+$cacheRoot = Join-Path $InstallRoot "cache"
 $sourceDirectory = Join-Path $versionsRoot $Commit
 $metadataPath = Join-Path $sourceDirectory ".skill-recorder-install.json"
 $platformPackage = "@github\copilot-win32-$architecture"
@@ -371,7 +454,7 @@ $platformPackage = "@github\copilot-win32-$architecture"
 New-Item -ItemType Directory -Path $versionsRoot -Force | Out-Null
 
 if (Test-Path -LiteralPath $sourceDirectory -PathType Container) {
-  Write-Step "Using the existing installation for commit $Commit."
+  Write-Step "Commit $Commit is already installed; reusing it without downloading or rebuilding anything."
   if (-not (Test-Path -LiteralPath $metadataPath -PathType Leaf)) {
     throw "The existing source directory has no installation metadata: $sourceDirectory"
   }
@@ -392,15 +475,15 @@ if (Test-Path -LiteralPath $sourceDirectory -PathType Container) {
     $runtime = Get-NodeRuntime `
       -Architecture $architecture `
       -RuntimeRoot $runtimeRoot `
-      -StagingRoot $stagingDirectory
+      -StagingRoot $stagingDirectory `
+      -CacheRoot $cacheRoot
 
-    Write-Step "Downloading the exact source commit from GitHub."
-    $sourceArchive = Join-Path $stagingDirectory "skill-recorder-$Commit.zip"
-    Invoke-Download `
+    Write-Step "Obtaining the exact source commit from GitHub."
+    $sourceArchive = Join-Path $cacheRoot "skill-recorder-$Commit.zip"
+    $sourceArchiveHash = Get-CachedDownload `
       -Uri "https://codeload.github.com/adilei/skill-recorder/zip/$Commit" `
-      -Destination $sourceArchive
+      -CachePath $sourceArchive
     Assert-ZipArchive -Path $sourceArchive
-    $sourceArchiveHash = (Get-FileHash -LiteralPath $sourceArchive -Algorithm SHA256).Hash.ToLowerInvariant()
 
     $sourceExtractRoot = Join-Path $stagingDirectory "source"
     Expand-Archive -LiteralPath $sourceArchive -DestinationPath $sourceExtractRoot
@@ -532,6 +615,7 @@ if (Test-Path -LiteralPath $sourceDirectory -PathType Container) {
       throw "Refusing to overwrite an existing source installation: $sourceDirectory"
     }
     Move-Item -LiteralPath $buildDirectory -Destination $sourceDirectory
+    Remove-CachedDownload -CachePath $sourceArchive
   } finally {
     if (Test-Path -LiteralPath $stagingDirectory) {
       Remove-Item -LiteralPath $stagingDirectory -Recurse -Force
@@ -563,14 +647,49 @@ Assert-TrustedSignature `
   -PublisherPattern "GitHub, Inc\." `
   -PublisherName "GitHub"
 
-$shortcutPath = New-SourceShortcut `
-  -SourceDirectory $sourceDirectory `
-  -ElectronExecutable $electronExecutable
+$startMenuShortcut = $null
+$desktopShortcut = $null
+
+try {
+  $startMenuShortcut = New-SourceShortcut `
+    -Folder (Get-ShortcutFolder -SpecialFolder "Programs" -Description "Start Menu Programs") `
+    -SourceDirectory $sourceDirectory `
+    -ElectronExecutable $electronExecutable
+} catch {
+  Write-Warning "Could not create the Start Menu shortcut: $($_.Exception.Message)"
+}
+
+if ($createDesktopShortcut) {
+  try {
+    $desktopShortcut = New-SourceShortcut `
+      -Folder (Get-ShortcutFolder -SpecialFolder "DesktopDirectory" -Description "Desktop") `
+      -SourceDirectory $sourceDirectory `
+      -ElectronExecutable $electronExecutable
+  } catch {
+    Write-Warning "Could not create the desktop shortcut: $($_.Exception.Message)"
+  }
+}
 
 Write-Step "Installed commit $Commit at $sourceDirectory"
 Write-Step "License materials remain in the source tree, dependency packages, and .compliance directory."
-Write-Step "Created Start Menu shortcut: $shortcutPath"
 Write-Warning "This locally generated build is for local execution only. Do not redistribute it."
+
+Write-Host ""
+Write-Host "Skill Recorder is ready. Open it any time from these shortcuts:"
+if ($null -ne $startMenuShortcut) {
+  Write-Host "  Start Menu : $startMenuShortcut"
+} else {
+  Write-Host "  Start Menu : not created (see the warning above)"
+}
+if (-not $createDesktopShortcut) {
+  Write-Host "  Desktop    : skipped because SKILL_RECORDER_NO_DESKTOP_SHORTCUT=1"
+} elseif ($null -ne $desktopShortcut) {
+  Write-Host "  Desktop    : $desktopShortcut"
+} else {
+  Write-Host "  Desktop    : not created (see the warning above)"
+}
+Write-Host "Each entry is named 'Skill Recorder (Source)' and starts this installed revision."
+Write-Host ""
 
 if (-not $skipLaunch) {
   Write-Step "Launching Skill Recorder."

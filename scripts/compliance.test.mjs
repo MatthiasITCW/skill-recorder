@@ -368,6 +368,17 @@ test("source and release instructions remain compliance-preserving", async () =>
   );
   assert.doesNotMatch(windowsInstaller, /\/(?:master|main)\/install\.ps1/i);
 
+  assert.match(windowsInstaller, /"Skill Recorder \(Source\)\.lnk"/);
+  assert.match(windowsInstaller, /SpecialFolder "Programs"/);
+  assert.match(windowsInstaller, /SpecialFolder "DesktopDirectory"/);
+  assert.match(windowsInstaller, /SKILL_RECORDER_NO_DESKTOP_SHORTCUT -ne "1"/);
+  assert.match(
+    windowsInstaller,
+    /Get-CachedDownload `\r?\n\s+-Uri "\$baseUri\/\$archiveName" `\r?\n\s+-CachePath \$archivePath `\r?\n\s+-ExpectedSha256 \$expectedHash/,
+  );
+  assert.match(windowsInstaller, /Remove-CachedDownload -CachePath \$archivePath/);
+  assert.match(windowsInstaller, /Remove-CachedDownload -CachePath \$sourceArchive/);
+
   assert.match(unixInstaller, /\^\[0-9a-fA-F\]\{40\}\$/);
   assert.match(
     unixInstaller,
@@ -399,6 +410,8 @@ test("source and release instructions remain compliance-preserving", async () =>
   assert.match(instructions, /Ubuntu/);
   assert.match(instructions, /complete generated\s+compliance bundle/i);
   assert.doesNotMatch(instructions, /raw\.githubusercontent\.com\/[^ \n]+\/(?:master|main)\//i);
+  assert.match(instructions, /SKILL_RECORDER_NO_DESKTOP_SHORTCUT=1/);
+  assert.match(instructions, /GetFolderPath\('DesktopDirectory'\)/);
   assert.match(readme, /\[`INSTALL\.md`\]\(INSTALL\.md\)/);
   assert.match(readme, /\[`RELEASING\.md`\]\(RELEASING\.md\)/);
   assert.doesNotMatch(readme, /raw\.githubusercontent\.com\/[^ \n]+\/(?:master|main)\//i);

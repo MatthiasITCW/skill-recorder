@@ -301,14 +301,24 @@ test("licenses-only bundles cannot pass release verification", async () => {
 });
 
 test("source and release instructions remain compliance-preserving", async () => {
-  const [windowsInstaller, unixInstaller, instructions, readme, releasing] =
-    await Promise.all([
-      readFile(path.join(repoRoot, "install.ps1"), "utf8"),
-      readFile(path.join(repoRoot, "install.sh"), "utf8"),
-      readFile(path.join(repoRoot, "INSTALL.md"), "utf8"),
-      readFile(path.join(repoRoot, "README.md"), "utf8"),
-      readFile(path.join(repoRoot, "RELEASING.md"), "utf8"),
-    ]);
+  const [
+    windowsInstaller,
+    unixInstaller,
+    instructions,
+    readme,
+    releasing,
+    windowsWorkflow,
+  ] = await Promise.all([
+    readFile(path.join(repoRoot, "install.ps1"), "utf8"),
+    readFile(path.join(repoRoot, "install.sh"), "utf8"),
+    readFile(path.join(repoRoot, "INSTALL.md"), "utf8"),
+    readFile(path.join(repoRoot, "README.md"), "utf8"),
+    readFile(path.join(repoRoot, "RELEASING.md"), "utf8"),
+    readFile(
+      path.join(repoRoot, ".github", "workflows", "windows.yml"),
+      "utf8",
+    ),
+  ]);
 
   assert.match(windowsInstaller, /\^\[0-9a-fA-F\]\{40\}\$/);
   assert.match(
@@ -330,6 +340,19 @@ test("source and release instructions remain compliance-preserving", async () =>
   assert.match(windowsInstaller, /node_modules\\electron\\dist\\LICENSES\.chromium\.html/);
   assert.match(windowsInstaller, /third_party\\compliance-policy\.json/);
   assert.match(windowsInstaller, /Assert-ReviewedElectronDistribution/);
+  assert.match(windowsInstaller, /EnvironmentVariableTarget\]::Machine/);
+  assert.doesNotMatch(
+    windowsInstaller,
+    /RuntimeInformation\]::OSArchitecture/,
+  );
+  assert.match(
+    windowsInstaller,
+    /\$compatibleReleases = @\(\s+foreach \(\$release in \$index\)/,
+  );
+  assert.doesNotMatch(
+    windowsInstaller,
+    /\$index = @\(Get-Content [^\r\n]+ConvertFrom-Json\)/,
+  );
   assert.match(windowsInstaller, /\$versionOutput = @\(& \$nodeExe --version\)/);
   assert.doesNotMatch(
     windowsInstaller,
@@ -387,4 +410,8 @@ test("source and release instructions remain compliance-preserving", async () =>
   assert.match(releasing, /SHA-256 values for `install\.ps1` and `install\.sh`/i);
   assert.match(releasing, /complete, version-matched\s+compliance bundle/i);
   assert.match(releasing, /Never silently replace an asset or move a release tag/i);
+  assert.match(
+    windowsWorkflow,
+    /- name: Test commit-pinned source installation\r?\n\s+shell: powershell/,
+  );
 });

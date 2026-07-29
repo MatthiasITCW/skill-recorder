@@ -64,7 +64,7 @@ jobs:
           }
 
       - name: Test commit-pinned source installation
-        shell: pwsh
+        shell: powershell
         env:
           SKILL_RECORDER_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
           SKILL_RECORDER_INSTALL_ROOT: ${{ runner.temp }}\skill-recorder-source

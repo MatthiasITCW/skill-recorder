@@ -131,11 +131,27 @@ function Invoke-CheckedCommand {
 }
 
 function Get-WindowsArchitecture {
-  $architecture = [Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant()
-  if ($architecture -notin @("x64", "arm64")) {
-    throw "Skill Recorder supports Windows x64 and ARM64, not $architecture."
+  $architecture = [Environment]::GetEnvironmentVariable(
+    "PROCESSOR_ARCHITECTURE",
+    [EnvironmentVariableTarget]::Machine
+  )
+  if ([string]::IsNullOrWhiteSpace($architecture)) {
+    $architecture = [Environment]::GetEnvironmentVariable("PROCESSOR_ARCHITEW6432")
   }
-  return $architecture
+  if ([string]::IsNullOrWhiteSpace($architecture)) {
+    $architecture = [Environment]::GetEnvironmentVariable("PROCESSOR_ARCHITECTURE")
+  }
+  if ([string]::IsNullOrWhiteSpace($architecture)) {
+    throw "Windows did not report its native processor architecture."
+  }
+
+  switch ($architecture.ToUpperInvariant()) {
+    "AMD64" { return "x64" }
+    "ARM64" { return "arm64" }
+    default {
+      throw "Skill Recorder supports Windows x64 and ARM64, not $architecture."
+    }
+  }
 }
 
 function Get-ElectronExecutable {
@@ -218,20 +234,24 @@ function Get-NodeRuntime {
   Write-Step "Resolving the latest Node.js 24 LTS release for Windows $Architecture."
   $indexPath = Join-Path $StagingRoot "node-index.json"
   Invoke-Download -Uri "https://nodejs.org/dist/index.json" -Destination $indexPath
-  $index = @(Get-Content -LiteralPath $indexPath -Raw | ConvertFrom-Json)
+  $index = Get-Content -LiteralPath $indexPath -Raw | ConvertFrom-Json
   $fileKind = "win-$Architecture-zip"
-  $matches = @(
-    $index | Where-Object {
-      $_.version -match "^v24\.\d+\.\d+$" -and
-        [bool]$_.lts -and
-        $_.files -contains $fileKind
+  $compatibleReleases = @(
+    foreach ($release in $index) {
+      if (
+        $release.version -match "^v24\.\d+\.\d+$" -and
+        [bool]$release.lts -and
+        $release.files -contains $fileKind
+      ) {
+        $release
+      }
     }
   )
-  if ($matches.Count -eq 0) {
+  if ($compatibleReleases.Count -eq 0) {
     throw "Node.js did not publish a Node 24 archive for Windows $Architecture."
   }
 
-  $version = [string]$matches[0].version
+  $version = [string]$compatibleReleases[0].version
   $archiveName = "node-$version-win-$Architecture.zip"
   $runtimeDirectory = Join-Path $RuntimeRoot ([IO.Path]::GetFileNameWithoutExtension($archiveName))
   $nodeExe = Join-Path $runtimeDirectory "node.exe"

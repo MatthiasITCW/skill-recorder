@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 1,
+  "copilotCli": "1.0.71",
+  "copilotSdk": "1.0.7",
+  "electron": {
+    "version": "43.1.1",
+    "ffmpegRevision": "ad41607c61898cf7150e0fb20fe4bbabd44922a3",
+    "distributions": {
+      "darwin-arm64": "d6d0598d042ef4d146278d08d84deac9dde145eae31eb4f32ef46206d6bd6169",
+      "darwin-x64": "82789f6fbba543f9c170dd3a0f053278eeda9b4818d51aea5467c4e500e79d51",
+      "linux-arm64": "30ed0b3672dd71672f6496fa0ba0c770ac7f8c6d9b38f01f615a6923b1541311",
+      "linux-x64": "c1f479c52747caf1510e17500e1c8a556d0e40802837bd48c5647a84688a3880",
+      "win32-arm64": "41a8cbea7f356ede97b5222c6f2a6da501e3ae8936a0ed053ae5fa9202ccd912",
+      "win32-x64": "b4e9995cd3f65785eb8818276aa9020f3165ab11da41b3c762616d4a0ad8c7ad"
+    },
+    "notices": {
+      "LICENSE.electron.txt": "5154e165bd6c2cc0cfbcd8916498c7abab0497923bafcd5cb07673fe8480087d",
+      "LICENSES.chromium.html": "b911161e6594ec76b872498b423c54406168f2974e0d407a847f7de1e5ff94dd"
+    }
+  },
+  "sharp": "0.34.5",
+  "sharpLibvips": {
+    "version": "1.2.4"
+  },
+  "onnxruntime": {
+    "1.24.3": "v1.24.3",
+    "1.24.0-dev.20251116-b39e144322": "b39e144322",
+    "1.26.0-dev.20260416-b7804b056c": "b7804b056c"
+  },
+  "remoteMaterials": {
+    "gpl-3.0": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903",
+    "lgpl-2.1": "a9bdde5616ecdd1e980b44f360600ee8783b1f99b8cc83a2beb163a0a390e861",
+    "lgpl-3.0": "a853c2ffec17057872340eee242ae4d96cbf2b520ae27d903e1b2fef1a5f9d1c",
+    "mpl-2.0": "1f256ecad192880510e84ad60474eab7589218784b9a50bc7ceee34c2b91f1d5",
+    "onnxruntime-1.24.0-dev.20251116-b39e144322-license": "2f07c72751aed99790b8a4869cf2311df85a860b22ded05fa22803587a48922c",
+    "onnxruntime-1.24.0-dev.20251116-b39e144322-notices": "e9e90971a8e75a9a8ac0c6412e29c1202d079998389915aa485f46c816c3b4cc",
+    "onnxruntime-1.24.3-license": "2f07c72751aed99790b8a4869cf2311df85a860b22ded05fa22803587a48922c",
+    "onnxruntime-1.24.3-notices": "0e07b95f3a8d6230037707c5c4a2b554d12c4cb67369669ac255635528ffcee2",
+    "onnxruntime-1.26.0-dev.20260416-b7804b056c-license": "2f07c72751aed99790b8a4869cf2311df85a860b22ded05fa22803587a48922c",
+    "onnxruntime-1.26.0-dev.20260416-b7804b056c-notices": "0e07b95f3a8d6230037707c5c4a2b554d12c4cb67369669ac255635528ffcee2"
+  },
+  "sourceMaterials": {
+    "electron": "9fa9a84bc0ee0aab5ec7f46de991dc55904e634fb566a75bb3f93599c861c46a",
+    "electron-ffmpeg": "e84618cc968bb2895ad494c86943c020b242a74f905fc412653c1068a37ea640",
+    "electron-ffmpeg-patch-link-with-loader-path": "849b0fbef990623b0caf187c75a3f31f53ed4390e5770196d47880056b53dc7e",
+    "libvips-windows-build": "241e9b486a14eb1a6b531591f703aeb7d3497c762fc209b2de6a3fdaa67ec8fb",
+    "sharp": "8b4d7e0149fee8d273b1b674ede7886bb7b7b172ebec0398d0b8dbaf816214d2",
+    "sharp-libvips-build": "d434fe577941e979438431ccbdf59ea86a5d559d6b218d6ec2a8ea466ad7c868",
+    "sharp-native-aom": "19e45a5a7192d690565229983dad900e76b513a02306c12053fb9a262cbeca7d",
+    "sharp-native-archive": "db0dee91561cbd957689036a3a71281efefd131d35d1d98ebbc32720e4da58e2",
+    "sharp-native-cairo": "445ed8208a6e4823de1226a74ca319d3600e83f6369f99b14265006599c32ccb",
+    "sharp-native-cgif": "d6cb312c7da2c6c9f310811aa3658120c0316ba130c48a012e7baf3698920fe9",
+    "sharp-native-exif": "62f74cf3bf673a6e24d2de68f6741643718541f83aca5947e76e3978c25dce83",
+    "sharp-native-expat": "71df8f40706a7bb0a80a5367079ea75d91da4f8c65c58ec59bcdfbf7decdab9f",
+    "sharp-native-ffi": "f3a3082a23b37c293a4fcd1053147b371f2ff91fa7ea1b2a52e335676bac82dc",
+    "sharp-native-fontconfig": "82e73b26adad651b236e5f5d4b3074daf8ff0910188808496326bd3449e5261d",
+    "sharp-native-freetype": "44bd69d1f0750603410cfd4f26f1c5523c5a3a087a2dfa8639b757dc7c6677be",
+    "sharp-native-fribidi": "1b1cde5b235d40479e91be2f0e88a309e3214c8ab470ec8a2744d82a5a9ea05c",
+    "sharp-native-glib": "119d1708ca022556d6d2989ee90ad1b82bd9c0d1667e066944a6d0020e2d5e57",
+    "sharp-native-harfbuzz": "0238bf7ada6b1fb92984f69f8b9cd66518af83cf24f7db1cfe60c772c42312d3",
+    "sharp-native-heif": "68ac9084243004e0ef3633f184eeae85d615fe7e4444373a0a21cebccae9d12a",
+    "sharp-native-highway": "07b3c1ba2c1096878a85a31a5b9b3757427af963b1141ca904db2f9f4afe0bc2",
+    "sharp-native-imagequant": "47d2a84b7b1052975c9d50a3d4e3cacbf57b43d84a4c3131210848ead9964dfb",
+    "sharp-native-lcms": "d11af569e42a1baa1650d20ad61d12e41af4fead4aa7964a01f93b08b53ab074",
+    "sharp-native-mozjpeg": "b680167bd5d9afebdd576a12f8c49d2c9066a3b92ef96a2b2c5f7829b8600fe5",
+    "sharp-native-pango": "890640c841dae77d3ae3d8fe8953784b930fa241b17423e6120c7bfdf8b891e7",
+    "sharp-native-pixman": "d09c44ebc3bd5bee7021c79f922fe8fb2fb57f7320f55e97ff9914d2346a591c",
+    "sharp-native-png": "71158e53cfdf2877bc99bcab33641d78df3f48e6e0daad030afe9cb8c031aa46",
+    "sharp-native-proxy-libintl": "f7a1cbd7579baaf575c66f9d99fb6295e9b0684a28b095967cfda17857595303",
+    "sharp-native-rsvg": "4644d83623dd61cc4479c2b3c372e1da2b281552ebc90035c8d1ac502eb1dc00",
+    "sharp-native-spng": "47ec02be6c0a6323044600a9221b049f63e1953faf816903e7383d4dc4234487",
+    "sharp-native-tiff": "f698d94f3103da8ca7438d84e0344e453fe0ba3b7486e04c5bf7a9a3fabe9b69",
+    "sharp-native-vips": "41e9a1439cd57dcc6d4435a085e2cfe181d9da1962fa84a484f09e8b536e4b77",
+    "sharp-native-webp": "e4ab7009bf0629fd11982d4c2aa83964cf244cffba7347ecd39019a9e38c4564",
+    "sharp-native-xml2": "c008bac08fd5c7b4a87f7b8a71f283fa581d80d80ff8d2efd3b26224c39bc54c",
+    "sharp-native-zlib-ng": "5b3b022489f3ced82384f06db1e13ba148cbce38c7941e424d6cb414416acd18",
+    "sharp-patch-aom": "9905702d2be0d790ca9a47752f2e6f84b37e085f43c58e1d2dd66896e9fd5694",
+    "sharp-patch-glib-without-gregex": "b1f2930a11292e529de137c7eb723850e0cc0969b1a2b0358196389312acd272",
+    "sharp-patch-highway": "6ce65c4a6e90a4293da81cd3e932e81fd7ac77f31058143241ca9b8dd085098c",
+    "sharp-patch-libvips-heif": "59a547c12915bc2670c37ff88200ebe74fe70aacce6e20b7069157a0d6a098c8",
+    "sharp-patch-libvips-soversion": "256b7d6f8c973bb53b20cff5171c7117d6b35d3aa4e72d22cb906f4fe1e2c890"
+  }
+}

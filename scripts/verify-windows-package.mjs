@@ -2,6 +2,8 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 
+import { verifyComplianceDirectory } from "./compliance.mjs";
+
 const require = createRequire(import.meta.url);
 const { listPackage } = require("@electron/asar");
 
@@ -10,7 +12,7 @@ if (arch !== "x64" && arch !== "arm64") {
   throw new Error("Usage: node scripts/verify-windows-package.mjs <x64|arm64>");
 }
 
-const outputRoot = path.resolve("dist");
+const outputRoot = path.resolve("release");
 const unpacked = readdirSync(outputRoot)
   .map((name) => path.join(outputRoot, name))
   .find(
@@ -95,6 +97,22 @@ for (const notice of ["third-party-notices.md", "license"]) {
     throw new Error(`Packaged application is missing application notice ${notice}.`);
   }
 }
+
+await verifyComplianceDirectory(path.join(unpacked, "resources", "compliance"), {
+  requireSources: true,
+  requireElectronNotices: true,
+});
+
+const nestedOutput = asarEntries.find(
+  (entry) =>
+    entry.startsWith("release/") ||
+    /^dist\/(?:win(?:-[^/]+)?-unpacked|mac(?:-[^/]+)?|linux(?:-[^/]+)?-unpacked)\//.test(
+      entry,
+    ),
+);
+if (nestedOutput) {
+  throw new Error(`Packaged application recursively contains build output ${nestedOutput}.`);
+}
 const forbiddenSourceRoots = ["common", "docs", "electron", "evals", "scripts", "src"];
 for (const root of forbiddenSourceRoots) {
   if (asarEntries.some((entry) => entry === root || entry.startsWith(`${root}/`))) {
@@ -103,7 +121,7 @@ for (const root of forbiddenSourceRoots) {
 }
 
 console.log(
-  `Verified native ${arch} package, asar contents, license notices, and no standalone FFmpeg: ` +
+  `Verified native ${arch} package, compliance sources, notices, and no standalone FFmpeg: ` +
     path.relative(process.cwd(), unpacked),
 );
 

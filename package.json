@@ -2,7 +2,7 @@
   "name": "skill-recorder",
   "version": "0.1.0",
   "description": "Records a user's on-screen work session and derives a structured description for building AI-agent skills.",
-  "author": "Skill Recorder",
+  "author": "Skill Recorder contributors",
   "repository": "github:adilei/skill-recorder",
   "license": "MIT",
   "private": true,
@@ -14,15 +14,18 @@
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
     "typecheck:evals": "tsc --noEmit -p evals/tsconfig.json",
-    "test": "node --experimental-transform-types --no-warnings --import ./evals/register.mjs --test common/audio.test.ts common/microphone.test.ts common/narration.test.ts electron/recording-controls-bounds.test.ts electron/recording-privacy.test.ts electron/recorder/controller.test.ts electron/frames/extractor.test.ts electron/narration/audio-analysis.test.ts electron/narration/analyze-gate.test.ts electron/narration/transcribe.test.ts electron/narration/whisper.test.ts electron/sessions.test.ts electron/debug-bundle.test.ts",
+    "test": "node --experimental-transform-types --no-warnings --import ./evals/register.mjs --test common/audio.test.ts common/microphone.test.ts common/narration.test.ts electron/recording-controls-bounds.test.ts electron/recording-privacy.test.ts electron/recorder/controller.test.ts electron/frames/extractor.test.ts electron/narration/audio-analysis.test.ts electron/narration/analyze-gate.test.ts electron/narration/transcribe.test.ts electron/narration/whisper.test.ts electron/sessions.test.ts electron/debug-bundle.test.ts scripts/compliance.test.mjs",
     "eval": "node --experimental-transform-types --no-warnings --import ./evals/register.mjs evals/run.ts",
     "eval:builder": "node --experimental-transform-types --no-warnings --import ./evals/register.mjs evals/builder/run.ts",
     "eval:skill": "node --experimental-transform-types --no-warnings --import ./evals/register.mjs evals/skillbuilder/run.ts",
-    "dist": "node scripts/assert-generic-dist-platform.mjs && vite build && electron-builder --publish never",
-    "dist:win:x64": "node scripts/assert-native-windows-arch.mjs x64 && vite build && electron-builder --publish never --win nsis --x64",
-    "dist:win:arm64": "node scripts/assert-native-windows-arch.mjs arm64 && vite build && electron-builder --publish never --win nsis --arm64",
-    "dist:portable:mac": "vite build && electron-builder --publish never --mac zip",
-    "dist:portable:win": "node scripts/assert-native-windows-arch.mjs x64 && vite build && electron-builder --publish never --win portable --x64",
+    "compliance:licenses": "node scripts/prepare-compliance.mjs --licenses-only",
+    "compliance:prepare": "node scripts/prepare-compliance.mjs",
+    "compliance:test": "node --test scripts/compliance.test.mjs",
+    "dist": "npm run compliance:prepare && node scripts/assert-generic-dist-platform.mjs && vite build && electron-builder --publish never",
+    "dist:win:x64": "npm run compliance:prepare && node scripts/assert-native-windows-arch.mjs x64 && vite build && electron-builder --config.npmRebuild=false --publish never --win nsis --x64",
+    "dist:win:arm64": "npm run compliance:prepare && node scripts/assert-native-windows-arch.mjs arm64 && vite build && electron-builder --config.npmRebuild=false --publish never --win nsis --arm64",
+    "dist:portable:mac": "npm run compliance:prepare && vite build && electron-builder --publish never --mac zip",
+    "dist:portable:win": "npm run compliance:prepare && node scripts/assert-native-windows-arch.mjs x64 && vite build && electron-builder --config.npmRebuild=false --publish never --win portable --x64",
     "start": "electron ."
   },
   "dependencies": {
@@ -45,6 +48,7 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.2",
+    "adm-zip": "^0.5.18",
     "electron": "^43.0.0",
     "electron-builder": "^26.15.6",
     "typescript": "^7.0.0",
@@ -54,12 +58,23 @@
   "build": {
     "appId": "com.skillrecorder.app",
     "productName": "Skill Recorder",
+    "directories": {
+      "output": "release"
+    },
+    "electronDist": ".compliance-cache/electron",
+    "afterPack": "scripts/verify-packaged-compliance.mjs",
     "files": [
       "dist/**",
       "dist-electron/**",
       "package.json",
       "LICENSE",
       "THIRD-PARTY-NOTICES.md"
+    ],
+    "extraResources": [
+      {
+        "from": ".compliance",
+        "to": "compliance"
+      }
     ],
     "asarUnpack": [
       "node_modules/get-windows/**",
@@ -79,16 +94,6 @@
       ],
       "identity": "-",
       "hardenedRuntime": false,
-      "extraResources": [
-        {
-          "from": "node_modules/electron/dist/LICENSE",
-          "to": "LICENSE.electron.txt"
-        },
-        {
-          "from": "node_modules/electron/dist/LICENSES.chromium.html",
-          "to": "LICENSES.chromium.html"
-        }
-      ],
       "category": "public.app-category.developer-tools",
       "extendInfo": {
         "NSMicrophoneUsageDescription": "Skill Recorder uses your microphone only while you turn on Narrate during a recording, to transcribe your spoken narration on this computer."
@@ -106,6 +111,12 @@
       ],
       "target": "nsis",
       "artifactName": "${productName}-${version}-windows-${arch}.${ext}"
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Development"
     },
     "compression": "normal",
     "nsis": {

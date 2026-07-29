@@ -2,6 +2,8 @@ name: Windows
 
 on:
   push:
+    branches:
+      - master
   pull_request:
 
 permissions:
@@ -11,7 +13,7 @@ jobs:
   native:
     name: Windows ${{ matrix.arch }}
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 30
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -25,6 +27,50 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Validate source installer guardrails
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $parseErrors = $null
+          $path = (Resolve-Path "install.ps1").Path
+          [void][System.Management.Automation.Language.Parser]::ParseFile(
+            $path,
+            [ref]$tokens,
+            [ref]$parseErrors
+          )
+          if ($parseErrors.Count -ne 0) {
+            $parseErrors | ForEach-Object { Write-Error $_.Message }
+            throw "install.ps1 contains PowerShell syntax errors"
+          }
+          $beforeErrorPreference = $ErrorActionPreference
+          $beforeProgressPreference = $ProgressPreference
+          $env:SKILL_RECORDER_COMMIT = "master"
+          try {
+            & .\install.ps1
+            throw "install.ps1 accepted a mutable source reference"
+          } catch {
+            if ($_.Exception.Message -notmatch "full 40-character") {
+              throw
+            }
+          } finally {
+            Remove-Item Env:SKILL_RECORDER_COMMIT -ErrorAction SilentlyContinue
+          }
+          if (
+            $ErrorActionPreference -ne $beforeErrorPreference -or
+            $ProgressPreference -ne $beforeProgressPreference
+          ) {
+            throw "install.ps1 leaked preference changes into the caller"
+          }
+
+      - name: Test commit-pinned source installation
+        shell: pwsh
+        env:
+          SKILL_RECORDER_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+          SKILL_RECORDER_INSTALL_ROOT: ${{ runner.temp }}\skill-recorder-source
+          SKILL_RECORDER_NO_LAUNCH: "1"
+        run: .\install.ps1
+
       - uses: actions/setup-node@v4
         with:
           node-version: 24
@@ -43,10 +89,14 @@ jobs:
             throw "ffmpeg-static remains in the lockfile"
           }
 
-      - name: Test and build
-        run: |
-          npm test
-          npm run build
+      - name: Generate license inventory
+        run: npm run compliance:licenses
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build
+        run: npm run build
 
       - name: Package native installer
         run: npm run ${{ matrix.dist_script }}

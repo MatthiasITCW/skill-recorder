@@ -2,6 +2,8 @@ name: Non-Windows
 
 on:
   push:
+    branches:
+      - master
   pull_request:
 
 permissions:
@@ -26,7 +28,40 @@ jobs:
           node-version: 24
           cache: npm
 
+      - name: Validate source installer guardrails
+        run: |
+          bash -n install.sh
+          set +e
+          output="$(SKILL_RECORDER_COMMIT=master bash install.sh 2>&1)"
+          status=$?
+          set -e
+          if [ "$status" -eq 0 ]; then
+            echo "install.sh accepted a mutable source reference" >&2
+            exit 1
+          fi
+          printf '%s\n' "$output" | grep -q "full 40-character"
+
+      - name: Test commit-pinned source installation
+        env:
+          SKILL_RECORDER_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+          SKILL_RECORDER_INSTALL_ROOT: ${{ runner.temp }}/skill-recorder-source
+          SKILL_RECORDER_NO_LAUNCH: "1"
+        run: bash install.sh
+
       - run: npm ci
+      - run: npm run compliance:licenses
+      - name: Verify platform license coverage
+        run: |
+          node --input-type=module -e "
+            import { existsSync, readFileSync } from 'node:fs';
+            const inventory = JSON.parse(readFileSync('.compliance/LICENSE-INVENTORY.json'));
+            const libvips = inventory.packages.find(({ name }) =>
+              name.startsWith('@img/sharp-libvips-'));
+            if (!libvips || libvips.licenseSource !== 'licenses/LGPL-3.0.txt')
+              throw new Error('Platform Sharp/libvips LGPL coverage is missing');
+            if (!existsSync('.compliance/licenses/LGPL-3.0.txt'))
+              throw new Error('Canonical LGPL-3.0 text is missing');
+          "
       - name: Verify optional window provider
         run: >-
           node --input-type=module -e

@@ -35,40 +35,31 @@ form can teach the agent to submit *all* of them.
 
 ## Get started
 
-The quickest path: one command downloads Skill Recorder, sets it up, builds it, and
-launches it. It's **safe to re-run** — the same command updates your install to the latest
-version and only does work when something actually changed.
+**macOS / Ubuntu**
 
-**macOS / Linux**
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/adilei/skill-recorder/master/install.sh | bash
+```sh
+commit="<40-character-release-commit>"; curl -fsSL "https://raw.githubusercontent.com/adilei/skill-recorder/$commit/install.sh" | SKILL_RECORDER_COMMIT="$commit" bash
 ```
 
-To keep it running after you close the terminal (output goes to rolling logs in
-`~/.skill-recorder/logs`), add `SKILL_RECORDER_DETACHED=1` **after the pipe**:
+The release commit pins both the downloaded script and the source it builds. To keep the
+application running after the terminal closes, add `SKILL_RECORDER_DETACHED=1` after the
+pipe:
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/adilei/skill-recorder/master/install.sh | SKILL_RECORDER_DETACHED=1 bash
+```sh
+commit="<40-character-release-commit>"; curl -fsSL "https://raw.githubusercontent.com/adilei/skill-recorder/$commit/install.sh" | SKILL_RECORDER_COMMIT="$commit" SKILL_RECORDER_DETACHED=1 bash
 ```
 
-**Windows** — paste into any terminal (Command Prompt *or* PowerShell)
+**Windows**
 
-```powershell
-powershell -c "irm https://raw.githubusercontent.com/adilei/skill-recorder/master/install.ps1 | iex"
-```
+Use the commit-pinned source installer documented in [`INSTALL.md`](INSTALL.md). The
+published command must identify a full 40-character release commit. It downloads a
+verified portable Node.js 24 runtime, builds that exact source revision locally, preserves
+the required license materials, and creates a Start Menu shortcut without installing Node
+system-wide.
 
-To keep it running after you close the window, set `$env:SKILL_RECORDER_DETACHED=1`
-**inside the quotes**:
-
-```powershell
-powershell -c "$env:SKILL_RECORDER_DETACHED=1; irm https://raw.githubusercontent.com/adilei/skill-recorder/master/install.ps1 | iex"
-```
-
-No prerequisites to chase: if you don't already have **Node.js 22+**, the installer quietly
-downloads a private copy just for Skill Recorder (nothing is installed system-wide, no
-executables are built). You'll want the **GitHub Copilot CLI** signed in for the analysis
-step (see [Requirements](#requirements)). On first launch, macOS asks for **Screen Recording**
+Both paths install dependencies from their publishers and build Skill Recorder locally.
+The platform-specific Copilot CLI is installed with the application dependencies; a global
+CLI installation is not required. On first launch, macOS asks for **Screen Recording**
 permission — grant it and you're ready to record.
 
 > ⚠️ **Keep secrets out of your recordings.** Don't record, type, paste, or narrate
@@ -77,23 +68,20 @@ permission — grant it and you're ready to record.
 > Details in [What gets captured](#what-gets-captured).
 
 <details>
-<summary>Install options &amp; updating</summary>
+<summary>Source installer options &amp; updating</summary>
 
 Set any of these environment variables when you run the command:
 
 | Variable | Default | What it does |
 | --- | --- | --- |
-| `SKILL_RECORDER_HOME` | `~/.skill-recorder` | where the app is installed |
-| `SKILL_RECORDER_REF` | `master` | branch, tag, or commit to install |
-| `SKILL_RECORDER_NO_RUN` | *(unset)* | set up without launching |
-| `SKILL_RECORDER_DETACHED` | *(unset)* | run detached (keeps running after the terminal closes) and write rolling logs to `<home>/logs` |
-| `SKILL_RECORDER_LOG_KEEP` | `5` | how many detached log files to keep |
-| `SKILL_RECORDER_NODE_VERSION` | `latest-v22.x` | Node version to fetch when none is installed |
-| `SKILL_RECORDER_NODE_MIRROR` | `https://nodejs.org/dist` | mirror for the Node download |
+| `SKILL_RECORDER_COMMIT` | *(required)* | exact 40-character source commit |
+| `SKILL_RECORDER_INSTALL_ROOT` | per-user platform path | source and portable runtime location |
+| `SKILL_RECORDER_NO_LAUNCH` | *(unset)* | set to `1` to install without launching |
+| `SKILL_RECORDER_DETACHED` | *(unset)* | macOS/Ubuntu background launch with rolling logs |
+| `SKILL_RECORDER_LOG_KEEP` | `5` | macOS/Ubuntu detached log retention |
 
-Re-run the one-liner any time to update and relaunch. To relaunch without re-downloading,
-run `npm start` from the install directory. The installer uses `git` when available and
-falls back to a source tarball/zip download otherwise.
+Re-run the platform command with a new release commit to update. Inspect-first,
+platform-specific relaunch, and uninstall instructions are in [`INSTALL.md`](INSTALL.md).
 </details>
 
 ---
@@ -104,10 +92,10 @@ falls back to a source tarball/zip download otherwise.
 
 - **macOS** (primary target). Windows 11 x64 and ARM64 are also supported — see
   [`WINDOWS-VALIDATION.md`](WINDOWS-VALIDATION.md).
-- **Node.js 22+** — the one-liner auto-downloads a private copy if you don't already have
-  it, so you only need to install this yourself if you skip the installer.
-- **GitHub Copilot CLI**, installed and signed in, with `copilot` on your `PATH`. It
-  powers the analysis and the skill/automation builders.
+- **Node.js 24** for manual source development. Installers provide a private runtime when
+  needed.
+- A GitHub account with **Copilot access** and authentication. Dependency installation
+  includes the platform-specific Copilot CLI used by the SDK.
 - No system media tools required — Chromium handles screen snapshots and narration audio
   decoding. A system `ffmpeg` is only used to open recordings made by an older Skill
   Recorder version that has no snapshot manifest.
@@ -147,12 +135,18 @@ The in-app "Records your screen and activity" panel spells out exactly what's co
   model and uses the same `small` architecture, so runtime memory and transcription speed
   are expected to remain effectively unchanged.
 
-## Run from source (development)
+## Install or develop from source
 
-Prefer to hack on the code instead of using the installer? Clone the repo and:
+See [`INSTALL.md`](INSTALL.md) for the commit-pinned Windows source installer,
+the inspect-first alternative, manual developer setup, updates, uninstallation,
+and the licensing boundary between local source builds and redistributable
+packages.
+
+For development after checking out an exact revision:
 
 ```bash
-npm install
+npm ci
+npm run compliance:licenses
 npm run dev
 ```
 
@@ -166,11 +160,24 @@ Other useful scripts:
 ```bash
 npm run typecheck   # tsc --noEmit
 npm run build       # typecheck + production build (dist/ + dist-electron/)
-npm run dist        # build a non-Windows distributable via electron-builder
+npm run dist        # build a compliant non-Windows distributable in release/
 npm run dist:win:x64    # requires native Windows x64
 npm run dist:win:arm64  # requires native Windows ARM64
+npm run dist:portable:mac # compliant unsigned macOS ZIP
+npm run dist:portable:win # compliant unsigned Windows x64 portable executable
+npm run compliance:licenses # validate the installed dependency license inventory
 npm start           # run the last build with `electron .`
 ```
+
+Distributable builds download the exact corresponding-source archives and
+license materials required by bundled native libraries. They are packaged
+outside the ASAR under `resources/compliance/`; a release fails if any required
+notice, source archive, or relinking instruction is missing or differs from its
+reviewed SHA-256. Locally generated source builds must not be redistributed.
+
+Maintainers must follow [`RELEASING.md`](RELEASING.md) when changing versions,
+dependencies, assets, release notes, tags, source installers, or binary
+downloads.
 
 ## Evals
 

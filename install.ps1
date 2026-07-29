@@ -1,241 +1,562 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Skill Recorder contributors
+
 <#
-  Skill Recorder — download & run (Windows).
+.SYNOPSIS
+Builds and installs Skill Recorder from an exact source commit.
 
-  Fetches Skill Recorder from source into a local directory, installs its
-  dependencies, builds it, and launches it. A lightweight alternative to
-  packaged installers (no .exe / .msi): it just runs the app from source.
-
-  The script is idempotent — re-running it fast-forwards to the latest code and
-  skips any step (dependency install, build) whose inputs haven't changed, so
-  the same one-liner both installs and updates the app.
-
-  Usage (one line, from any Windows terminal — cmd.exe or PowerShell):
-    powershell -c "irm https://raw.githubusercontent.com/adilei/skill-recorder/master/install.ps1 | iex"
-
-  Node.js is downloaded automatically when it's missing: an official,
-  checksum-verified Node binary (win-x64 or win-arm64) is placed under the
-  install directory and used just for this app — nothing is installed
-  system-wide and no executables are built.
-
-  Environment overrides:
-    SKILL_RECORDER_HOME          install directory      (default: %USERPROFILE%\.skill-recorder)
-    SKILL_RECORDER_REPO          owner/repo             (default: adilei/skill-recorder)
-    SKILL_RECORDER_REF           branch / tag / commit  (default: master)
-    SKILL_RECORDER_NO_RUN        set to install & build only, without launching
-    SKILL_RECORDER_DETACHED      set to run the app detached (survives the window
-                                 closing) and write rolling logs to <home>\logs
-    SKILL_RECORDER_LOG_KEEP      how many detached log files to keep (default: 5)
-    SKILL_RECORDER_NODE_VERSION  Node to fetch when missing (default: latest-v22.x)
-    SKILL_RECORDER_NODE_MIRROR   Node dist mirror       (default: https://nodejs.org/dist)
+.DESCRIPTION
+This script does not download a prebuilt Skill Recorder application. It obtains
+an official portable Node.js 24 runtime, downloads the exact requested source
+commit from GitHub, installs lockfile-pinned dependencies from their publishers,
+validates license materials, builds locally, and creates a Start Menu shortcut.
 #>
 
-$ErrorActionPreference = 'Stop'
-# Invoke-WebRequest is ~10x slower with the progress bar on Windows PowerShell 5.1.
-$ProgressPreference = 'SilentlyContinue'
+& {
+Set-StrictMode -Version Latest
+$ErrorActionPreference = "Stop"
+$ProgressPreference = "SilentlyContinue"
+$Commit = $env:SKILL_RECORDER_COMMIT
+$InstallRoot = $env:SKILL_RECORDER_INSTALL_ROOT
+$skipLaunch = $env:SKILL_RECORDER_NO_LAUNCH -eq "1"
 
-$Repo       = if ($env:SKILL_RECORDER_REPO) { $env:SKILL_RECORDER_REPO } else { 'adilei/skill-recorder' }
-$Ref        = if ($env:SKILL_RECORDER_REF)  { $env:SKILL_RECORDER_REF }  else { 'master' }
-$InstallDir = if ($env:SKILL_RECORDER_HOME) { $env:SKILL_RECORDER_HOME } else { Join-Path $env:USERPROFILE '.skill-recorder' }
-$NodeMinMajor = 22
-
-function Info($m) { Write-Host "==> $m" -ForegroundColor Cyan }
-function Have($c) { [bool](Get-Command $c -ErrorAction SilentlyContinue) }
-
-# Detect the Copilot CLI the same way the app's doctor does (it runs `where
-# copilot`). Get-Command alone misses an extensionless `copilot` launcher or a
-# Windows App Execution Alias that `where.exe` — and therefore the app — finds.
-function Test-CopilotAvailable {
-  # 1. Bundled in node_modules (what the Electron app actually uses)
-  $arch = if ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture -eq 'Arm64') { 'arm64' } else { 'x64' }
-  $bundled = Join-Path $InstallDir "node_modules\@github\copilot-win32-$arch\copilot.exe"
-  if (Test-Path -LiteralPath $bundled) { return $true }
-  # 2. GitHub Copilot desktop app
-  $ghcpApp = Join-Path $env:LOCALAPPDATA 'Programs\GitHub Copilot\github.exe'
-  if (Test-Path -LiteralPath $ghcpApp) { return $true }
-  # 3. copilot on PATH (Get-Command or where.exe)
-  if (Have 'copilot') { return $true }
-  try { $null = & where.exe copilot 2>$null; return ($LASTEXITCODE -eq 0) } catch { return $false }
+function Write-Step {
+  param([Parameter(Mandatory)][string]$Message)
+  Write-Host "[Skill Recorder] $Message"
 }
 
-# Abort if the most recent native command reported a non-zero exit code
-# (PowerShell does not treat native exit codes as terminating errors on its own).
-function Assert-Ok($what) {
-  if ($LASTEXITCODE -ne 0) { throw "$what failed (exit $LASTEXITCODE)" }
-}
+function Invoke-Download {
+  param(
+    [Parameter(Mandatory)][string]$Uri,
+    [Parameter(Mandatory)][string]$Destination
+  )
 
-function FileSha($path) {
-  if (Test-Path -LiteralPath $path) { (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash } else { '' }
-}
-
-# True when a Node new enough to build & run the app is already on PATH.
-function Test-NodeAvailable {
-  if (-not (Have 'node')) { return $false }
-  try {
-    # Parse "node -v" (e.g. v22.23.1); avoid passing a JS expression, because
-    # Windows strips the embedded quotes from 'node -p "...".split()' arguments.
-    $v = & node -v 2>$null
-    if ($v -match '^v?(\d+)\.') { return ([int]$Matches[1] -ge $NodeMinMajor) }
-    return $false
-  } catch { return $false }
-}
-
-# Ensure a usable Node/npm is on PATH: prefer the system one, otherwise download
-# an official Node binary into "$InstallDir\.node" (once) and prepend it to PATH.
-function Initialize-NodeRuntime {
-  if (Test-NodeAvailable) { Info "Using existing Node $(& node -v)."; return }
-
-  $nodeDir = Join-Path $InstallDir '.node'
-  if (Test-Path -LiteralPath (Join-Path $nodeDir 'node.exe')) {
-    $env:Path = "$nodeDir;$env:Path"
-    if (Test-NodeAvailable) { Info "Using bundled Node $(& node -v) (in $nodeDir)."; return }
+  $parsedUri = [Uri]$Uri
+  if ($parsedUri.Scheme -ne "https") {
+    throw "Refusing non-HTTPS download: $Uri"
   }
 
-  # OSArchitecture reports the true OS arch even from an x64 process emulated on
-  # ARM64, so ARM64 devices get the native win-arm64 build.
-  $osArch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
-  $arch = switch ($osArch) {
-    'X64'   { 'x64' }
-    'Arm64' { 'arm64' }
-    default { throw "Can't auto-download Node for Windows $osArch; install Node $NodeMinMajor+ manually." }
+  $parameters = @{
+    Uri = $Uri
+    OutFile = $Destination
+    Headers = @{ "User-Agent" = "Skill-Recorder-Source-Installer" }
+  }
+  if ($PSVersionTable.PSVersion.Major -lt 6) {
+    $parameters.UseBasicParsing = $true
   }
 
-  $channel = if ($env:SKILL_RECORDER_NODE_VERSION) { $env:SKILL_RECORDER_NODE_VERSION } else { "latest-v$NodeMinMajor.x" }
-  if ($channel -notlike 'latest-*' -and $channel -notlike 'v*') { $channel = "v$channel" }
-  $mirror  = if ($env:SKILL_RECORDER_NODE_MIRROR) { $env:SKILL_RECORDER_NODE_MIRROR } else { 'https://nodejs.org/dist' }
-  $base = "$mirror/$channel"
-
-  Info "Node $NodeMinMajor+ not found — downloading a private copy for Skill Recorder…"
-  $sums = (Invoke-WebRequest -UseBasicParsing -Uri "$base/SHASUMS256.txt").Content
-  $line = ($sums -split "`n") | Where-Object { $_ -match "node-.*-win-$arch\.zip$" } | Select-Object -First 1
-  if (-not $line) { throw "No Node win-$arch build found at $base." }
-  $fields = ($line.Trim() -split '\s+')
-  $want = $fields[0].ToLower(); $file = $fields[1]
-
-  $tmp = Join-Path $env:TEMP ("sr-node-" + [guid]::NewGuid().ToString())
-  New-Item -ItemType Directory -Force -Path $tmp | Out-Null
+  $previousSecurityProtocol = [Net.ServicePointManager]::SecurityProtocol
   try {
-    $zip = Join-Path $tmp $file
-    Info "  downloading $file"
-    Invoke-WebRequest -UseBasicParsing -Uri "$base/$file" -OutFile $zip
-    $got = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLower()
-    if ($got -ne $want) { throw "Checksum mismatch for $file (expected $want, got $got)." }
-    Info "  checksum verified"
-
-    if (Test-Path -LiteralPath $nodeDir) { Remove-Item -Recurse -Force -LiteralPath $nodeDir }
-    Expand-Archive -LiteralPath $zip -DestinationPath $tmp -Force
-    $inner = Get-ChildItem -Directory -LiteralPath $tmp | Where-Object { $_.Name -like 'node-*' } | Select-Object -First 1
-    Move-Item -LiteralPath $inner.FullName -Destination $nodeDir
+    [Net.ServicePointManager]::SecurityProtocol =
+      $previousSecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+    Invoke-WebRequest @parameters
   } finally {
-    Remove-Item -Recurse -Force -ErrorAction SilentlyContinue -LiteralPath $tmp
+    [Net.ServicePointManager]::SecurityProtocol = $previousSecurityProtocol
   }
-
-  $env:Path = "$nodeDir;$env:Path"
-  if (-not (Test-NodeAvailable)) { throw "Downloaded Node is still unusable — please report this." }
-  Info "Installed Node $(& node -v) into $nodeDir"
+  if (-not (Test-Path -LiteralPath $Destination -PathType Leaf)) {
+    throw "Download did not create $Destination"
+  }
+  if ((Get-Item -LiteralPath $Destination).Length -eq 0) {
+    throw "Downloaded file is empty: $Uri"
+  }
 }
 
-# --- prerequisites ---------------------------------------------------------
+function Assert-ZipArchive {
+  param([Parameter(Mandatory)][string]$Path)
 
-# --- fetch source ----------------------------------------------------------
-$versionToken = ''
-if (Have 'git') {
-  if (-not (Test-Path -LiteralPath (Join-Path $InstallDir '.git'))) {
-    if (Test-Path -LiteralPath $InstallDir) { Remove-Item -Recurse -Force -LiteralPath $InstallDir }
-    New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
-    & git -C $InstallDir init -q; Assert-Ok 'git init'
-    & git -C $InstallDir remote add origin "https://github.com/$Repo.git"; Assert-Ok 'git remote add'
-  } else {
-    & git -C $InstallDir remote set-url origin "https://github.com/$Repo.git"; Assert-Ok 'git remote set-url'
-  }
-  Info "Fetching $Repo ($Ref) into $InstallDir"
-  & git -C $InstallDir fetch --depth 1 origin $Ref; Assert-Ok 'git fetch'
-  & git -C $InstallDir reset --hard FETCH_HEAD; Assert-Ok 'git reset'
-  $versionToken = (& git -C $InstallDir rev-parse HEAD).Trim(); Assert-Ok 'git rev-parse'
-} else {
-  Write-Warning "'git' not found — downloading a source zip instead."
-  New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
-  $zip = Join-Path $env:TEMP ("skill-recorder-" + [guid]::NewGuid().ToString() + ".zip")
-  $tmp = Join-Path $env:TEMP ("skill-recorder-" + [guid]::NewGuid().ToString())
+  $stream = [IO.File]::OpenRead($Path)
   try {
-    Info "Downloading $Repo ($Ref) into $InstallDir"
-    Invoke-WebRequest -UseBasicParsing -Uri "https://codeload.github.com/$Repo/zip/$Ref" -OutFile $zip
-    Expand-Archive -LiteralPath $zip -DestinationPath $tmp -Force
-    $inner = Get-ChildItem -Directory -LiteralPath $tmp | Select-Object -First 1
-    # Copy the source over the install dir; node_modules and dist/ are local-only
-    # (not in the zip) and are excluded so they survive re-runs.
-    robocopy $inner.FullName $InstallDir /E /XD node_modules dist dist-electron /NFL /NDL /NJH /NJS /NP | Out-Null
-    if ($LASTEXITCODE -ge 8) { throw "robocopy failed (exit $LASTEXITCODE)" }
-    $versionToken = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash
+    $header = New-Object byte[] 4
+    if ($stream.Read($header, 0, $header.Length) -ne $header.Length) {
+      throw "Archive is too short: $Path"
+    }
+    if (
+      $header[0] -ne 0x50 -or
+      $header[1] -ne 0x4b -or
+      $header[2] -ne 0x03 -or
+      $header[3] -ne 0x04
+    ) {
+      throw "Downloaded file is not a ZIP archive: $Path"
+    }
   } finally {
-    Remove-Item -Recurse -Force -ErrorAction SilentlyContinue -LiteralPath $zip, $tmp
+    $stream.Dispose()
   }
 }
 
-Set-Location -LiteralPath $InstallDir
+function Assert-TrustedSignature {
+  param(
+    [Parameter(Mandatory)][string]$Path,
+    [Parameter(Mandatory)][string]$PublisherPattern,
+    [Parameter(Mandatory)][string]$PublisherName
+  )
 
-# --- ensure a Node.js runtime (download one if the system has none) --------
-Initialize-NodeRuntime
+  if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+    throw "Required executable is missing: $Path"
+  }
 
-# --- install dependencies (only when the lockfile changed) -----------------
-$depsStamp = Join-Path $InstallDir '.skill-recorder-deps.sha'
-$depsNow   = FileSha 'package-lock.json'
-if (-not (Test-Path 'node_modules') -or ((Get-Content -LiteralPath $depsStamp -ErrorAction SilentlyContinue) -ne $depsNow)) {
-  Info "Installing dependencies (npm install)…"
-  & npm install --no-audit --no-fund; Assert-Ok 'npm install'
-  Set-Content -LiteralPath $depsStamp -Value $depsNow
+  $signature = Get-AuthenticodeSignature -FilePath $Path
+  if ([string]$signature.Status -ne "Valid" -or $null -eq $signature.SignerCertificate) {
+    throw "$PublisherName signature is not valid for $Path (status: $($signature.Status))."
+  }
+  if ($signature.SignerCertificate.Subject -notmatch $PublisherPattern) {
+    throw "Unexpected signer for ${Path}: $($signature.SignerCertificate.Subject)"
+  }
+}
+
+function Assert-RequiredPaths {
+  param(
+    [Parameter(Mandatory)][string]$Root,
+    [Parameter(Mandatory)][string[]]$RelativePaths
+  )
+
+  foreach ($relativePath in $RelativePaths) {
+    $candidate = Join-Path $Root $relativePath
+    if (-not (Test-Path -LiteralPath $candidate)) {
+      throw "Required installation material is missing: $relativePath"
+    }
+  }
+}
+
+function Invoke-CheckedCommand {
+  param(
+    [Parameter(Mandatory)][string]$FilePath,
+    [Parameter(Mandatory)][string[]]$Arguments,
+    [Parameter(Mandatory)][string]$Description
+  )
+
+  & $FilePath @Arguments
+  if ($LASTEXITCODE -ne 0) {
+    throw "$Description failed with exit code $LASTEXITCODE."
+  }
+}
+
+function Get-WindowsArchitecture {
+  $architecture = [Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant()
+  if ($architecture -notin @("x64", "arm64")) {
+    throw "Skill Recorder supports Windows x64 and ARM64, not $architecture."
+  }
+  return $architecture
+}
+
+function Get-ElectronExecutable {
+  param([Parameter(Mandatory)][string]$SourceDirectory)
+
+  Assert-RequiredPaths -Root $SourceDirectory -RelativePaths @(
+    "node_modules\electron\package.json",
+    "node_modules\electron\checksums.json",
+    "node_modules\electron\dist\electron.exe",
+    "node_modules\electron\dist\version",
+    "node_modules\electron\dist\LICENSE",
+    "node_modules\electron\dist\LICENSES.chromium.html"
+  )
+
+  $package = Get-Content `
+    -LiteralPath (Join-Path $SourceDirectory "node_modules\electron\package.json") `
+    -Raw | ConvertFrom-Json
+  $distVersion = (
+    Get-Content -LiteralPath (Join-Path $SourceDirectory "node_modules\electron\dist\version") -Raw
+  ).Trim().TrimStart("v")
+  if ([string]$package.version -ne $distVersion) {
+    throw "Electron runtime version mismatch. Expected $($package.version), got $distVersion."
+  }
+
+  return Join-Path $SourceDirectory "node_modules\electron\dist\electron.exe"
+}
+
+function Assert-ReviewedElectronDistribution {
+  param(
+    [Parameter(Mandatory)][string]$SourceDirectory,
+    [Parameter(Mandatory)][string]$Architecture
+  )
+
+  Assert-RequiredPaths -Root $SourceDirectory -RelativePaths @(
+    "node_modules\electron\package.json",
+    "node_modules\electron\checksums.json",
+    "third_party\compliance-policy.json"
+  )
+
+  $electronPackage = Get-Content `
+    -LiteralPath (Join-Path $SourceDirectory "node_modules\electron\package.json") `
+    -Raw | ConvertFrom-Json
+  $electronChecksums = Get-Content `
+    -LiteralPath (Join-Path $SourceDirectory "node_modules\electron\checksums.json") `
+    -Raw | ConvertFrom-Json
+  $policy = Get-Content `
+    -LiteralPath (Join-Path $SourceDirectory "third_party\compliance-policy.json") `
+    -Raw | ConvertFrom-Json
+
+  if ([string]$electronPackage.version -ne [string]$policy.electron.version) {
+    throw "Installed Electron version has not been reviewed by the compliance policy."
+  }
+
+  $archiveName = "electron-v$($electronPackage.version)-win32-$Architecture.zip"
+  $manifestProperty = $electronChecksums.PSObject.Properties[$archiveName]
+  if ($null -eq $manifestProperty) {
+    throw "Electron's checksum manifest does not list $archiveName."
+  }
+
+  $distributionKey = "win32-$Architecture"
+  $reviewedProperty = $policy.electron.distributions.PSObject.Properties[$distributionKey]
+  if ($null -eq $reviewedProperty) {
+    throw "The compliance policy does not review Electron for $distributionKey."
+  }
+
+  $manifestHash = ([string]$manifestProperty.Value).ToLowerInvariant()
+  $reviewedHash = ([string]$reviewedProperty.Value).ToLowerInvariant()
+  if ($manifestHash -ne $reviewedHash) {
+    throw "Electron's checksum manifest does not match the reviewed distribution hash."
+  }
+}
+
+function Get-NodeRuntime {
+  param(
+    [Parameter(Mandatory)][string]$Architecture,
+    [Parameter(Mandatory)][string]$RuntimeRoot,
+    [Parameter(Mandatory)][string]$StagingRoot
+  )
+
+  Write-Step "Resolving the latest Node.js 24 LTS release for Windows $Architecture."
+  $indexPath = Join-Path $StagingRoot "node-index.json"
+  Invoke-Download -Uri "https://nodejs.org/dist/index.json" -Destination $indexPath
+  $index = @(Get-Content -LiteralPath $indexPath -Raw | ConvertFrom-Json)
+  $fileKind = "win-$Architecture-zip"
+  $matches = @(
+    $index | Where-Object {
+      $_.version -match "^v24\.\d+\.\d+$" -and
+        [bool]$_.lts -and
+        $_.files -contains $fileKind
+    }
+  )
+  if ($matches.Count -eq 0) {
+    throw "Node.js did not publish a Node 24 archive for Windows $Architecture."
+  }
+
+  $version = [string]$matches[0].version
+  $archiveName = "node-$version-win-$Architecture.zip"
+  $runtimeDirectory = Join-Path $RuntimeRoot ([IO.Path]::GetFileNameWithoutExtension($archiveName))
+  $nodeExe = Join-Path $runtimeDirectory "node.exe"
+  $npmCmd = Join-Path $runtimeDirectory "npm.cmd"
+
+  if (-not (Test-Path -LiteralPath $runtimeDirectory -PathType Container)) {
+    Write-Step "Downloading $archiveName from nodejs.org."
+    $archivePath = Join-Path $StagingRoot $archiveName
+    $sumsPath = Join-Path $StagingRoot "SHASUMS256.txt"
+    $baseUri = "https://nodejs.org/dist/$version"
+    Invoke-Download -Uri "$baseUri/$archiveName" -Destination $archivePath
+    Invoke-Download -Uri "$baseUri/SHASUMS256.txt" -Destination $sumsPath
+    Assert-ZipArchive -Path $archivePath
+
+    $hashPattern = "(?m)^([0-9a-fA-F]{64})\s+" + [regex]::Escape($archiveName) + "\s*$"
+    $hashMatch = [regex]::Match((Get-Content -LiteralPath $sumsPath -Raw), $hashPattern)
+    if (-not $hashMatch.Success) {
+      throw "Official Node.js checksums do not list $archiveName."
+    }
+
+    $expectedHash = $hashMatch.Groups[1].Value.ToLowerInvariant()
+    $actualHash = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($actualHash -ne $expectedHash) {
+      throw "Node.js archive SHA-256 mismatch. Expected $expectedHash, got $actualHash."
+    }
+
+    $expandedRoot = Join-Path $StagingRoot "node-expanded"
+    Expand-Archive -LiteralPath $archivePath -DestinationPath $expandedRoot
+    $expandedDirectory = Join-Path $expandedRoot ([IO.Path]::GetFileNameWithoutExtension($archiveName))
+    Assert-TrustedSignature `
+      -Path (Join-Path $expandedDirectory "node.exe") `
+      -PublisherPattern "OpenJS Foundation" `
+      -PublisherName "OpenJS Foundation"
+    Assert-RequiredPaths -Root $expandedDirectory -RelativePaths @("LICENSE", "npm.cmd")
+
+    New-Item -ItemType Directory -Path $RuntimeRoot -Force | Out-Null
+    Move-Item -LiteralPath $expandedDirectory -Destination $runtimeDirectory
+  }
+
+  Assert-TrustedSignature `
+    -Path $nodeExe `
+    -PublisherPattern "OpenJS Foundation" `
+    -PublisherName "OpenJS Foundation"
+  Assert-RequiredPaths -Root $runtimeDirectory -RelativePaths @("LICENSE", "npm.cmd")
+
+  $versionOutput = @(& $nodeExe --version)
+  $versionExitCode = $LASTEXITCODE
+  $reportedVersion = ($versionOutput -join "`n").Trim()
+  if ($versionExitCode -ne 0 -or $reportedVersion -ne $version) {
+    throw "Node.js runtime version mismatch. Expected $version, got $reportedVersion."
+  }
+  $architectureOutput = @(& $nodeExe -p "process.arch")
+  $architectureExitCode = $LASTEXITCODE
+  $reportedArchitecture = ($architectureOutput -join "`n").Trim()
+  if ($architectureExitCode -ne 0 -or $reportedArchitecture -ne $Architecture) {
+    throw "Node.js runtime architecture mismatch. Expected $Architecture, got $reportedArchitecture."
+  }
+
+  return [pscustomobject]@{
+    Version = $version
+    Root = $runtimeDirectory
+    Node = $nodeExe
+    Npm = $npmCmd
+  }
+}
+
+function New-SourceShortcut {
+  param(
+    [Parameter(Mandatory)][string]$SourceDirectory,
+    [Parameter(Mandatory)][string]$ElectronExecutable
+  )
+
+  $programs = [Environment]::GetFolderPath([Environment+SpecialFolder]::Programs)
+  if ([string]::IsNullOrWhiteSpace($programs)) {
+    throw "The current user does not have a Start Menu Programs directory."
+  }
+
+  $shortcutPath = Join-Path $programs "Skill Recorder (Source).lnk"
+  $shell = New-Object -ComObject WScript.Shell
+  $shortcut = $shell.CreateShortcut($shortcutPath)
+  $shortcut.TargetPath = $ElectronExecutable
+  $shortcut.Arguments = '"' + $SourceDirectory + '"'
+  $shortcut.WorkingDirectory = $SourceDirectory
+  $shortcut.IconLocation = "$ElectronExecutable,0"
+  $shortcut.Description = "Skill Recorder built locally from pinned source"
+  $shortcut.Save()
+  return $shortcutPath
+}
+
+if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) {
+  throw "install.ps1 supports Windows only. Use the manual source instructions in INSTALL.md elsewhere."
+}
+if ($PSVersionTable.PSVersion -lt [version]"5.1") {
+  throw "PowerShell 5.1 or newer is required."
+}
+if ([string]::IsNullOrWhiteSpace($Commit) -or $Commit -notmatch "^[0-9a-fA-F]{40}$") {
+  throw "Set SKILL_RECORDER_COMMIT to the full 40-character release commit SHA."
+}
+
+$Commit = $Commit.ToLowerInvariant()
+$architecture = Get-WindowsArchitecture
+
+if ([string]::IsNullOrWhiteSpace($InstallRoot)) {
+  if ([string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) {
+    throw "LOCALAPPDATA is unavailable. Set SKILL_RECORDER_INSTALL_ROOT explicitly."
+  }
+  $InstallRoot = Join-Path $env:LOCALAPPDATA "SkillRecorder"
+}
+$InstallRoot = [IO.Path]::GetFullPath($InstallRoot)
+
+$runtimeRoot = Join-Path $InstallRoot "runtime"
+$versionsRoot = Join-Path $InstallRoot "versions"
+$sourceDirectory = Join-Path $versionsRoot $Commit
+$metadataPath = Join-Path $sourceDirectory ".skill-recorder-install.json"
+$platformPackage = "@github\copilot-win32-$architecture"
+
+New-Item -ItemType Directory -Path $versionsRoot -Force | Out-Null
+
+if (Test-Path -LiteralPath $sourceDirectory -PathType Container) {
+  Write-Step "Using the existing installation for commit $Commit."
+  if (-not (Test-Path -LiteralPath $metadataPath -PathType Leaf)) {
+    throw "The existing source directory has no installation metadata: $sourceDirectory"
+  }
+
+  $metadata = Get-Content -LiteralPath $metadataPath -Raw | ConvertFrom-Json
+  if ([string]$metadata.commit -ne $Commit) {
+    throw "Existing installation metadata does not match commit $Commit."
+  }
+  $lockHash = (Get-FileHash -LiteralPath (Join-Path $sourceDirectory "package-lock.json") -Algorithm SHA256).Hash.ToLowerInvariant()
+  if ($lockHash -ne [string]$metadata.packageLockSha256) {
+    throw "The existing installation's package-lock.json has changed."
+  }
 } else {
-  Info "Dependencies already up to date — skipping npm install."
+  $stagingDirectory = Join-Path $InstallRoot (".staging-" + [guid]::NewGuid().ToString("N"))
+  New-Item -ItemType Directory -Path $stagingDirectory -Force | Out-Null
+
+  try {
+    $runtime = Get-NodeRuntime `
+      -Architecture $architecture `
+      -RuntimeRoot $runtimeRoot `
+      -StagingRoot $stagingDirectory
+
+    Write-Step "Downloading the exact source commit from GitHub."
+    $sourceArchive = Join-Path $stagingDirectory "skill-recorder-$Commit.zip"
+    Invoke-Download `
+      -Uri "https://codeload.github.com/adilei/skill-recorder/zip/$Commit" `
+      -Destination $sourceArchive
+    Assert-ZipArchive -Path $sourceArchive
+    $sourceArchiveHash = (Get-FileHash -LiteralPath $sourceArchive -Algorithm SHA256).Hash.ToLowerInvariant()
+
+    $sourceExtractRoot = Join-Path $stagingDirectory "source"
+    Expand-Archive -LiteralPath $sourceArchive -DestinationPath $sourceExtractRoot
+    $sourceCandidates = @(
+      Get-ChildItem -LiteralPath $sourceExtractRoot -Directory |
+        Where-Object { Test-Path -LiteralPath (Join-Path $_.FullName "package.json") -PathType Leaf }
+    )
+    if ($sourceCandidates.Count -ne 1) {
+      throw "Expected one Skill Recorder source directory, found $($sourceCandidates.Count)."
+    }
+    $expectedSourceDirectoryName = "skill-recorder-$Commit"
+    if ($sourceCandidates[0].Name -ne $expectedSourceDirectoryName) {
+      throw "GitHub source directory does not match commit $Commit."
+    }
+    $buildDirectory = $sourceCandidates[0].FullName
+
+    Assert-RequiredPaths -Root $buildDirectory -RelativePaths @(
+      "LICENSE",
+      "THIRD-PARTY-NOTICES.md",
+      "CONTRIBUTING.md",
+      "package.json",
+      "package-lock.json"
+    )
+
+    Write-Step "Installing lockfile-pinned dependencies from their publishers."
+    $environmentOverrides = [ordered]@{
+      PATH = "$($runtime.Root);$env:PATH"
+      NPM_CONFIG_REGISTRY = "https://registry.npmjs.org/"
+      NPM_CONFIG_REPLACE_REGISTRY_HOST = "never"
+      NPM_CONFIG_PLATFORM = "win32"
+      NPM_CONFIG_ARCH = $architecture
+      ELECTRON_MIRROR = "https://github.com/electron/electron/releases/download/"
+      NPM_CONFIG_ELECTRON_MIRROR = "https://github.com/electron/electron/releases/download/"
+      ELECTRON_INSTALL_PLATFORM = "win32"
+      ELECTRON_INSTALL_ARCH = $architecture
+      ELECTRON_USE_REMOTE_CHECKSUMS = $null
+      NPM_CONFIG_ELECTRON_USE_REMOTE_CHECKSUMS = $null
+      ELECTRON_OVERRIDE_DIST_PATH = $null
+      ELECTRON_CUSTOM_DIR = $null
+      ELECTRON_CUSTOM_FILENAME = $null
+    }
+    $originalEnvironment = @{}
+    foreach ($entry in $environmentOverrides.GetEnumerator()) {
+      $originalEnvironment[$entry.Key] = [Environment]::GetEnvironmentVariable(
+        $entry.Key,
+        [EnvironmentVariableTarget]::Process
+      )
+      [Environment]::SetEnvironmentVariable(
+        $entry.Key,
+        $entry.Value,
+        [EnvironmentVariableTarget]::Process
+      )
+    }
+
+    Push-Location $buildDirectory
+    try {
+      Invoke-CheckedCommand `
+        -FilePath $runtime.Npm `
+        -Arguments @("ci", "--no-audit", "--no-fund") `
+        -Description "npm ci"
+
+      Assert-ReviewedElectronDistribution `
+        -SourceDirectory $buildDirectory `
+        -Architecture $architecture
+
+      Write-Step "Downloading the checksummed Electron runtime from GitHub."
+      Invoke-CheckedCommand `
+        -FilePath $runtime.Node `
+        -Arguments @("node_modules\electron\install.js") `
+        -Description "Electron runtime download"
+
+      Write-Step "Validating dependency licenses and notices."
+      Invoke-CheckedCommand `
+        -FilePath $runtime.Npm `
+        -Arguments @("run", "compliance:licenses") `
+        -Description "license validation"
+
+      Write-Step "Building Skill Recorder locally."
+      Invoke-CheckedCommand `
+        -FilePath $runtime.Npm `
+        -Arguments @("run", "build") `
+        -Description "local source build"
+    } finally {
+      foreach ($entry in $originalEnvironment.GetEnumerator()) {
+        [Environment]::SetEnvironmentVariable(
+          $entry.Key,
+          $entry.Value,
+          [EnvironmentVariableTarget]::Process
+        )
+      }
+      Pop-Location
+    }
+
+    Assert-RequiredPaths -Root $buildDirectory -RelativePaths @(
+      ".compliance\COMPLIANCE-README.md",
+      ".compliance\THIRD-PARTY-LICENSES.txt",
+      ".compliance\onnxruntime",
+      "node_modules\@github\copilot\LICENSE.md",
+      "node_modules\$platformPackage\LICENSE.md",
+      "node_modules\electron\dist\LICENSE",
+      "node_modules\electron\dist\LICENSES.chromium.html",
+      "dist",
+      "dist-electron"
+    )
+
+    $buildElectron = Get-ElectronExecutable -SourceDirectory $buildDirectory
+    $buildCopilot = Join-Path $buildDirectory "node_modules\$platformPackage\copilot.exe"
+    Assert-TrustedSignature `
+      -Path $buildCopilot `
+      -PublisherPattern "GitHub, Inc\." `
+      -PublisherName "GitHub"
+
+    $metadata = [ordered]@{
+      schemaVersion = 1
+      distributionMode = "source-local-build"
+      commit = $Commit
+      sourceUrl = "https://github.com/adilei/skill-recorder/tree/$Commit"
+      sourceArchiveSha256 = $sourceArchiveHash
+      packageLockSha256 = (Get-FileHash -LiteralPath (Join-Path $buildDirectory "package-lock.json") -Algorithm SHA256).Hash.ToLowerInvariant()
+      electronExecutableSha256 = (Get-FileHash -LiteralPath $buildElectron -Algorithm SHA256).Hash.ToLowerInvariant()
+      nodeVersion = $runtime.Version
+      nodeRuntime = $runtime.Root
+      installedAt = (Get-Date).ToUniversalTime().ToString("o")
+    }
+    $metadata | ConvertTo-Json -Depth 4 |
+      Set-Content -LiteralPath (Join-Path $buildDirectory ".skill-recorder-install.json") -Encoding UTF8
+
+    if (Test-Path -LiteralPath $sourceDirectory) {
+      throw "Refusing to overwrite an existing source installation: $sourceDirectory"
+    }
+    Move-Item -LiteralPath $buildDirectory -Destination $sourceDirectory
+  } finally {
+    if (Test-Path -LiteralPath $stagingDirectory) {
+      Remove-Item -LiteralPath $stagingDirectory -Recurse -Force
+    }
+  }
 }
 
-# --- check for Copilot CLI (bundled, desktop app, or PATH) -----------------
-if (-not (Test-CopilotAvailable)) {
-  Write-Warning "No Copilot CLI found. Install GitHub Copilot (https://github.com/features/copilot) or ensure the bundled package installed correctly. The app will launch, but recording analysis needs it."
+Assert-RequiredPaths -Root $sourceDirectory -RelativePaths @(
+  "LICENSE",
+  "THIRD-PARTY-NOTICES.md",
+  ".compliance\COMPLIANCE-README.md",
+  ".compliance\THIRD-PARTY-LICENSES.txt",
+  "node_modules\@github\copilot\LICENSE.md",
+  "node_modules\$platformPackage\LICENSE.md",
+  "node_modules\electron\dist\LICENSE",
+  "node_modules\electron\dist\LICENSES.chromium.html",
+  "dist",
+  "dist-electron"
+)
+
+$electronExecutable = Get-ElectronExecutable -SourceDirectory $sourceDirectory
+$copilotExecutable = Join-Path $sourceDirectory "node_modules\$platformPackage\copilot.exe"
+$electronHash = (Get-FileHash -LiteralPath $electronExecutable -Algorithm SHA256).Hash.ToLowerInvariant()
+if ($electronHash -ne [string]$metadata.electronExecutableSha256) {
+  throw "The installed Electron executable has changed since its checksum-verified download."
 }
+Assert-TrustedSignature `
+  -Path $copilotExecutable `
+  -PublisherPattern "GitHub, Inc\." `
+  -PublisherName "GitHub"
 
-# --- build (only when the source or dependencies changed) ------------------
-$buildStamp = Join-Path $InstallDir '.skill-recorder-build.sha'
-$buildNow   = "${versionToken}:${depsNow}"
-if (-not (Test-Path 'dist-electron/main.js') -or -not (Test-Path 'dist/index.html') -or
-    ((Get-Content -LiteralPath $buildStamp -ErrorAction SilentlyContinue) -ne $buildNow)) {
-  Info "Building app (npm run build)…"
-  & npm run build; Assert-Ok 'npm run build'
-  Set-Content -LiteralPath $buildStamp -Value $buildNow
-} else {
-  Info "Build already up to date — skipping npm run build."
+$shortcutPath = New-SourceShortcut `
+  -SourceDirectory $sourceDirectory `
+  -ElectronExecutable $electronExecutable
+
+Write-Step "Installed commit $Commit at $sourceDirectory"
+Write-Step "License materials remain in the source tree, dependency packages, and .compliance directory."
+Write-Step "Created Start Menu shortcut: $shortcutPath"
+Write-Warning "This locally generated build is for local execution only. Do not redistribute it."
+
+if (-not $skipLaunch) {
+  Write-Step "Launching Skill Recorder."
+  Start-Process `
+    -FilePath $electronExecutable `
+    -ArgumentList ('"{0}"' -f $sourceDirectory) `
+    -WorkingDirectory $sourceDirectory | Out-Null
 }
-
-Info "Skill Recorder is installed in $InstallDir"
-Info "Re-run the same command any time to update & launch, or: cd `"$InstallDir`"; npm start"
-
-# --- launch ----------------------------------------------------------------
-if ($env:SKILL_RECORDER_NO_RUN) {
-  Info "SKILL_RECORDER_NO_RUN set — not launching."
-  return
 }
-
-Info "Launching Skill Recorder…"
-
-if ($env:SKILL_RECORDER_DETACHED) {
-  # Detached: keep running after this window closes, and (since there's no
-  # console to watch) capture output to a rolling, capped set of log files.
-  $logDir = Join-Path $InstallDir 'logs'
-  $keep = if ($env:SKILL_RECORDER_LOG_KEEP -match '^\d+$') { [int]$env:SKILL_RECORDER_LOG_KEEP } else { 5 }
-  if ($keep -lt 1) { $keep = 1 }
-  New-Item -ItemType Directory -Force -Path $logDir | Out-Null
-  # Rotate by launch: keep the newest ($keep-1) logs so that, once we add the
-  # one below, at most $keep remain.
-  Get-ChildItem -LiteralPath $logDir -Filter 'skill-recorder-*.log' -ErrorAction SilentlyContinue |
-    Sort-Object LastWriteTime -Descending | Select-Object -Skip ($keep - 1) |
-    Remove-Item -Force -ErrorAction SilentlyContinue
-  $logFile = Join-Path $logDir ("skill-recorder-" + (Get-Date -Format 'yyyyMMdd-HHmmss') + ".log")
-  # Let cmd.exe own the redirection so stdout+stderr share one file; Start-Process
-  # launches it independently so the app outlives this PowerShell session.
-  $proc = Start-Process -FilePath $env:ComSpec `
-    -ArgumentList "/c npm start > `"$logFile`" 2>&1" `
-    -WorkingDirectory $InstallDir -WindowStyle Hidden -PassThru
-  Info "Running in the background (PID $($proc.Id)). It will keep running after this window closes."
-  Info "Logs: $logFile"
-  return
-}
-
-& npm start; Assert-Ok 'npm start'

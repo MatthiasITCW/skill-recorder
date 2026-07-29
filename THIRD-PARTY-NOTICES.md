@@ -3,13 +3,17 @@
 Skill Recorder is licensed under the MIT License (see [`LICENSE`](./LICENSE)).
 
 Packaged/distributed builds include third-party components that are covered by
-their own license terms. This file summarizes the notable ones. The complete
-license notices retained by Electron are distributed as `LICENSE.electron.txt`
-and `LICENSES.chromium.html`; package metadata and the source links below cover
-the other native runtime components.
+their own license terms. This file summarizes the notable ones. Every supported
+release command generates a complete, platform-specific compliance bundle under
+`resources/compliance/` containing full package license texts, native notices,
+copyleft license texts, corresponding source, and relinking instructions.
+Electron's exact notices are retained under `resources/compliance/electron/`;
+platforms that preserve Electron's root notice files carry those copies too.
 
 The dependency tree is otherwise permissive (MIT, ISC, Apache-2.0, BSD,
 BlueOak-1.0.0) and compatible with distributing this application under MIT.
+Those components remain under their own terms; the generated
+`THIRD-PARTY-LICENSES.txt` preserves their license and attribution text.
 
 ## Optional downloaded model
 
@@ -51,6 +55,8 @@ BlueOak-1.0.0) and compatible with distributing this application under MIT.
   [`150.0.7871.114`](https://chromium.googlesource.com/chromium/src/+/150.0.7871.114),
   and Chromium FFmpeg revision
   [`ad41607c61898cf7150e0fb20fe4bbabd44922a3`](https://chromium.googlesource.com/chromium/third_party/ffmpeg/+/ad41607c61898cf7150e0fb20fe4bbabd44922a3).
+  The Electron source archive and its applied FFmpeg patch queue accompany each
+  release.
 - Chromium records the WebM media, captures screen snapshots, and decodes
   narration audio. Skill Recorder does **not** distribute `ffmpeg-static` or a
   standalone FFmpeg executable.
@@ -69,14 +75,29 @@ BlueOak-1.0.0) and compatible with distributing this application under MIT.
   and libvips
   [`v8.17.3`](https://github.com/libvips/libvips/tree/v8.17.3). The unpacked
   native module remains replaceable in the packaged application.
+- The native payload also contains libraries under MPL-2.0, MIT, BSD, ISC,
+  fontconfig, FreeType, libpng, libtiff, zlib, and related permissive terms.
+  The exact upstream table is distributed as
+  `resources/compliance/NATIVE-THIRD-PARTY-NOTICES.md`.
 
-### LGPL release materials
+### ONNX Runtime
 
-Before publishing an installer, its release must provide archives of the exact
-source revisions above, the applicable LGPL text, and any build/object material needed
-to relink modified LGPL components. These materials must be available beside
-the installer, or through a written offer valid for at least three years; do
-not rely only on third-party hosting remaining available.
+`onnxruntime-node`, `onnxruntime-web`, and `onnxruntime-common` are MIT. Their npm
+packages omit standalone license and third-party-notice files, so exact notices
+from each pinned source revision are included under
+`resources/compliance/onnxruntime/`.
+
+### Copyleft release materials
+
+Redistributable builds include the complete GPL-3.0, LGPL-2.1, LGPL-3.0, and
+MPL-2.0 texts. They also include source archives for Electron's FFmpeg revision,
+Sharp, libvips, every library embedded in the Sharp native payload, the
+applicable packaging repositories, and all externally applied build patches.
+`SOURCE-MANIFEST.json` records the origin, version, SHA-256, and purpose of every
+file. Every remote payload is checked against a reviewed SHA-256 before use;
+the FFmpeg archive is deterministically generated from its pinned Git commit.
+`RELINKING.md` identifies platform-specific unpacked shared-library locations
+and explains how to rebuild and replace them.
 
 ### Other native modules
 - `get-windows` — MIT
@@ -86,12 +107,19 @@ not rely only on third-party hosting remaining available.
 
 ## Apache-2.0 components
 Some dependencies (e.g. `sharp`) are Apache-2.0, which requires retaining their
-copyright, license, and any `NOTICE` file contents. These are preserved under
-`node_modules`.
+copyright, license, and any `NOTICE` file contents. The release process collects
+these from the exact installed dependency tree into
+`resources/compliance/THIRD-PARTY-LICENSES.txt` and fails if any package lacks
+reviewed license material.
 
 ## Generating a complete license manifest
-For a full, per-package license listing at release time:
+To validate installed package notices without downloading corresponding source:
 
 ```sh
-npx license-checker-rseidelsohn --production --files THIRD-PARTY-LICENSES
+npm run compliance:licenses
 ```
+
+All `npm run dist*` commands run the full `npm run compliance:prepare` process
+automatically. Electron Builder's `afterPack` hook refuses to create an
+installer if the bundle is incomplete or if a build output directory was
+recursively packaged.

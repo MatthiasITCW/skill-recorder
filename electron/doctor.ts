@@ -11,6 +11,7 @@ import type {
   DoctorSource,
 } from "../common/ipc";
 import { browserUrlProviderKind } from "./collectors/url-provider";
+import { resolveCopilotCliPath } from "./copilot-cli-path";
 import { sessionsRoot } from "./recorder/session-store";
 
 const require = createRequire(import.meta.url);
@@ -28,8 +29,10 @@ function which(cmd: string): string | null {
 }
 
 function checkCopilot(): CopilotInfo {
-  const p = which("copilot");
-  return { ok: Boolean(p), path: p };
+  // The app ships its own Copilot CLI in node_modules, so a global `copilot` on PATH is
+  // optional — check the bundled binary first or one-liner installs look broken here.
+  const p = resolveCopilotCliPath() ?? which("copilot");
+  return { ok: Boolean(p), path: p ?? null };
 }
 
 function checkActiveWindow(): ActiveWindowInfo {

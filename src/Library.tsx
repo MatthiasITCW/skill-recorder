@@ -4,11 +4,13 @@ import type { Analysis, AnalysisStep } from "../common/analysis";
 import type {
   AnalyzeProgress,
   AutomationBuildProgress,
+  CopilotSignInResult,
   NarrationStatus,
   SessionSummary,
   SkillBuildProgress,
   SkillPlacement,
 } from "../common/ipc";
+import { isCopilotSignedOutError } from "../common/ipc";
 import type {
   BuildTarget,
   BuiltSkill,
@@ -400,6 +402,45 @@ function DebugDownload({ sessionId }: { sessionId: string }) {
   );
 }
 
+/**
+ * Error banner for the Copilot-backed panels. When the CLI has no credentials the app
+ * offers to open a terminal on its *bundled* Copilot binary — there's no global
+ * `copilot` command to send people to.
+ */
+function AnalysisError({ error }: { error: string }) {
+  const [signIn, setSignIn] = useState<CopilotSignInResult | null>(null);
+  const [opening, setOpening] = useState(false);
+
+  const openSignIn = async () => {
+    setOpening(true);
+    setSignIn(await window.skillRecorder.copilotSignIn());
+    setOpening(false);
+  };
+
+  if (!isCopilotSignedOutError(error)) return <div className="analysis-error">{error}</div>;
+
+  return (
+    <div className="analysis-error">
+      <p>{error}</p>
+      <div className="signin-row">
+        <button className="row-action" onClick={() => void openSignIn()} disabled={opening}>
+          {opening ? "Opening…" : "Sign in to Copilot"}
+        </button>
+        {signIn?.ok && (
+          <span>A terminal opened — finish signing in there, then try again.</span>
+        )}
+        {signIn && !signIn.ok && <span>{signIn.error ?? "Couldn't open a terminal."}</span>}
+      </div>
+      {signIn?.command && (
+        <>
+          <p className="signin-manual">Or run this command yourself:</p>
+          <code className="signin-command">{signIn.command}</code>
+        </>
+      )}
+    </div>
+  );
+}
+
 function AnalysisWorkspace({
   summary,
   narrationStatus,
@@ -695,7 +736,7 @@ function AnalysisWorkspace({
           </p>
         )}
 
-        {error && <div className="analysis-error">{error}</div>}
+        {error && <AnalysisError error={error} />}
 
         {analysis && !analyzing && (
           <div className="ws-read">
@@ -1012,7 +1053,7 @@ function SkillBuilderView({
       </div>
 
       <div className="ws-body">
-        {error && <div className="analysis-error">{error}</div>}
+        {error && <AnalysisError error={error} />}
 
         {phase === "loading" && (
           <div className="status-line">
@@ -1268,7 +1309,7 @@ function AutomationBuilderView({
       </div>
 
       <div className="ws-body">
-        {error && <div className="analysis-error">{error}</div>}
+        {error && <AnalysisError error={error} />}
 
         {phase === "loading" && (
           <div className="status-line">

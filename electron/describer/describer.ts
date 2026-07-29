@@ -11,7 +11,7 @@ import {
   type AnalysisFeedback,
   type AnalysisSubmission,
 } from "../../common/analysis";
-import type { AnalyzeProgress } from "../../common/ipc";
+import { COPILOT_SIGNED_OUT_ERROR, type AnalyzeProgress } from "../../common/ipc";
 import type { SessionMeta } from "../../common/types";
 import { FrameExtractor } from "../frames/extractor";
 import { createLogger } from "../logger";
@@ -201,9 +201,7 @@ export class Describer {
       const auth = await client.getAuthStatus();
       if (!auth.isAuthenticated) {
         await client.stop().catch(() => undefined);
-        throw new Error(
-          "GitHub Copilot CLI is not signed in. Open a terminal, run `copilot`, sign in, then try again.",
-        );
+        throw new Error(COPILOT_SIGNED_OUT_ERROR);
       }
       this.model = await this.pickVisionModel(client);
       log.info("Copilot ready", auth.login ? `as ${auth.login}` : "", this.model ? `· model ${this.model}` : "");

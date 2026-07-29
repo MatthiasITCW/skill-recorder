@@ -1929,6 +1929,32 @@ button:focus-visible,
   font-size: 12px;
 }
 
+.analysis-error p {
+  margin: 0;
+}
+
+.analysis-error .signin-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.analysis-error .signin-manual {
+  margin-top: 8px;
+  color: var(--faint);
+}
+
+.analysis-error .signin-command {
+  display: block;
+  margin-top: 4px;
+  font-family: var(--mono);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
 .ws-read {
   width: 100%;
   max-width: 640px;

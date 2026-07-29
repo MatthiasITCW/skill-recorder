@@ -1,5 +1,6 @@
 import { CopilotClient, type CopilotSession } from "@github/copilot-sdk";
 
+import { COPILOT_SIGNED_OUT_ERROR } from "../../common/ipc";
 import { copilotConnectionOption, withStartupTimeout } from "../copilot-cli-path";
 import { createLogger } from "../logger";
 
@@ -70,9 +71,7 @@ export abstract class AgentBuilder<TLive extends BaseLive> {
       const auth = await client.getAuthStatus();
       if (!auth.isAuthenticated) {
         await client.stop().catch(() => undefined);
-        throw new Error(
-          "GitHub Copilot CLI is not signed in. Open a terminal, run `copilot`, sign in, then try again.",
-        );
+        throw new Error(COPILOT_SIGNED_OUT_ERROR);
       }
       this.model = process.env.SKILL_RECORDER_MODEL || undefined;
       this.log.info("Copilot ready", auth.login ? `as ${auth.login}` : "");

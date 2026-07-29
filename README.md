@@ -63,7 +63,10 @@ system-wide.
 
 Both paths install dependencies from their publishers and build Skill Recorder locally.
 The platform-specific Copilot CLI is installed with the application dependencies; a global
-CLI installation is not required. On first launch, macOS asks for **Screen Recording**
+CLI installation is not required. The first time you choose *Analyze* without stored
+Copilot credentials, Skill Recorder says so and offers **Sign in to Copilot**, which opens
+a terminal running the bundled CLI's `login` command (the same command is shown so you can
+run it yourself). On first launch, macOS asks for **Screen Recording**
 permission — grant it and you're ready to record.
 
 > ⚠️ **Keep secrets out of your recordings.** Don't record, type, paste, or narrate

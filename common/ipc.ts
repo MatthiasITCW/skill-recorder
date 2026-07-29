@@ -290,6 +290,28 @@ export interface CopilotInfo {
   path: string | null;
 }
 
+/** Result of asking the app to open a terminal on the bundled CLI's sign-in command. */
+export interface CopilotSignInResult {
+  ok: boolean;
+  /** The exact command the terminal was asked to run, so the user can run it themselves. */
+  command?: string;
+  error?: string;
+}
+
+/**
+ * Message every Copilot-backed feature throws when the CLI has no stored credentials.
+ * Skill Recorder ships its own Copilot CLI in `node_modules`, so there is usually no
+ * global `copilot` command to run — the renderer matches this message to offer the
+ * in-app sign-in affordance instead.
+ */
+export const COPILOT_SIGNED_OUT_ERROR =
+  "GitHub Copilot isn't signed in on this computer yet. Sign in below, then try again.";
+
+/** Whether an error from a Copilot-backed feature means "no credentials yet". */
+export function isCopilotSignedOutError(error?: string | null): boolean {
+  return typeof error === "string" && error.includes("isn't signed in on this computer");
+}
+
 /** Which foreground-window provider is available on this platform. */
 export interface ActiveWindowInfo {
   ok: boolean;
@@ -340,6 +362,7 @@ export const IPC = {
   status: "recorder:status",
   marker: "recorder:marker",
   doctor: "doctor:check",
+  copilotSignIn: "copilot:sign-in",
   statusChanged: "recorder:status-changed",
   recordingPrivacyReviewed: "recorder:privacy-reviewed",
   recordingPrivacyWarningRequested: "recorder:privacy-warning-requested",
@@ -394,6 +417,11 @@ export interface SkillRecorderApi {
   status(): Promise<RecorderStatus>;
   marker(note: string): Promise<MarkerResult>;
   doctor(): Promise<DoctorReport>;
+  /**
+   * Open a terminal window running the bundled Copilot CLI's `login` command, so the
+   * user can sign in without a globally installed `copilot`.
+   */
+  copilotSignIn(): Promise<CopilotSignInResult>;
   onStatusChanged(cb: (status: RecorderStatus) => void): () => void;
   narrationStatus(): Promise<NarrationStatus>;
   downloadNarrationModel(): Promise<NarrationActionResult>;

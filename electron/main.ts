@@ -3,6 +3,7 @@ import { app, BrowserWindow, globalShortcut, ipcMain, Menu, screen } from "elect
 import { FULL_CAPTURE } from "../common/config";
 import { IPC, type RecorderStatus, type StartResult } from "../common/ipc";
 import { createCollectors } from "./collectors";
+import { installCrashGuards } from "./crash-guards";
 import { Describer } from "./describer/describer";
 import { processSession } from "./pipeline";
 import { registerIpc } from "./ipc";
@@ -27,6 +28,10 @@ import {
 } from "./window";
 
 const log = createLogger("Main");
+
+// Contain stray async failures so a lost stream error can't crash the main
+// process (and the recording in progress). Registered before any window/IO work.
+installCrashGuards(log);
 
 /** Static red-dot tile used for the macOS Dock icon. */
 const dock = dockIcon();

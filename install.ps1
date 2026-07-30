@@ -121,6 +121,65 @@ function Remove-CachedDownload {
   }
 }
 
+function ConvertTo-ExtendedLengthPath {
+  param([Parameter(Mandatory)][string]$Path)
+
+  $fullPath = [IO.Path]::GetFullPath($Path)
+  if ($fullPath.StartsWith("\\?\")) {
+    return $fullPath
+  }
+  if ($fullPath.StartsWith("\\")) {
+    return "\\?\UNC\" + $fullPath.Substring(2)
+  }
+  return "\\?\" + $fullPath
+}
+
+function Move-DirectoryTree {
+  param(
+    [Parameter(Mandatory)][string]$Source,
+    [Parameter(Mandatory)][string]$Destination
+  )
+
+  $extendedSource = ConvertTo-ExtendedLengthPath -Path $Source
+  $extendedDestination = ConvertTo-ExtendedLengthPath -Path $Destination
+  if (-not [IO.Directory]::Exists($extendedSource)) {
+    throw "Directory to move does not exist: $Source"
+  }
+  if (
+    [IO.Directory]::Exists($extendedDestination) -or
+    [IO.File]::Exists($extendedDestination)
+  ) {
+    throw "Refusing to overwrite an existing path: $Destination"
+  }
+
+  [IO.Directory]::Move($extendedSource, $extendedDestination)
+}
+
+function Remove-DirectoryTree {
+  param([Parameter(Mandatory)][string]$Path)
+
+  $extendedPath = ConvertTo-ExtendedLengthPath -Path $Path
+  if (-not [IO.Directory]::Exists($extendedPath)) {
+    return
+  }
+
+  $attributes = [IO.File]::GetAttributes($extendedPath)
+  if (($attributes -band [IO.FileAttributes]::ReparsePoint) -eq 0) {
+    foreach ($entry in [IO.Directory]::EnumerateFileSystemEntries($extendedPath)) {
+      $entryAttributes = [IO.File]::GetAttributes($entry)
+      if (($entryAttributes -band [IO.FileAttributes]::Directory) -ne 0) {
+        Remove-DirectoryTree -Path $entry
+      } else {
+        [IO.File]::SetAttributes($entry, [IO.FileAttributes]::Normal)
+        [IO.File]::Delete($entry)
+      }
+    }
+  }
+
+  [IO.File]::SetAttributes($extendedPath, [IO.FileAttributes]::Normal)
+  [IO.Directory]::Delete($extendedPath, $false)
+}
+
 function Assert-ZipArchive {
   param([Parameter(Mandatory)][string]$Path)
 
@@ -498,7 +557,10 @@ if (Test-Path -LiteralPath $sourceDirectory -PathType Container) {
     if ($sourceCandidates[0].Name -ne $expectedSourceDirectoryName) {
       throw "GitHub source directory does not match commit $Commit."
     }
-    $buildDirectory = $sourceCandidates[0].FullName
+    $buildDirectory = Join-Path $stagingDirectory "build"
+    Move-DirectoryTree `
+      -Source $sourceCandidates[0].FullName `
+      -Destination $buildDirectory
 
     Assert-RequiredPaths -Root $buildDirectory -RelativePaths @(
       "LICENSE",
@@ -614,11 +676,13 @@ if (Test-Path -LiteralPath $sourceDirectory -PathType Container) {
     if (Test-Path -LiteralPath $sourceDirectory) {
       throw "Refusing to overwrite an existing source installation: $sourceDirectory"
     }
-    Move-Item -LiteralPath $buildDirectory -Destination $sourceDirectory
+    Move-DirectoryTree -Source $buildDirectory -Destination $sourceDirectory
     Remove-CachedDownload -CachePath $sourceArchive
   } finally {
-    if (Test-Path -LiteralPath $stagingDirectory) {
-      Remove-Item -LiteralPath $stagingDirectory -Recurse -Force
+    try {
+      Remove-DirectoryTree -Path $stagingDirectory
+    } catch {
+      Write-Warning "Could not remove temporary installation files at ${stagingDirectory}: $($_.Exception.Message)"
     }
   }
 }

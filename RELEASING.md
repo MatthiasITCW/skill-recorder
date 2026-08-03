@@ -84,7 +84,8 @@ npm run compliance:prepare
 The pull request must pass:
 
 - Windows x64 and ARM64 license, test, build, package, and architecture checks;
-- macOS and Ubuntu license, test, and build checks;
+- macOS full corresponding-source preparation, test, and build checks;
+- Ubuntu license, test, and build checks;
 - commit-pinned source-installer checks on Windows, macOS, and Ubuntu.
 
 Resolve every compliance failure. Never disable or bypass a compliance check to
@@ -158,8 +159,13 @@ Do not commit the temporary release-notes file.
 
 ## 6. Optional binary release
 
-Binary publication is a separate decision. Build each artifact on its native
-operating system and architecture:
+Binary publication is a separate decision. The supported release targets are
+**Windows x64**, **Windows ARM64**, and **macOS arm64**; every other platform,
+including Linux and macOS x64, is a source install (see `INSTALL.md`). The
+compliance tooling refuses to prepare a redistributable bundle on an
+unsupported target.
+
+Build each artifact on its native operating system and architecture:
 
 ```sh
 npm ci

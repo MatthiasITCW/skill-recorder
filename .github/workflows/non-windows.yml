@@ -13,7 +13,7 @@ jobs:
   build:
     name: ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -59,7 +59,22 @@ jobs:
           plutil -lint "$plist"
 
       - run: npm ci
-      - run: npm run compliance:licenses
+      - name: Cache compliance source downloads
+        uses: actions/cache@v4
+        with:
+          path: .compliance-cache
+          key: compliance-${{ runner.os }}-${{ hashFiles('third_party/compliance-policy.json') }}
+          restore-keys: compliance-${{ runner.os }}-
+
+      # macOS arm64 is a release target, so it must be able to produce the complete
+      # corresponding-source bundle. Linux installs from source and only needs the
+      # license inventory.
+      - name: Prepare compliance materials (release target)
+        if: runner.os == 'macOS'
+        run: npm run compliance:prepare
+      - name: Prepare compliance licenses (source-install platform)
+        if: runner.os != 'macOS'
+        run: npm run compliance:licenses
       - name: Verify platform license coverage
         run: |
           node --input-type=module -e "
@@ -67,10 +82,24 @@ jobs:
             const inventory = JSON.parse(readFileSync('.compliance/LICENSE-INVENTORY.json'));
             const libvips = inventory.packages.find(({ name }) =>
               name.startsWith('@img/sharp-libvips-'));
-            if (!libvips || libvips.licenseSource !== 'licenses/LGPL-3.0.txt')
+            if (!libvips || !libvips.licenseSource.includes('licenses/LGPL-3.0.txt'))
               throw new Error('Platform Sharp/libvips LGPL coverage is missing');
             if (!existsSync('.compliance/licenses/LGPL-3.0.txt'))
               throw new Error('Canonical LGPL-3.0 text is missing');
+            const wasm = inventory.packages.find(({ name }) => name === '@img/sharp-wasm32');
+            if (wasm) {
+              for (const term of ['LICENSE', 'licenses/LGPL-3.0.txt', 'canonical SPDX MIT text'])
+                if (!wasm.licenseSource.includes(term))
+                  throw new Error('@img/sharp-wasm32 license term ' + term + ' is unresolved');
+            }
+            const native = JSON.parse(readFileSync('.compliance/NATIVE-COMPONENTS.json'));
+            if (native.packages.length !== 1)
+              throw new Error('Exactly one native payload must be selected');
+            if (!native.packages[0].name.endsWith('-' + process.arch))
+              throw new Error('Native payload does not match the runner architecture');
+            for (const excluded of native.excludedFromArtifacts)
+              if (native.packages[0].name === excluded)
+                throw new Error('An excluded WASM package was selected as the native payload');
           "
       - name: Verify optional window provider
         run: >-

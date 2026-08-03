@@ -20,6 +20,7 @@
     "eval:skill": "node --experimental-transform-types --no-warnings --import ./evals/register.mjs evals/skillbuilder/run.ts",
     "compliance:licenses": "node scripts/prepare-compliance.mjs --licenses-only",
     "compliance:prepare": "node scripts/prepare-compliance.mjs",
+    "compliance:review": "node scripts/review-compliance-sources.mjs",
     "compliance:test": "node --test scripts/compliance.test.mjs",
     "dist": "npm run compliance:prepare && node scripts/assert-generic-dist-platform.mjs && vite build && electron-builder --publish never",
     "dist:win:x64": "npm run compliance:prepare && node scripts/assert-native-windows-arch.mjs x64 && vite build && electron-builder --config.npmRebuild=false --publish never --win nsis --x64",
@@ -35,7 +36,7 @@
     "koffi": "^3.1.1",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
-    "sharp": "^0.34.5",
+    "sharp": "^0.35.3",
     "zod": "^4.3.6"
   },
   "optionalDependencies": {
@@ -58,6 +59,7 @@
   "overrides": {
     "adm-zip": "$adm-zip",
     "fast-uri": "^3.1.4",
+    "sharp": "$sharp",
     "tar": "^7.5.21"
   },
   "build": {
@@ -73,7 +75,11 @@
       "dist-electron/**",
       "package.json",
       "LICENSE",
-      "THIRD-PARTY-NOTICES.md"
+      "THIRD-PARTY-NOTICES.md",
+      "!node_modules/@img/sharp-wasm32/**",
+      "!node_modules/@img/sharp-freebsd-wasm32/**",
+      "!node_modules/@img/sharp-webcontainers-wasm32/**",
+      "!node_modules/@emnapi/runtime/**"
     ],
     "extraResources": [
       {
@@ -112,16 +118,14 @@
         "package.json",
         "LICENSE",
         "THIRD-PARTY-NOTICES.md",
-        "!node_modules/get-windows/**"
+        "!node_modules/get-windows/**",
+        "!node_modules/@img/sharp-wasm32/**",
+        "!node_modules/@img/sharp-freebsd-wasm32/**",
+        "!node_modules/@img/sharp-webcontainers-wasm32/**",
+        "!node_modules/@emnapi/runtime/**"
       ],
       "target": "nsis",
       "artifactName": "${productName}-${version}-windows-${arch}.${ext}"
-    },
-    "linux": {
-      "target": [
-        "AppImage"
-      ],
-      "category": "Development"
     },
     "compression": "normal",
     "nsis": {

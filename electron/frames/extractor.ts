@@ -18,7 +18,7 @@ const log = createLogger("Frames");
 const require = createRequire(import.meta.url);
 const execFileAsync = promisify(execFile);
 
-type Sharp = typeof import("sharp");
+type Sharp = (typeof import("sharp"))["default"];
 let sharpMod: Sharp | null | undefined;
 function sharp(): Sharp | null {
   if (sharpMod === undefined) {

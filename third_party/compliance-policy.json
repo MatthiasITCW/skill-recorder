@@ -14,13 +14,23 @@
       "win32-x64": "b4e9995cd3f65785eb8818276aa9020f3165ab11da41b3c762616d4a0ad8c7ad"
     },
     "notices": {
-      "LICENSE.electron.txt": "5154e165bd6c2cc0cfbcd8916498c7abab0497923bafcd5cb07673fe8480087d",
-      "LICENSES.chromium.html": "b911161e6594ec76b872498b423c54406168f2974e0d407a847f7de1e5ff94dd"
+      "win32-x64": {
+        "LICENSE.electron.txt": "5154e165bd6c2cc0cfbcd8916498c7abab0497923bafcd5cb07673fe8480087d",
+        "LICENSES.chromium.html": "b911161e6594ec76b872498b423c54406168f2974e0d407a847f7de1e5ff94dd"
+      },
+      "win32-arm64": {
+        "LICENSE.electron.txt": "5154e165bd6c2cc0cfbcd8916498c7abab0497923bafcd5cb07673fe8480087d",
+        "LICENSES.chromium.html": "b911161e6594ec76b872498b423c54406168f2974e0d407a847f7de1e5ff94dd"
+      },
+      "darwin-arm64": {
+        "LICENSE.electron.txt": "5154e165bd6c2cc0cfbcd8916498c7abab0497923bafcd5cb07673fe8480087d",
+        "LICENSES.chromium.html": "4fc0507a046b9ecd0738b2dd64119b5ec8bc29ac0221b63edb693fd5fd497c87"
+      }
     }
   },
-  "sharp": "0.34.5",
+  "sharp": "0.35.3",
   "sharpLibvips": {
-    "version": "1.2.4"
+    "version": "1.3.2"
   },
   "onnxruntime": {
     "1.24.3": "v1.24.3",
@@ -39,45 +49,60 @@
     "onnxruntime-1.26.0-dev.20260416-b7804b056c-license": "2f07c72751aed99790b8a4869cf2311df85a860b22ded05fa22803587a48922c",
     "onnxruntime-1.26.0-dev.20260416-b7804b056c-notices": "0e07b95f3a8d6230037707c5c4a2b554d12c4cb67369669ac255635528ffcee2"
   },
+  "sourceCommits": {
+    "mozjpeg@0826579": "08265790774cd0714832c9e675522acbe5581437",
+    "tiff@732665c": "732665c2c8785cec3e1f46ba9908575f0f3a8059",
+    "tiff@d01a94b": "d01a94be176f5f6a87f7ee1c0b32e65416aa2b4d",
+    "uhdr@13a058f": "13a058f452d846e43d4691f6885eeeaa8b0ea8d0",
+    "uhdr@1acdbed": "1acdbed8c712e6923ebf9de4e7c8d8dda06509e9"
+  },
   "sourceMaterials": {
     "electron": "9fa9a84bc0ee0aab5ec7f46de991dc55904e634fb566a75bb3f93599c861c46a",
     "electron-ffmpeg": "e84618cc968bb2895ad494c86943c020b242a74f905fc412653c1068a37ea640",
     "electron-ffmpeg-patch-link-with-loader-path": "849b0fbef990623b0caf187c75a3f31f53ed4390e5770196d47880056b53dc7e",
-    "libvips-windows-build": "241e9b486a14eb1a6b531591f703aeb7d3497c762fc209b2de6a3fdaa67ec8fb",
-    "sharp": "8b4d7e0149fee8d273b1b674ede7886bb7b7b172ebec0398d0b8dbaf816214d2",
-    "sharp-libvips-build": "d434fe577941e979438431ccbdf59ea86a5d559d6b218d6ec2a8ea466ad7c868",
-    "sharp-native-aom": "19e45a5a7192d690565229983dad900e76b513a02306c12053fb9a262cbeca7d",
-    "sharp-native-archive": "db0dee91561cbd957689036a3a71281efefd131d35d1d98ebbc32720e4da58e2",
-    "sharp-native-cairo": "445ed8208a6e4823de1226a74ca319d3600e83f6369f99b14265006599c32ccb",
-    "sharp-native-cgif": "d6cb312c7da2c6c9f310811aa3658120c0316ba130c48a012e7baf3698920fe9",
-    "sharp-native-exif": "62f74cf3bf673a6e24d2de68f6741643718541f83aca5947e76e3978c25dce83",
-    "sharp-native-expat": "71df8f40706a7bb0a80a5367079ea75d91da4f8c65c58ec59bcdfbf7decdab9f",
-    "sharp-native-ffi": "f3a3082a23b37c293a4fcd1053147b371f2ff91fa7ea1b2a52e335676bac82dc",
-    "sharp-native-fontconfig": "82e73b26adad651b236e5f5d4b3074daf8ff0910188808496326bd3449e5261d",
-    "sharp-native-freetype": "44bd69d1f0750603410cfd4f26f1c5523c5a3a087a2dfa8639b757dc7c6677be",
-    "sharp-native-fribidi": "1b1cde5b235d40479e91be2f0e88a309e3214c8ab470ec8a2744d82a5a9ea05c",
-    "sharp-native-glib": "119d1708ca022556d6d2989ee90ad1b82bd9c0d1667e066944a6d0020e2d5e57",
-    "sharp-native-harfbuzz": "0238bf7ada6b1fb92984f69f8b9cd66518af83cf24f7db1cfe60c772c42312d3",
-    "sharp-native-heif": "68ac9084243004e0ef3633f184eeae85d615fe7e4444373a0a21cebccae9d12a",
-    "sharp-native-highway": "07b3c1ba2c1096878a85a31a5b9b3757427af963b1141ca904db2f9f4afe0bc2",
-    "sharp-native-imagequant": "47d2a84b7b1052975c9d50a3d4e3cacbf57b43d84a4c3131210848ead9964dfb",
-    "sharp-native-lcms": "d11af569e42a1baa1650d20ad61d12e41af4fead4aa7964a01f93b08b53ab074",
-    "sharp-native-mozjpeg": "b680167bd5d9afebdd576a12f8c49d2c9066a3b92ef96a2b2c5f7829b8600fe5",
-    "sharp-native-pango": "890640c841dae77d3ae3d8fe8953784b930fa241b17423e6120c7bfdf8b891e7",
-    "sharp-native-pixman": "d09c44ebc3bd5bee7021c79f922fe8fb2fb57f7320f55e97ff9914d2346a591c",
-    "sharp-native-png": "71158e53cfdf2877bc99bcab33641d78df3f48e6e0daad030afe9cb8c031aa46",
-    "sharp-native-proxy-libintl": "f7a1cbd7579baaf575c66f9d99fb6295e9b0684a28b095967cfda17857595303",
-    "sharp-native-rsvg": "4644d83623dd61cc4479c2b3c372e1da2b281552ebc90035c8d1ac502eb1dc00",
-    "sharp-native-spng": "47ec02be6c0a6323044600a9221b049f63e1953faf816903e7383d4dc4234487",
-    "sharp-native-tiff": "f698d94f3103da8ca7438d84e0344e453fe0ba3b7486e04c5bf7a9a3fabe9b69",
-    "sharp-native-vips": "41e9a1439cd57dcc6d4435a085e2cfe181d9da1962fa84a484f09e8b536e4b77",
-    "sharp-native-webp": "e4ab7009bf0629fd11982d4c2aa83964cf244cffba7347ecd39019a9e38c4564",
-    "sharp-native-xml2": "c008bac08fd5c7b4a87f7b8a71f283fa581d80d80ff8d2efd3b26224c39bc54c",
-    "sharp-native-zlib-ng": "5b3b022489f3ced82384f06db1e13ba148cbce38c7941e424d6cb414416acd18",
-    "sharp-patch-aom": "9905702d2be0d790ca9a47752f2e6f84b37e085f43c58e1d2dd66896e9fd5694",
+    "libvips-windows-build": "05c9f3708ce8afe820d4a401e8b270e30c8bd6270e75a6cfb97f918f2f087962",
+    "sharp": "0217f802064e589131536bdac8d1beb5b8a40953d1f066771204a0e5956750e6",
+    "sharp-libvips-build": "ac2f07da237416598c5e8b85e6d4c2ff5da87e5c818744daf7634645d2e0f337",
+    "sharp-native-aom@3.14.1": "44bf90dbd23e734d50e70a8c41c285193922938bd0d3bc2ee56764d181d55ef5",
+    "sharp-native-archive@3.8.7": "d3a8ba457ae25c27c84fd2830a2efdcc5b1d40bf585d4eb0d35f47e99e5d4774",
+    "sharp-native-archive@3.8.8": "3873a88801da067d0528a989af06877710529d50ee8fe6f3970cbb4302efb918",
+    "sharp-native-cairo@1.18.4": "445ed8208a6e4823de1226a74ca319d3600e83f6369f99b14265006599c32ccb",
+    "sharp-native-cgif@0.5.3": "dcc7731e974ee77db75df26c99aca4d95f11ca2d267d870d42bce1e0d1e1e75f",
+    "sharp-native-exif@0.6.26": "4a055ed6575e61ca46c3172be3c753cc16c9becd0f99ec71d58dd0e471476c0c",
+    "sharp-native-expat@2.8.1": "10b195ee78160a908388180a8fe3603d4e9a12f4755fbf5f3816b23a9d750da0",
+    "sharp-native-expat@2.8.2": "3ad89b8588e6644bd4e49981480d48b21289eebbcd4f0a1a4afb1c29f99b6ab4",
+    "sharp-native-ffi@3.5.2": "f3a3082a23b37c293a4fcd1053147b371f2ff91fa7ea1b2a52e335676bac82dc",
+    "sharp-native-ffi@3.6.0": "31ff1fe32deaebfbb388727f32677bb254bf2a41382c51464c0b1837c9ee9828",
+    "sharp-native-fontconfig@2.18.1": "e9309564717b6301230112b173f36c288489479d381d2f0add1210ca5b16ba7e",
+    "sharp-native-freetype@2.14.3": "dc49de6b01a266eef4876a4dd34d9842c475d3e28ff2eff63bd2fb760ab56261",
+    "sharp-native-fribidi@1.0.16": "1b1cde5b235d40479e91be2f0e88a309e3214c8ab470ec8a2744d82a5a9ea05c",
+    "sharp-native-glib@2.89.0": "205bf5dab175de68f11e33be7bb36d4ad4c5a5097d8c0c88a8682b257b6293dc",
+    "sharp-native-glib@2.89.1": "74447129c31afe141810f995626e8b99ab677413dae76ee3cf5a9cc6e75a486e",
+    "sharp-native-harfbuzz@14.2.1": "3c2a9006a7e1bf58737e557014d7882c554c628fb379a9f00008f5ea53dbbdfb",
+    "sharp-native-heif@1.23.0": "4c9182b18897617182eed12ab5eb9f9d855b3aa3a736d6bdb31abc034ec7d393",
+    "sharp-native-heif@1.23.1": "0de0327f60fcd47de90d5654c6fe152232738d60d84fe084ec3e0f35e03b166a",
+    "sharp-native-highway@1.4.0": "e72241ac9524bb653ae52ced768b508045d4438726a303f10181a38f764a453c",
+    "sharp-native-imagequant@2.4.1": "47d2a84b7b1052975c9d50a3d4e3cacbf57b43d84a4c3131210848ead9964dfb",
+    "sharp-native-lcms@2.19.1": "bfc54f7bab59fbc921012014a8032e4cba4abd46db47d46b76416a8c0b2815c8",
+    "sharp-native-mozjpeg@0826579": "7181e99a96c62a426293c09f37c94e2637a6af86e7729f5ab75891c85e9cfd2a",
+    "sharp-native-pango@1.57.1": "e65d6d117080dc3aeeb7d8b4b3b518f7383aa2e6cfce23117c623cd624764c2f",
+    "sharp-native-pango@1.58.0": "bc5bad6213ad4886a47d1e80292fd850b64159b50db67917a43d9ea80ee2298a",
+    "sharp-native-pixman@0.46.4": "d09c44ebc3bd5bee7021c79f922fe8fb2fb57f7320f55e97ff9914d2346a591c",
+    "sharp-native-png@1.6.58": "a9d4df463d36a6e5f9c29bd6f4967312d17e996c1854f3511f833924eb1993cf",
+    "sharp-native-proxy-libintl@0.5": "f7a1cbd7579baaf575c66f9d99fb6295e9b0684a28b095967cfda17857595303",
+    "sharp-native-rsvg@2.62.3": "7eb449b2722a768021356f66dfee3202c229b54ed4e6a70ce40c090e97ff16f2",
+    "sharp-native-rsvg@2.62.90": "5d108758255c225590d862d94f2591ee1f8cc976dc7b25b06eaba74f21850f08",
+    "sharp-native-tiff@732665c": "9266662c24df398fc113d453f8eaf3347e7be47004b0f451b425740ee6dfcec4",
+    "sharp-native-tiff@d01a94b": "c040cf975f30f74fa586700ce3b5191bc6543b696ed2c99f62c53399960a4ea2",
+    "sharp-native-uhdr@13a058f": "c4855df878f1b2f5a451a4206a9fff555549e14a1dd4c6552d2539e89df965b2",
+    "sharp-native-uhdr@1acdbed": "42b7276e3d7387ca0cdfd93da63f31e163f2c521aef5d165c2cd3bf9ed84c976",
+    "sharp-native-vips@8.18.3": "f41285b61bfb495605494f074ca341f7791a1d406e2f157dcea606ef1ae1b146",
+    "sharp-native-webp@1.6.0": "e4ab7009bf0629fd11982d4c2aa83964cf244cffba7347ecd39019a9e38c4564",
+    "sharp-native-xml2@2.15.3": "78262a6e7ac170d6528ebfe2efccdf220191a5af6a6cd61ea4a9a9a5042c7a07",
+    "sharp-native-zlib-ng@2.3.3": "f9c65aa9c852eb8255b636fd9f07ce1c406f061ec19a2e7d508b318ca0c907d1",
     "sharp-patch-glib-without-gregex": "b1f2930a11292e529de137c7eb723850e0cc0969b1a2b0358196389312acd272",
-    "sharp-patch-highway": "6ce65c4a6e90a4293da81cd3e932e81fd7ac77f31058143241ca9b8dd085098c",
-    "sharp-patch-libvips-heif": "59a547c12915bc2670c37ff88200ebe74fe70aacce6e20b7069157a0d6a098c8",
-    "sharp-patch-libvips-soversion": "256b7d6f8c973bb53b20cff5171c7117d6b35d3aa4e72d22cb906f4fe1e2c890"
+    "sharp-patch-libvips-soversion": "256b7d6f8c973bb53b20cff5171c7117d6b35d3aa4e72d22cb906f4fe1e2c890",
+    "sharp-patch-mozjpeg-simd-fdct": "a65f87cadf3a6052e44d6314c906f6e2891352f82646b8a6f0b8fcf2c1891e7c",
+    "sharp-patch-uhdr-platform-detection": "e0106f9458626f6745a9a9a3841478b7a42f6905f67373d19f6f9b897c33ada5"
   }
 }

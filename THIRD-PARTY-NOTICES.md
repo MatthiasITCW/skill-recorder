@@ -49,7 +49,8 @@ Those components remain under their own terms; the generated
   codec library whose bundled notice identifies FFmpeg as **LGPL-2.1-or-later**.
   GPL portions require an explicit non-default FFmpeg build configuration.
 - Electron's `LICENSE.electron.txt` and `LICENSES.chromium.html` are retained in
-  every packaged application.
+  every packaged application. Chromium's notice file differs per platform, so it
+  is reviewed separately for each release target.
 - The currently pinned source is Electron
   [`v43.1.1`](https://github.com/electron/electron/tree/v43.1.1), Chromium
   [`150.0.7871.114`](https://chromium.googlesource.com/chromium/src/+/150.0.7871.114),
@@ -69,12 +70,17 @@ Those components remain under their own terms; the generated
   **Apache-2.0 AND LGPL-3.0-or-later**; other platforms load the corresponding
   **LGPL-3.0-or-later** `@img/sharp-libvips-*` package.
 - The currently pinned source is Sharp
-  [`v0.34.5`](https://github.com/lovell/sharp/tree/v0.34.5), its reproducible
+  [`v0.35.3`](https://github.com/lovell/sharp/tree/v0.35.3), its reproducible
   packaging scripts
-  [`sharp-libvips v1.2.4`](https://github.com/lovell/sharp-libvips/tree/v1.2.4),
+  [`sharp-libvips v1.3.2`](https://github.com/lovell/sharp-libvips/tree/v1.3.2),
   and libvips
-  [`v8.17.3`](https://github.com/libvips/libvips/tree/v8.17.3). The unpacked
+  [`v8.18.3`](https://github.com/libvips/libvips/tree/v8.18.3). The unpacked
   native module remains replaceable in the packaged application.
+- Sharp also publishes a WebAssembly build, `@img/sharp-wasm32`, which npm
+  installs on every platform because its FreeBSD and WebContainers wrappers
+  declare the platform constraints. Skill Recorder never loads it and excludes it
+  and its WASM-only runtime dependency `@emnapi/runtime` from every packaged
+  artifact, so neither is distributed.
 - The native payload also contains libraries under MPL-2.0, MIT, BSD, ISC,
   fontconfig, FreeType, libpng, libtiff, zlib, and related permissive terms.
   The exact upstream table is distributed as

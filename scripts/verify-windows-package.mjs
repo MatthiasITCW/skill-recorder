@@ -2,7 +2,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 
-import { verifyComplianceDirectory } from "./compliance.mjs";
+import { excludedWasmPackages, verifyComplianceDirectory } from "./compliance.mjs";
 
 const require = createRequire(import.meta.url);
 const { listPackage } = require("@electron/asar");
@@ -41,7 +41,10 @@ const expectedPayloads = [
   },
   {
     packagePath: `/@img/sharp-win32-${arch}/`,
-    executable: `/@img/sharp-win32-${arch}/lib/sharp-win32-${arch}.node`,
+    // sharp 0.35 suffixes the native addon with the package version.
+    executable: new RegExp(
+      `/@img/sharp-win32-${arch}/lib/sharp-win32-${arch}(?:-[0-9][^/]*)?\\.node$`,
+    ),
   },
   {
     packagePath: `/onnxruntime-node/bin/napi-v6/win32/${arch}/`,
@@ -57,11 +60,31 @@ for (const payload of expectedPayloads) {
     throw new Error(`Packaged ${arch} application is missing ${payload.packagePath}.`);
   }
 
-  const executableIndex = normalizedFiles.findIndex((file) => file.endsWith(payload.executable));
+  const executableIndex = normalizedFiles.findIndex((file) =>
+    payload.executable instanceof RegExp
+      ? payload.executable.test(file)
+      : file.endsWith(payload.executable),
+  );
   if (executableIndex === -1) {
     throw new Error(`Packaged ${arch} application is missing ${payload.executable}.`);
   }
   verifyPeMachine(files[executableIndex], expectedMachine);
+}
+
+for (const excluded of excludedWasmPackages) {
+  const prefix = `/${excluded.toLowerCase()}/`;
+  const leaked = normalizedFiles.find((file) => file.includes(prefix));
+  if (leaked) {
+    throw new Error(`Packaged ${arch} application contains excluded WASM payload ${leaked}.`);
+  }
+}
+const wasmBinary = normalizedFiles.find(
+  (file) => file.includes("/@img/") && file.endsWith(".wasm"),
+);
+if (wasmBinary) {
+  throw new Error(
+    `Packaged ${arch} application contains an unreviewed Sharp WebAssembly binary ${wasmBinary}.`,
+  );
 }
 
 const otherArch = arch === "arm64" ? "x64" : "arm64";

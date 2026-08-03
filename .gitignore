@@ -4,6 +4,7 @@ dist-electron
 release
 .compliance
 .compliance-cache
+.compliance-review
 *.log
 .DS_Store
 

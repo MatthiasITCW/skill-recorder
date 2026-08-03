@@ -8,51 +8,82 @@ import { fileURLToPath } from "node:url";
 
 import {
   assertReviewedCopilotCliVersions,
+  assertWasmExcludedFromPackaging,
   buildNativeSourceSpecs,
   deterministicGitConfigArgs,
+  detectLinuxLibc,
+  excludedWasmPackages,
   findPackageLicenseFiles,
   hasExpectedFileHeader,
+  isCommitToken,
   isLicenseFileName,
   legalTextSpecs,
+  nativePayloadCandidates,
   onnxRefForVersion,
+  releaseTargets,
+  resolveReviewedCommit,
   reviewedSharpLibvipsLicenseEntry,
+  reviewedSharpLicenseEntry,
   reviewedMaterialHash,
   renderRelinking,
+  selectNativePayload,
+  splitSpdxAnd,
   verifyComplianceDirectory,
 } from "./compliance.mjs";
 
 const nativeVersions = {
-  aom: "3.13.1",
-  archive: "3.8.2",
+  aom: "3.14.1",
+  archive: "3.8.7",
   cairo: "1.18.4",
-  cgif: "0.5.0",
-  exif: "0.6.25",
-  expat: "2.7.3",
+  cgif: "0.5.3",
+  exif: "0.6.26",
+  expat: "2.8.1",
   ffi: "3.5.2",
-  fontconfig: "2.17.1",
-  freetype: "2.14.1",
+  fontconfig: "2.18.1",
+  freetype: "2.14.3",
   fribidi: "1.0.16",
-  glib: "2.86.1",
-  harfbuzz: "12.1.0",
-  heif: "1.20.2",
-  highway: "1.3.0",
+  glib: "2.89.0",
+  harfbuzz: "14.2.1",
+  heif: "1.23.0",
+  highway: "1.4.0",
   imagequant: "2.4.1",
-  lcms: "2.17",
+  lcms: "2.19.1",
   mozjpeg: "0826579",
-  pango: "1.57.0",
+  pango: "1.57.1",
   pixman: "0.46.4",
-  png: "1.6.50",
+  png: "1.6.58",
   "proxy-libintl": "0.5",
-  rsvg: "2.61.2",
-  spng: "0.7.4",
-  tiff: "4.7.1",
-  vips: "8.17.3",
+  rsvg: "2.62.3",
+  tiff: "732665c",
+  uhdr: "13a058f",
+  vips: "8.18.3",
   webp: "1.6.0",
-  xml2: "2.15.1",
-  "zlib-ng": "2.2.5",
+  xml2: "2.15.3",
+  "zlib-ng": "2.3.3",
+};
+
+const sourceCommits = {
+  "mozjpeg@0826579": "08265790774cd0714832c9e675522acbe5581437",
+  "tiff@732665c": "732665c2c8785cec3e1f46ba9908575f0f3a8059",
+  "tiff@d01a94b": "d01a94be176f5f6a87f7ee1c0b32e65416aa2b4d",
+  "uhdr@13a058f": "13a058f452d846e43d4691f6885eeeaa8b0ea8d0",
+  "uhdr@1acdbed": "1acdbed8c712e6923ebf9de4e7c8d8dda06509e9",
+};
+
+const specOptions = {
+  platform: "win32",
+  sharpVersion: "0.35.3",
+  sharpLibvipsVersion: "1.3.2",
+  electronVersion: "43.1.1",
+  ffmpegRevision: "ad41607c61898cf7150e0fb20fe4bbabd44922a3",
+  sourceCommits,
 };
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const repoPolicy = JSON.parse(
+  await readFile(path.join(repoRoot, "third_party", "compliance-policy.json"), "utf8"),
+);
+const repoManifest = JSON.parse(await readFile(path.join(repoRoot, "package.json"), "utf8"));
 
 test("license filenames include common suffixed forms", () => {
   assert.equal(isLicenseFileName("LICENSE"), true);
@@ -94,17 +125,11 @@ test("nested package legal files are discovered", async () => {
 });
 
 test("native source manifest covers dependencies, build scripts, and patches", () => {
-  const sources = buildNativeSourceSpecs(nativeVersions, {
-    platform: "win32",
-    sharpVersion: "0.34.5",
-    sharpLibvipsVersion: "1.2.4",
-    electronVersion: "43.1.1",
-    ffmpegRevision: "ad41607c61898cf7150e0fb20fe4bbabd44922a3",
-  });
+  const sources = buildNativeSourceSpecs(nativeVersions, specOptions);
 
   const ids = new Set(sources.map(({ id }) => id));
-  for (const dependency of Object.keys(nativeVersions)) {
-    assert(ids.has(`sharp-native-${dependency}`), `missing ${dependency}`);
+  for (const [dependency, version] of Object.entries(nativeVersions)) {
+    assert(ids.has(`sharp-native-${dependency}@${version}`), `missing ${dependency}`);
   }
   for (const required of [
     "sharp",
@@ -113,7 +138,6 @@ test("native source manifest covers dependencies, build scripts, and patches", (
     "electron-ffmpeg",
     "electron",
     "electron-ffmpeg-patch-link-with-loader-path",
-    "sharp-patch-glib-without-gregex",
   ]) {
     assert(ids.has(required), `missing ${required}`);
   }
@@ -127,6 +151,151 @@ test("native source manifest covers dependencies, build scripts, and patches", (
     "https://chromium.googlesource.com/chromium/third_party/ffmpeg",
   );
   assert.doesNotMatch(ffmpeg.url, /\+archive/);
+});
+
+test("source ids are version qualified so both platform payloads coexist", () => {
+  const windows = buildNativeSourceSpecs(nativeVersions, specOptions);
+  const posix = buildNativeSourceSpecs(
+    { ...nativeVersions, archive: "3.8.8", tiff: "d01a94b", uhdr: "1acdbed" },
+    { ...specOptions, platform: "darwin" },
+  );
+  assert(windows.some(({ id }) => id === "sharp-native-archive@3.8.7"));
+  assert(posix.some(({ id }) => id === "sharp-native-archive@3.8.8"));
+  const shared = new Set(windows.map(({ id }) => id));
+  assert(
+    posix.some(({ id }) => id.startsWith("sharp-native-") && !shared.has(id)),
+    "platform payloads must be able to pin different component versions",
+  );
+});
+
+test("only components present in the payload manifest are required", () => {
+  const trimmed = { ...nativeVersions };
+  delete trimmed.aom;
+  const ids = new Set(buildNativeSourceSpecs(trimmed, specOptions).map(({ id }) => id));
+  assert.equal(ids.has("sharp-native-aom@3.14.1"), false);
+  assert.equal([...ids].some((id) => id.startsWith("sharp-native-spng")), false);
+});
+
+test("an unknown payload component fails closed", () => {
+  assert.throws(
+    () => buildNativeSourceSpecs({ ...nativeVersions, brandnew: "1.0.0" }, specOptions),
+    /has no reviewed source builder/,
+  );
+});
+
+test("commit-identified components resolve to reviewed immutable revisions", () => {
+  assert.equal(isCommitToken("732665c"), true);
+  assert.equal(isCommitToken("4.7.1"), false);
+  assert.equal(
+    resolveReviewedCommit("tiff", "732665c", sourceCommits),
+    "732665c2c8785cec3e1f46ba9908575f0f3a8059",
+  );
+  assert.throws(
+    () => resolveReviewedCommit("tiff", "abcdef1", sourceCommits),
+    /no reviewed 40-character upstream commit/,
+  );
+  assert.throws(
+    () => resolveReviewedCommit("tiff", "732665c", { "tiff@732665c": "f".repeat(40) }),
+    /does not extend the manifest token/,
+  );
+
+  const sources = buildNativeSourceSpecs(nativeVersions, specOptions);
+  for (const [id, repository, revision] of [
+    ["sharp-native-tiff@732665c", "https://gitlab.com/libtiff/libtiff.git", "732665c2c8785cec3e1f46ba9908575f0f3a8059"],
+    ["sharp-native-uhdr@13a058f", "https://github.com/google/libultrahdr.git", "13a058f452d846e43d4691f6885eeeaa8b0ea8d0"],
+    ["sharp-native-mozjpeg@0826579", "https://github.com/mozilla/mozjpeg.git", "08265790774cd0714832c9e675522acbe5581437"],
+  ]) {
+    const spec = sources.find((entry) => entry.id === id);
+    assert(spec, `missing ${id}`);
+    assert.equal(spec.gitRepository, repository);
+    assert.equal(spec.gitRevision, revision);
+    assert.doesNotMatch(spec.url, /archive\/refs/);
+  }
+});
+
+test("commit-identified components fall back to tagged tarballs", () => {
+  const sources = buildNativeSourceSpecs(
+    { ...nativeVersions, tiff: "4.7.1", uhdr: "1.4.0", mozjpeg: "4.1.5" },
+    specOptions,
+  );
+  assert.equal(
+    sources.find(({ id }) => id === "sharp-native-tiff@4.7.1").gitRepository,
+    undefined,
+  );
+  assert.match(
+    sources.find(({ id }) => id === "sharp-native-uhdr@1.4.0").url,
+    /archive\/refs\/tags\/v1\.4\.0\.tar\.gz$/,
+  );
+});
+
+test("build patches match the platform that applies them", () => {
+  const windows = new Set(buildNativeSourceSpecs(nativeVersions, specOptions).map(({ id }) => id));
+  const posix = new Set(
+    buildNativeSourceSpecs(nativeVersions, { ...specOptions, platform: "darwin" }).map(
+      ({ id }) => id,
+    ),
+  );
+
+  // Windows patches all live inside the build-win64-mxe archive.
+  assert(windows.has("libvips-windows-build"));
+  assert.equal([...windows].some((id) => id.startsWith("sharp-patch-")), false);
+
+  assert.equal(posix.has("libvips-windows-build"), false);
+  for (const required of [
+    "sharp-patch-glib-without-gregex",
+    "sharp-patch-libvips-soversion",
+    "sharp-patch-mozjpeg-simd-fdct",
+    "sharp-patch-uhdr-platform-detection",
+  ]) {
+    assert(posix.has(required), `missing ${required}`);
+  }
+  for (const removed of [
+    "sharp-patch-aom",
+    "sharp-patch-highway",
+    "sharp-patch-libvips-heif",
+  ]) {
+    assert.equal(posix.has(removed), false, `${removed} is no longer applied upstream`);
+  }
+});
+
+test("every source specification uses an immutable revision or release", () => {
+  for (const platform of ["win32", "darwin"]) {
+    for (const spec of buildNativeSourceSpecs(nativeVersions, { ...specOptions, platform })) {
+      assert.doesNotMatch(
+        spec.url,
+        /\/(?:master|main|HEAD)(?:[/.]|$)|pull\/\d+\.(?:patch|diff)|patch-diff\.githubusercontent/,
+        `${spec.id} must not reference a mutable upstream ref`,
+      );
+      if (spec.gitRevision) assert.match(spec.gitRevision, /^[0-9a-f]{40}$/);
+    }
+  }
+});
+
+test("every reviewed source material is still referenced by a payload", () => {
+  const referenced = new Set([
+    ...buildNativeSourceSpecs(nativeVersions, {
+      ...specOptions,
+      sharpVersion: repoPolicy.sharp,
+      sharpLibvipsVersion: repoPolicy.sharpLibvips.version,
+      electronVersion: repoPolicy.electron.version,
+      ffmpegRevision: repoPolicy.electron.ffmpegRevision,
+      sourceCommits: repoPolicy.sourceCommits,
+    }).map(({ id }) => id),
+    ...buildNativeSourceSpecs(
+      { ...nativeVersions, archive: "3.8.8", expat: "2.8.2", ffi: "3.6.0", glib: "2.89.1", heif: "1.23.1", pango: "1.58.0", rsvg: "2.62.90", tiff: "d01a94b", uhdr: "1acdbed" },
+      {
+        ...specOptions,
+        platform: "darwin",
+        sharpVersion: repoPolicy.sharp,
+        sharpLibvipsVersion: repoPolicy.sharpLibvips.version,
+        electronVersion: repoPolicy.electron.version,
+        ffmpegRevision: repoPolicy.electron.ffmpegRevision,
+        sourceCommits: repoPolicy.sourceCommits,
+      },
+    ).map(({ id }) => id),
+  ]);
+  const orphaned = Object.keys(repoPolicy.sourceMaterials).filter((id) => !referenced.has(id));
+  assert.deepEqual(orphaned, [], "compliance-policy.json retains unused source hashes");
 });
 
 test("git archives ignore host line-ending and global attribute settings", () => {
@@ -199,6 +368,163 @@ test("platform Sharp/libvips packages use the reviewed LGPL text", () => {
   );
 });
 
+test("compound SPDX expressions are split into individual terms", () => {
+  assert.deepEqual(splitSpdxAnd("Apache-2.0 AND LGPL-3.0-or-later AND MIT"), [
+    "Apache-2.0",
+    "LGPL-3.0-or-later",
+    "MIT",
+  ]);
+  assert.deepEqual(splitSpdxAnd("(MIT AND Apache-2.0)"), ["MIT", "Apache-2.0"]);
+  assert.deepEqual(splitSpdxAnd("MIT"), ["MIT"]);
+  assert.deepEqual(splitSpdxAnd(undefined), []);
+});
+
+test("every declared Sharp license term resolves to concrete text", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "skill-recorder-sharp-license-"));
+  try {
+    await writeFile(
+      path.join(root, "LICENSE"),
+      "                              Apache License\n                        Version 2.0, January 2004\n",
+    );
+    const policy = { sharp: "0.35.3", sharpLibvips: { version: "1.3.2" } };
+    const pkg = {
+      name: "@img/sharp-win32-arm64",
+      version: "0.35.3",
+      license: "Apache-2.0 AND LGPL-3.0-or-later",
+      lockPath: "node_modules/@img/sharp-win32-arm64",
+      directory: root,
+    };
+    const entry = reviewedSharpLicenseEntry(pkg, policy, ["LICENSE"]);
+    assert.equal(entry.licenseSource, "LICENSE, licenses/LGPL-3.0.txt");
+    assert.match(entry.text, /Apache License/);
+    assert.match(entry.text, /licenses\/LGPL-3\.0\.txt/);
+
+    const wasm = reviewedSharpLicenseEntry(
+      { ...pkg, name: "@img/sharp-wasm32", license: "Apache-2.0 AND LGPL-3.0-or-later AND MIT" },
+      policy,
+      ["LICENSE"],
+    );
+    assert.match(wasm.licenseSource, /canonical SPDX MIT text/);
+    assert.match(wasm.text, /MIT License/);
+
+    // The permissive half alone is never enough for a compound expression.
+    assert.throws(
+      () => reviewedSharpLicenseEntry(pkg, policy, []),
+      /declares Apache-2\.0 but ships no Apache license text/,
+    );
+    assert.throws(
+      () => reviewedSharpLicenseEntry({ ...pkg, license: "Apache-2.0 AND GPL-3.0" }, policy, ["LICENSE"]),
+      /unexpected license metadata/,
+    );
+    assert.throws(
+      () => reviewedSharpLicenseEntry({ ...pkg, version: "0.35.4" }, policy, ["LICENSE"]),
+      /No reviewed Sharp license override/,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("exactly one architecture-matched native payload is packaged", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "skill-recorder-payload-"));
+  try {
+    const make = async (name) => {
+      const directory = path.join(root, name.replaceAll("/", "_"));
+      await mkdir(directory, { recursive: true });
+      await writeFile(path.join(directory, "versions.json"), JSON.stringify({ vips: "8.18.3" }));
+      return { name, version: "0.35.3", directory, lockPath: `node_modules/${name}` };
+    };
+    const win64 = await make("@img/sharp-win32-x64");
+    const winArm = await make("@img/sharp-win32-arm64");
+    const wasm = await make("@img/sharp-wasm32");
+    const rogue = await make("@img/sharp-linux-x64");
+
+    assert.equal(
+      selectNativePayload([winArm, wasm], { platform: "win32", arch: "arm64" }).name,
+      "@img/sharp-win32-arm64",
+    );
+    assert.throws(
+      () => selectNativePayload([wasm], { platform: "win32", arch: "arm64" }),
+      /No Sharp native payload is installed/,
+    );
+    assert.throws(
+      () => selectNativePayload([win64], { platform: "win32", arch: "arm64" }),
+      /Unexpected Sharp native payload installed/,
+    );
+    assert.throws(
+      () => selectNativePayload([winArm, rogue], { platform: "win32", arch: "arm64" }),
+      /Unexpected Sharp native payload installed/,
+    );
+    assert.throws(
+      () => selectNativePayload([winArm], { platform: "freebsd", arch: "x64" }),
+      /is not a reviewed Sharp native platform/,
+    );
+
+    const musl = await make("@img/sharp-libvips-linuxmusl-x64");
+    const glibc = await make("@img/sharp-libvips-linux-x64");
+    // npm installs both Linux payloads on every host because package-lock.json cannot
+    // record `libc`; the running C library decides which one is authoritative.
+    assert.equal(
+      selectNativePayload([musl, glibc], { platform: "linux", arch: "x64", libc: "glibc" }).name,
+      "@img/sharp-libvips-linux-x64",
+    );
+    assert.equal(
+      selectNativePayload([musl, glibc], { platform: "linux", arch: "x64", libc: "musl" }).name,
+      "@img/sharp-libvips-linuxmusl-x64",
+    );
+    // With only one payload installed there is nothing to disambiguate, so a libc
+    // misdetection must not turn a working install into a hard failure.
+    assert.equal(
+      selectNativePayload([musl], { platform: "linux", arch: "x64", libc: "glibc" }).name,
+      "@img/sharp-libvips-linuxmusl-x64",
+    );
+    assert.throws(
+      () => selectNativePayload([musl, glibc], { platform: "darwin", arch: "x64" }),
+      /Unexpected Sharp native payload installed/,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+
+  assert.equal(detectLinuxLibc({ getReport: () => ({ header: { glibcVersionRuntime: "2.39" } }) }), "glibc");
+  assert.equal(detectLinuxLibc({ getReport: () => ({ header: {} }) }), "musl");
+  assert.equal(detectLinuxLibc(undefined), "musl");
+
+  assert.deepEqual(Object.keys(nativePayloadCandidates).sort(), [
+    "darwin-arm64",
+    "darwin-x64",
+    "linux-arm64",
+    "linux-x64",
+    "win32-arm64",
+    "win32-x64",
+  ]);
+  assert.deepEqual(releaseTargets, ["win32-x64", "win32-arm64", "darwin-arm64"]);
+});
+
+test("the WASM payload is excluded from every Electron artifact", () => {
+  assert.deepEqual(excludedWasmPackages, [
+    "@img/sharp-wasm32",
+    "@img/sharp-freebsd-wasm32",
+    "@img/sharp-webcontainers-wasm32",
+  ]);
+  assert.doesNotThrow(() => assertWasmExcludedFromPackaging(repoManifest.build));
+  for (const list of ["files", "win"]) {
+    const build = structuredClone(repoManifest.build);
+    const target = list === "files" ? build.files : build.win.files;
+    target.splice(target.indexOf("!node_modules/@img/sharp-wasm32/**"), 1);
+    assert.throws(
+      () => assertWasmExcludedFromPackaging(build),
+      /does not exclude @img\/sharp-wasm32/,
+    );
+  }
+});
+
+test("only supported release targets are packaged", () => {
+  assert.equal(repoManifest.build.linux, undefined, "Linux is not a release target");
+  assert.deepEqual(repoManifest.build.mac.target, ["dmg", "zip"]);
+  assert.equal(repoManifest.build.win.target, "nsis");
+});
+
 test("unreviewed source hashes fail closed", () => {
   assert.equal(
     reviewedMaterialHash("source", { source: "a".repeat(64) }, "Source material"),
@@ -218,13 +544,18 @@ test("relinking instructions use platform-specific native paths", () => {
     "electron-ffmpeg-patch-link-with-loader-path",
   ].map((id) => ({ id, file: `sources/${id}.tar.gz` }));
   const native = {
-    packages: [{ name: "@img/sharp-libvips-darwin-arm64" }],
-    versions: { vips: "8.17.3", glib: "2.86.1", cairo: "1.18.4" },
+    packages: [
+      {
+        name: "@img/sharp-libvips-darwin-arm64",
+        binaries: [{ file: "lib/libvips-cpp.8.18.3.dylib", sha256: "a".repeat(64) }],
+      },
+    ],
+    versions: { vips: "8.18.3", glib: "2.89.1", cairo: "1.18.4" },
   };
   const policy = {
     electron: { version: "43.1.1", ffmpegRevision: "abc" },
-    sharp: "0.34.5",
-    sharpLibvips: { version: "1.2.4" },
+    sharp: "0.35.3",
+    sharpLibvips: { version: "1.3.2" },
   };
   const mac = renderRelinking(native, { mode: "full", sources }, policy, "darwin");
   assert.match(
@@ -232,9 +563,30 @@ test("relinking instructions use platform-specific native paths", () => {
     /Contents\/Frameworks\/Electron Framework\.framework\/Versions\/A\/Libraries\/libffmpeg\.dylib/,
   );
   assert.doesNotMatch(mac, /build-win64-mxe/);
+  assert.match(
+    mac,
+    /Contents\/Resources\/app\.asar\.unpacked\/node_modules\/@img\/sharp-libvips-darwin-arm64\/lib\/libvips-cpp\.8\.18\.3\.dylib/,
+  );
+  assert.match(mac, /takes no technical measure to prevent a\r?\nmodified replacement from running/);
+  assert.match(mac, /reverse engineer Skill Recorder to/);
+  assert.match(mac, /- Sharp: 0\.35\.3/);
+  assert.match(mac, /- Sharp\/libvips packaging: 1\.3\.2/);
+  assert.match(mac, /- libvips: 8\.18\.3/);
 
   const linux = renderRelinking(native, { mode: "full", sources }, policy, "linux");
   assert.match(linux, /libffmpeg\.so beside the Skill Recorder executable/);
+});
+
+test("distributed notices match the reviewed Sharp and libvips versions", async () => {
+  const notices = await readFile(path.join(repoRoot, "THIRD-PARTY-NOTICES.md"), "utf8");
+  assert.match(notices, new RegExp(`sharp/tree/v${repoPolicy.sharp.replaceAll(".", "\\.")}`));
+  assert.match(
+    notices,
+    new RegExp(`sharp-libvips v${repoPolicy.sharpLibvips.version.replaceAll(".", "\\.")}`),
+  );
+  assert.match(notices, /libvips\r?\n\s+\[`v8\.18\.3`\]/);
+  assert.match(notices, /@img\/sharp-wasm32/);
+  assert.doesNotMatch(notices, /v0\.34\.5|v1\.2\.4|v8\.17\.3/);
 });
 
 test("archive validation rejects HTML challenge pages", async () => {

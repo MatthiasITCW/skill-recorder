@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -169,3 +170,21 @@ test("FrameExtractor deduplicates identical source JPEGs without deleting retain
   assert.equal(reloaded.manifest.length, 1);
   assert.equal(existsSync(path.join(framesDir, reloaded.manifest[0].file)), true);
 });
+
+test("sharp loads through the app's require path as a callable factory (guards sharp 0.35 export shape)", async () => {
+  // The frame extractor loads sharp with createRequire(import.meta.url)("sharp"), which
+  // resolves sharp's CommonJS "require" export condition. sharp 0.35 split its import and
+  // require export shapes, so this guards that the require path stays a directly-callable
+  // factory exposing the .extract().jpeg() pipeline the extractor depends on.
+  const requireFromHere = createRequire(import.meta.url);
+  const loaded = requireFromHere("sharp") as typeof sharp;
+  assert.equal(typeof loaded, "function");
+  const cropped = await loaded({
+    create: { width: 8, height: 8, channels: 3, background: { r: 10, g: 20, b: 30 } },
+  })
+    .extract({ left: 1, top: 1, width: 4, height: 4 })
+    .jpeg({ quality: 88 })
+    .toBuffer();
+  assert.ok(cropped.length > 0);
+});
+

@@ -90,6 +90,81 @@ export const legalTextSpecs = [
   },
 ];
 
+/**
+ * Sharp ships a WebAssembly build that npm installs on every platform because
+ * `@img/sharp-wasm32` itself declares no `os`/`cpu`; only its `freebsd`/`webcontainers`
+ * wrappers do. It is never loaded by the packaged application, so it is excluded from
+ * every Electron artifact instead of receiving static-LGPL treatment.
+ */
+export const excludedWasmPackages = [
+  "@img/sharp-wasm32",
+  "@img/sharp-freebsd-wasm32",
+  "@img/sharp-webcontainers-wasm32",
+];
+
+/**
+ * The single native payload that is actually packaged for each platform. Windows links
+ * libvips into `@img/sharp-win32-*`; every other platform loads a separate
+ * `@img/sharp-libvips-*` package, which is the only one carrying `versions.json` and the
+ * upstream third-party notices.
+ */
+export const nativePayloadCandidates = {
+  "win32-x64": ["@img/sharp-win32-x64"],
+  "win32-arm64": ["@img/sharp-win32-arm64"],
+  "darwin-x64": ["@img/sharp-libvips-darwin-x64"],
+  "darwin-arm64": ["@img/sharp-libvips-darwin-arm64"],
+  "linux-x64": ["@img/sharp-libvips-linux-x64", "@img/sharp-libvips-linuxmusl-x64"],
+  "linux-arm64": ["@img/sharp-libvips-linux-arm64", "@img/sharp-libvips-linuxmusl-arm64"],
+};
+
+/** Targets that may produce a redistributable artifact and must pass full source preparation. */
+export const releaseTargets = ["win32-x64", "win32-arm64", "darwin-arm64"];
+
+/**
+ * npm does not persist the `libc` field into `package-lock.json`, so `npm ci` installs both
+ * the glibc and musl Linux payloads regardless of the host. Their manifests are identical,
+ * but only one is loadable, so the running C library decides which one is authoritative.
+ */
+export function detectLinuxLibc(report = process.report) {
+  const glibcVersion = report?.getReport?.()?.header?.glibcVersionRuntime;
+  return typeof glibcVersion === "string" && glibcVersion.length > 0 ? "glibc" : "musl";
+}
+
+const nativeBinaryPattern = /\.(?:node|dll|dylib|so(?:\.\d+)*)$/;
+
+/** Manifest tokens such as `732665c` or `0826579` identify a Git commit, not a release. */
+export function isCommitToken(version) {
+  return /^[0-9a-f]{7,40}$/.test(String(version ?? ""));
+}
+
+export function resolveReviewedCommit(component, version, sourceCommits) {
+  const key = `${component}@${version}`;
+  const resolved = sourceCommits?.[key];
+  if (!/^[0-9a-f]{40}$/.test(resolved ?? "")) {
+    throw new Error(
+      `Sharp native component ${key} is identified by an abbreviated Git commit with no ` +
+        "reviewed 40-character upstream commit. Add it to sourceCommits in " +
+        "third_party/compliance-policy.json.",
+    );
+  }
+  if (!resolved.startsWith(version)) {
+    throw new Error(
+      `Reviewed commit ${resolved} for ${key} does not extend the manifest token ${version}.`,
+    );
+  }
+  return resolved;
+}
+
+function gitArchiveSpec(name, gitRepository, commitWebBase, gitRevision) {
+  return {
+    fileName: `${name}-${gitRevision}.tar`,
+    url: `${commitWebBase}/${gitRevision}`,
+    gitRepository,
+    gitRevision,
+    archivePrefix: `${name}-${gitRevision}/`,
+  };
+}
+
 const sourceBuilders = {
   aom: (version) => ({
     fileName: `libaom-${version}.tar.gz`,
@@ -161,10 +236,18 @@ const sourceBuilders = {
     fileName: `lcms2-${version}.tar.gz`,
     url: `https://github.com/mm2/Little-CMS/releases/download/lcms${version}/lcms2-${version}.tar.gz`,
   }),
-  mozjpeg: (version) => ({
-    fileName: `mozjpeg-${version}.tar.gz`,
-    url: `https://github.com/mozilla/mozjpeg/archive/${version}.tar.gz`,
-  }),
+  mozjpeg: (version, context) =>
+    isCommitToken(version)
+      ? gitArchiveSpec(
+          "mozjpeg",
+          "https://github.com/mozilla/mozjpeg.git",
+          "https://github.com/mozilla/mozjpeg/commit",
+          context.commit("mozjpeg", version),
+        )
+      : {
+          fileName: `mozjpeg-${version}.tar.gz`,
+          url: `https://github.com/mozilla/mozjpeg/archive/${version}.tar.gz`,
+        },
   pango: (version) => ({
     fileName: `pango-${version}.tar.xz`,
     url:
@@ -193,10 +276,30 @@ const sourceBuilders = {
     fileName: `libspng-${version}.tar.gz`,
     url: `https://github.com/randy408/libspng/archive/refs/tags/v${version}.tar.gz`,
   }),
-  tiff: (version) => ({
-    fileName: `libtiff-${version}.tar.gz`,
-    url: `https://download.osgeo.org/libtiff/tiff-${version}.tar.gz`,
-  }),
+  tiff: (version, context) =>
+    isCommitToken(version)
+      ? gitArchiveSpec(
+          "libtiff",
+          "https://gitlab.com/libtiff/libtiff.git",
+          "https://gitlab.com/libtiff/libtiff/-/commit",
+          context.commit("tiff", version),
+        )
+      : {
+          fileName: `libtiff-${version}.tar.gz`,
+          url: `https://download.osgeo.org/libtiff/tiff-${version}.tar.gz`,
+        },
+  uhdr: (version, context) =>
+    isCommitToken(version)
+      ? gitArchiveSpec(
+          "libultrahdr",
+          "https://github.com/google/libultrahdr.git",
+          "https://github.com/google/libultrahdr/commit",
+          context.commit("uhdr", version),
+        )
+      : {
+          fileName: `libultrahdr-${version}.tar.gz`,
+          url: `https://github.com/google/libultrahdr/archive/refs/tags/v${version}.tar.gz`,
+        },
   vips: (version) => ({
     fileName: `vips-${version}.tar.xz`,
     url: `https://github.com/libvips/libvips/releases/download/v${version}/vips-${version}.tar.xz`,
@@ -295,17 +398,32 @@ export function buildNativeSourceSpecs(
     sharpLibvipsVersion,
     electronVersion,
     ffmpegRevision,
+    sourceCommits,
   },
 ) {
+  const context = {
+    commit: (component, version) => resolveReviewedCommit(component, version, sourceCommits),
+  };
   const specs = [];
-  for (const [name, builder] of Object.entries(sourceBuilders)) {
-    const version = versions[name];
-    if (!version) throw new Error(`Sharp native payload does not identify a ${name} version.`);
+  // Only the components actually present in the selected payload's versions.json are
+  // required, and every one of them must have a reviewed source builder.
+  for (const [name, version] of Object.entries(versions ?? {})) {
+    const builder = sourceBuilders[name];
+    if (!builder) {
+      throw new Error(
+        `Sharp native payload component "${name}" (${version}) has no reviewed source ` +
+          "builder. Review its upstream source and add one to scripts/compliance.mjs.",
+      );
+    }
+    if (!version) {
+      throw new Error(`Sharp native payload does not identify a ${name} version.`);
+    }
     specs.push({
-      id: `sharp-native-${name}`,
+      id: `sharp-native-${name}@${version}`,
+      component: name,
       version,
       reason: "Source and license material for the Sharp/libvips native payload.",
-      ...builder(version),
+      ...builder(version, context),
     });
   }
 
@@ -360,6 +478,8 @@ export function buildNativeSourceSpecs(
   );
 
   if (platform === "win32") {
+    // The Windows payload is repackaged from a libvips/build-win64-mxe release, whose
+    // build scripts and every applied patch live inside this archive.
     specs.push({
       id: "libvips-windows-build",
       version: versions.vips,
@@ -369,55 +489,50 @@ export function buildNativeSourceSpecs(
         `v${versions.vips}.tar.gz`,
       reason: "Windows build scripts and patches for the libvips payload.",
     });
+  } else {
+    // Patches that sharp-libvips fetches from outside its own repository while building
+    // the POSIX payload. Windows applies its patches from the in-repo archive above.
+    specs.push(
+      {
+        id: "sharp-patch-glib-without-gregex",
+        version: "bdad5489a61c217850631571caf57f5db6ea8b2c",
+        fileName: "glib-without-gregex.patch",
+        url:
+          "https://gist.github.com/kleisauke/284d685efa00908da99ea6afbaaf39ae/raw/" +
+          "bdad5489a61c217850631571caf57f5db6ea8b2c/glib-without-gregex.patch",
+        reason: "Patch applied by the Sharp/libvips POSIX build.",
+      },
+      {
+        id: "sharp-patch-mozjpeg-simd-fdct",
+        version: "f90668e0e4fb79c81e1f24a0ccc0e2090af761bf",
+        fileName: "mozjpeg-saturating-simd-fdct.patch",
+        url:
+          "https://github.com/mozilla/mozjpeg/commit/" +
+          "f90668e0e4fb79c81e1f24a0ccc0e2090af761bf.patch",
+        reason: "Patch applied by the Sharp/libvips POSIX build.",
+      },
+      {
+        // sharp-libvips fetches this as the mutable pull/383.patch; it is pinned here to
+        // the pull request's single immutable commit.
+        id: "sharp-patch-uhdr-platform-detection",
+        version: "e2daed8da97d8857dcec2fd68d2f6f3326170f67",
+        fileName: "libultrahdr-remove-platform-detection.patch",
+        url:
+          "https://github.com/google/libultrahdr/commit/" +
+          "e2daed8da97d8857dcec2fd68d2f6f3326170f67.patch",
+        reason: "Patch applied by the Sharp/libvips POSIX build.",
+      },
+      {
+        id: "sharp-patch-libvips-soversion",
+        version: "3988223c7dfa4d22745d9392034b0117abef1446",
+        fileName: "libvips-cpp-soversion.patch",
+        url:
+          "https://gist.githubusercontent.com/lovell/313a6901e9db1bf285f2a1f1180499e4/raw/" +
+          "3988223c7dfa4d22745d9392034b0117abef1446/libvips-cpp-soversion.patch",
+        reason: "Patch applied by the Sharp/libvips POSIX build.",
+      },
+    );
   }
-
-  specs.push(
-    {
-      id: "sharp-patch-glib-without-gregex",
-      version: "bdad5489a61c217850631571caf57f5db6ea8b2c",
-      fileName: "glib-without-gregex.patch",
-      url:
-        "https://gist.github.com/kleisauke/284d685efa00908da99ea6afbaaf39ae/raw/" +
-        "bdad5489a61c217850631571caf57f5db6ea8b2c/glib-without-gregex.patch",
-      reason: "Patch applied by the Sharp/libvips build.",
-    },
-    {
-      id: "sharp-patch-aom",
-      version: "6d2b7f71b98bfa28e372b1f2d85f137280bdb3de",
-      fileName: "aom-mxe-nasm.patch",
-      url:
-        "https://github.com/m-ab-s/aom/commit/" +
-        "6d2b7f71b98bfa28e372b1f2d85f137280bdb3de.patch",
-      reason: "Patch applied by the Sharp/libvips build.",
-    },
-    {
-      id: "sharp-patch-highway",
-      version: "ad48f2bf298bac247288c8399a5c0e9a40ed8246",
-      fileName: "highway-gcc-sve.patch",
-      url:
-        "https://github.com/google/highway/commit/" +
-        "ad48f2bf298bac247288c8399a5c0e9a40ed8246.patch",
-      reason: "Patch applied by the Sharp/libvips build.",
-    },
-    {
-      id: "sharp-patch-libvips-soversion",
-      version: "3988223c7dfa4d22745d9392034b0117abef1446",
-      fileName: "libvips-cpp-soversion.patch",
-      url:
-        "https://gist.githubusercontent.com/lovell/313a6901e9db1bf285f2a1f1180499e4/raw/" +
-        "3988223c7dfa4d22745d9392034b0117abef1446/libvips-cpp-soversion.patch",
-      reason: "Patch applied by the Sharp/libvips build.",
-    },
-    {
-      id: "sharp-patch-libvips-heif",
-      version: versions.vips,
-      fileName: "libvips-heifsave-disable-hbr-support.patch",
-      url:
-        "https://raw.githubusercontent.com/libvips/build-win64-mxe/" +
-        `v${versions.vips}/build/patches/vips-8-heifsave-disable-hbr-support.patch`,
-      reason: "Patch applied by the Sharp/libvips build.",
-    },
-  );
 
   return specs.sort((a, b) => a.id.localeCompare(b.id));
 }
@@ -432,6 +547,15 @@ export async function prepareCompliance({
 
   const policy = readJson(path.join(rootDir, "third_party", "compliance-policy.json"));
   const lock = readJson(path.join(rootDir, "package-lock.json"));
+  const manifest = readJson(path.join(rootDir, "package.json"));
+  const target = `${process.platform}-${process.arch}`;
+  assertWasmExcludedFromPackaging(manifest.build);
+  if (includeSources && !releaseTargets.includes(target)) {
+    throw new Error(
+      `${target} is not a supported release target (${releaseTargets.join(", ")}). Run ` +
+        "compliance:licenses instead of preparing a redistributable bundle.",
+    );
+  }
   const packages = collectProductionPackages(rootDir, lock);
   validateReviewedVersions(packages, lock, policy);
   await removeStalePartialFiles(path.join(rootDir, ".compliance-cache"));
@@ -462,16 +586,21 @@ export async function prepareCompliance({
     unresolved: [],
   });
 
-  const native = collectNativeComponents(packages);
+  const native = collectNativeComponents(packages, lock, {
+    platform: process.platform,
+    arch: process.arch,
+  });
   await writeFile(
     path.join(outputDir, "NATIVE-THIRD-PARTY-NOTICES.md"),
     native.notices,
     "utf8",
   );
   await writeJson(path.join(outputDir, "NATIVE-COMPONENTS.json"), {
-    schemaVersion: 1,
+    schemaVersion: 2,
     platform: process.platform,
     architecture: process.arch,
+    releaseTarget: releaseTargets.includes(target),
+    excludedFromArtifacts: excludedWasmPackages,
     packages: native.packages,
     versions: native.versions,
   });
@@ -590,6 +719,7 @@ export async function verifyComplianceDirectory(
       sharpLibvipsVersion: policy.sharpLibvips.version,
       electronVersion: policy.electron.version,
       ffmpegRevision: policy.electron.ffmpegRevision,
+      sourceCommits: policy.sourceCommits,
     });
     assertExactManifestIds(
       sources.sources,
@@ -769,6 +899,12 @@ function buildLicenseInventory(rootDir, packages, policy) {
   return packages.map((pkg) => {
     const files = findPackageLicenseFiles(pkg.directory);
 
+    // Sharp's platform packages declare compound SPDX expressions but ship at most the
+    // permissive half, so they are resolved term by term before the file-based path.
+    if (pkg.name.startsWith("@img/sharp-")) {
+      return reviewedSharpLicenseEntry(pkg, policy, files);
+    }
+
     if (files.length > 0) {
       return {
         name: pkg.name,
@@ -811,10 +947,6 @@ function buildLicenseInventory(rootDir, packages, policy) {
       );
     }
 
-    if (pkg.name.startsWith("@img/sharp-libvips-")) {
-      return reviewedSharpLibvipsLicenseEntry(pkg, policy);
-    }
-
     if (pkg.name.startsWith("onnxruntime-")) {
       onnxRefForVersion(pkg.version, policy);
       return overrideEntry(
@@ -836,28 +968,107 @@ function buildLicenseInventory(rootDir, packages, policy) {
   });
 }
 
-export function reviewedSharpLibvipsLicenseEntry(pkg, policy) {
-  if (pkg.version !== policy.sharpLibvips.version) {
-    throw new Error(`No reviewed Sharp/libvips license override exists for ${pkg.version}.`);
-  }
-  if (pkg.license !== "LGPL-3.0-or-later") {
+/** Splits an SPDX expression such as `A AND B AND C` into its individual terms. */
+export function splitSpdxAnd(license) {
+  const expression = String(license ?? "").trim().replace(/^\((.*)\)$/s, "$1");
+  return expression
+    .split(/\s+AND\s+/)
+    .map((term) => term.trim())
+    .filter(Boolean);
+}
+
+const lgplPointerText = [
+  "This platform package contains the libvips runtime under LGPL-3.0-or-later.",
+  "The complete canonical LGPL-3.0 text accompanies the generated compliance",
+  "bundle at licenses/LGPL-3.0.txt. Native dependency notices and corresponding",
+  "source are identified separately in the same bundle.",
+].join("\n");
+
+const canonicalMitText = [
+  "MIT License",
+  "",
+  "Permission is hereby granted, free of charge, to any person obtaining a copy",
+  'of this software and associated documentation files (the "Software"), to deal',
+  "in the Software without restriction, including without limitation the rights",
+  "to use, copy, modify, merge, publish, distribute, sublicense, and/or sell",
+  "copies of the Software, and to permit persons to whom the Software is",
+  "furnished to do so, subject to the following conditions:",
+  "",
+  "The above copyright notice and this permission notice shall be included in all",
+  "copies or substantial portions of the Software.",
+  "",
+  'THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR',
+  "IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,",
+  "FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE",
+  "AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER",
+  "LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,",
+  "OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE",
+  "SOFTWARE.",
+].join("\n");
+
+/**
+ * Resolves every term of a Sharp platform package's SPDX expression to concrete license
+ * text, failing closed when a declared term has no reviewed material.
+ */
+export function reviewedSharpLicenseEntry(pkg, policy, files = []) {
+  const isLibvips = pkg.name.startsWith("@img/sharp-libvips");
+  const expectedVersion = isLibvips ? policy.sharpLibvips.version : policy.sharp;
+  if (pkg.version !== expectedVersion) {
     throw new Error(
-      `${pkg.name}@${pkg.version} has unexpected license metadata: ${pkg.license}.`,
+      isLibvips
+        ? `No reviewed Sharp/libvips license override exists for ${pkg.version}.`
+        : `No reviewed Sharp license override exists for ${pkg.name}@${pkg.version}.`,
     );
   }
+
+  const terms = splitSpdxAnd(pkg.license);
+  if (terms.length === 0) {
+    throw new Error(`${pkg.name}@${pkg.version} declares no license metadata.`);
+  }
+
+  const shipped = files.map((file) => ({
+    file,
+    text: readFileSync(path.join(pkg.directory, ...file.split("/")), "utf8").trim(),
+  }));
+  const sections = [];
+  const sources = [];
+
+  for (const term of terms) {
+    if (term === "Apache-2.0") {
+      const match = shipped.find(({ text }) => text.includes("Apache License"));
+      if (!match) {
+        throw new Error(
+          `${pkg.name}@${pkg.version} declares Apache-2.0 but ships no Apache license text.`,
+        );
+      }
+      sections.push(`----- Apache-2.0 (${match.file}) -----\n${match.text}`);
+      sources.push(match.file);
+    } else if (term === "LGPL-3.0-or-later") {
+      sections.push(lgplPointerText);
+      sources.push("licenses/LGPL-3.0.txt");
+    } else if (term === "MIT") {
+      sections.push(`----- MIT -----\n${canonicalMitText}`);
+      sources.push("canonical SPDX MIT text");
+    } else {
+      throw new Error(
+        `${pkg.name}@${pkg.version} has unexpected license metadata: ${pkg.license}.`,
+      );
+    }
+  }
+
   return {
     name: pkg.name,
     version: pkg.version,
     license: pkg.license,
     packagePath: pkg.lockPath,
-    licenseSource: "licenses/LGPL-3.0.txt",
-    text: [
-      "This platform package contains the libvips runtime under LGPL-3.0-or-later.",
-      "The complete canonical LGPL-3.0 text accompanies the generated compliance",
-      "bundle at licenses/LGPL-3.0.txt. Native dependency notices and corresponding",
-      "source are identified separately in the same bundle.",
-    ].join("\n"),
+    licenseSource: sources.join(", "),
+    text: sections.join("\n\n"),
   };
+}
+
+/** @deprecated Retained as the libvips-specific entry point into {@link reviewedSharpLicenseEntry}. */
+export function reviewedSharpLibvipsLicenseEntry(pkg, policy, files = []) {
+  return reviewedSharpLicenseEntry(pkg, policy, files);
 }
 
 function overrideEntry(pkg, file) {
@@ -912,50 +1123,147 @@ function renderLicenseInventory(inventory, lock, rootDir) {
   ].join("\n");
 }
 
-function collectNativeComponents(packages) {
-  const candidates = packages.filter(
+/**
+ * Selects the one native payload package that is actually packaged for a platform and
+ * architecture, and fails closed on anything unexpected.
+ */
+export function selectNativePayload(
+  packages,
+  { platform = process.platform, arch = process.arch, libc } = {},
+) {
+  const target = `${platform}-${arch}`;
+  const expected = nativePayloadCandidates[target];
+  if (!expected) {
+    throw new Error(
+      `${target} is not a reviewed Sharp native platform. Add it to nativePayloadCandidates ` +
+        "or remove it as a distribution target.",
+    );
+  }
+
+  const installed = packages.filter(
     ({ name, directory }) =>
       name.startsWith("@img/sharp-") && existsSync(path.join(directory, "versions.json")),
   );
-  if (candidates.length === 0) {
-    throw new Error("No installed Sharp native package exposes versions.json.");
+  const unexpected = installed.filter(
+    ({ name }) => !expected.includes(name) && !excludedWasmPackages.includes(name),
+  );
+  if (unexpected.length > 0) {
+    throw new Error(
+      `Unexpected Sharp native payload installed for ${target}: ` +
+        `${unexpected.map(({ name }) => name).join(", ")}.`,
+    );
   }
 
-  const versionSets = candidates.map((pkg) => ({
-    pkg,
-    versions: readJson(path.join(pkg.directory, "versions.json")),
-  }));
-  const canonical = JSON.stringify(versionSets[0].versions);
-  for (const item of versionSets.slice(1)) {
-    if (JSON.stringify(item.versions) !== canonical) {
-      throw new Error("Installed Sharp native packages disagree about embedded library versions.");
-    }
+  let selected = installed.filter(({ name }) => expected.includes(name));
+  if (selected.length > 1 && platform === "linux") {
+    const wantsMusl = (libc ?? detectLinuxLibc()) === "musl";
+    selected = selected.filter(({ name }) => name.includes("-linuxmusl-") === wantsMusl);
+  }
+  if (selected.length === 0) {
+    throw new Error(
+      `No Sharp native payload is installed for ${target}; expected ${expected.join(" or ")}.`,
+    );
+  }
+  if (selected.length > 1) {
+    throw new Error(
+      `More than one distributable Sharp native payload is installed for ${target}: ` +
+        `${selected.map(({ name }) => name).join(", ")}.`,
+    );
   }
 
-  const notices = [];
-  for (const { pkg } of versionSets) {
-    const readme = path.join(pkg.directory, "README.md");
-    if (!existsSync(readme)) {
-      throw new Error(`${pkg.name}@${pkg.version} is missing its native licensing README.`);
+  const payload = selected[0];
+  if (!payload.name.endsWith(`-${arch}`)) {
+    throw new Error(`Sharp native payload ${payload.name} does not target ${arch}.`);
+  }
+  return payload;
+}
+
+/**
+ * The WASM payload may only be ignored as a native input while every Electron artifact
+ * explicitly excludes it; otherwise it would ship without static-LGPL treatment.
+ */
+export function assertWasmExcludedFromPackaging(buildConfig) {
+  const fileLists = [
+    ["files", buildConfig?.files],
+    ["win.files", buildConfig?.win?.files],
+    ["mac.files", buildConfig?.mac?.files],
+    ["linux.files", buildConfig?.linux?.files],
+  ].filter(([, list]) => list !== undefined);
+  if (!Array.isArray(buildConfig?.files)) {
+    throw new Error("Electron Builder configuration must declare a global build.files list.");
+  }
+  for (const [label, list] of fileLists) {
+    if (!Array.isArray(list)) {
+      throw new Error(`Electron Builder configuration ${label} must be an array.`);
     }
-    const text = readFileSync(readme, "utf8").trim();
-    if (!text.includes("third-party libraries") || !text.includes("LGPL")) {
-      throw new Error(`${pkg.name}@${pkg.version} has an unexpected native licensing README.`);
+    for (const name of excludedWasmPackages) {
+      if (!list.includes(`!node_modules/${name}/**`)) {
+        throw new Error(
+          `Electron Builder ${label} does not exclude ${name}; the unused WASM payload would ` +
+            "be distributed without corresponding source and notices.",
+        );
+      }
     }
-    if (!notices.includes(text)) notices.push(text);
+  }
+}
+
+function nativePayloadBinaries(directory) {
+  const binaries = [];
+  function visit(current, relative = "") {
+    for (const entry of readdirSync(current, { withFileTypes: true })) {
+      const next = relative ? `${relative}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) {
+        visit(path.join(current, entry.name), next);
+      } else if (entry.isFile() && nativeBinaryPattern.test(entry.name)) {
+        const file = path.join(current, entry.name);
+        binaries.push({ file: next, sha256: sha256FileSync(file), bytes: statSync(file).size });
+      }
+    }
+  }
+  visit(directory);
+  return binaries.sort((a, b) => a.file.localeCompare(b.file));
+}
+
+function collectNativeComponents(packages, lock, { platform, arch }) {
+  const payload = selectNativePayload(packages, { platform, arch });
+  const versionsFile = path.join(payload.directory, "versions.json");
+  const versions = readJson(versionsFile);
+
+  const readme = path.join(payload.directory, "README.md");
+  if (!existsSync(readme)) {
+    throw new Error(`${payload.name}@${payload.version} is missing its native licensing README.`);
+  }
+  const notices = readFileSync(readme, "utf8").trim();
+  if (!notices.includes("third-party libraries") || !notices.includes("LGPL")) {
+    throw new Error(`${payload.name}@${payload.version} has an unexpected native licensing README.`);
+  }
+
+  const binaries = nativePayloadBinaries(payload.directory);
+  if (binaries.length === 0) {
+    throw new Error(`${payload.name}@${payload.version} contains no native binaries.`);
   }
 
   return {
-    packages: versionSets.map(({ pkg }) => ({ name: pkg.name, version: pkg.version })),
-    versions: versionSets[0].versions,
+    packages: [
+      {
+        name: payload.name,
+        version: payload.version,
+        packagePath: payload.lockPath,
+        lockIntegrity: lock.packages?.[payload.lockPath]?.integrity ?? null,
+        versionsSha256: sha256FileSync(versionsFile),
+        binaries,
+      },
+    ],
+    versions,
     notices: [
       "# Native Third-Party Notices",
       "",
       "The following upstream notices describe libraries embedded in the Sharp/libvips",
-      "native payload. Full source archives and license files accompany this application",
-      "under `sources/`; canonical copyleft license texts are under `licenses/`.",
+      `native payload \`${payload.name}@${payload.version}\`. Full source archives and`,
+      "license files accompany this application under `sources/`; canonical copyleft license",
+      "texts are under `licenses/`.",
       "",
-      ...notices,
+      notices,
       "",
     ].join("\n"),
   };
@@ -1046,6 +1354,7 @@ async function prepareSources({
     sharpLibvipsVersion: policy.sharpLibvips.version,
     electronVersion: policy.electron.version,
     ffmpegRevision: policy.electron.ffmpegRevision,
+    sourceCommits: policy.sourceCommits,
   });
   const sources = await mapLimit(specs, 4, async (spec) => {
     const relative = `sources/${spec.fileName}`;
@@ -1299,8 +1608,7 @@ export function renderRelinking(native, sourceManifest, policy, platform = proce
   };
   const hasWindowsBuildSource = sourceManifest.sources.some(
     ({ id }) => id === "libvips-windows-build",
-  );
-  const nativeLocation =
+  );  const nativeLocation =
     platform === "darwin"
       ? "Contents/Resources/app.asar.unpacked/node_modules/"
       : "resources/app.asar.unpacked/node_modules/";
@@ -1316,6 +1624,9 @@ export function renderRelinking(native, sourceManifest, policy, platform = proce
   const ffmpegPatch = sourceFile("electron-ffmpeg-patch-link-with-loader-path");
   const windowsBuildSource =
     platform === "win32" ? sourceFile("libvips-windows-build") : undefined;
+  const replaceableFiles = native.packages.flatMap(({ name, binaries = [] }) =>
+    binaries.map(({ file, sha256 }) => `- \`${nativeLocation}${name}/${file}\` (SHA-256 ${sha256})`),
+  );
   return [
     "# Replacing and relinking native libraries",
     "",
@@ -1326,16 +1637,38 @@ export function renderRelinking(native, sourceManifest, policy, platform = proce
     "The packaged application keeps Sharp, libvips, and related native modules outside",
     `the ASAR archive under \`${nativeLocation}\`. Installed native packages:`,
     `\`${nativePackageList}\`. Electron's FFmpeg library is at \`${ffmpegLocation}\`.`,
-    "You may replace these",
-    "files with ABI-compatible modified builds and reverse engineer the application to",
-    "the extent needed to debug those modifications.",
+    "",
+    ...(replaceableFiles.length > 0
+      ? [
+          "The following files carry the LGPL-covered libvips runtime and may be replaced:",
+          "",
+          ...replaceableFiles,
+          "",
+        ]
+      : []),
+    "You may replace these files with ABI-compatible modified builds. The application",
+    "loads them from the plain filesystem locations above; it does not verify their",
+    "signatures or hashes at run time and takes no technical measure to prevent a",
+    "modified replacement from running. You may also reverse engineer Skill Recorder to",
+    "the extent necessary to debug modifications you make to those libraries.",
     "",
     "Exact upstream sources, packaging scripts, and build patches are included under",
     "`sources/`. `SOURCE-MANIFEST.json` records their original URLs and SHA-256 hashes.",
+    "",
+    "To rebuild and replace the libvips payload:",
+    "",
     hasWindowsBuildSource
-      ? `Use \`${sharpBuildSource}\` and \`${windowsBuildSource}\` to rebuild the libvips`
-      : `Use \`${sharpBuildSource}\` to rebuild the libvips`,
-    "payload, then replace the matching unpacked native libraries in an installed copy.",
+      ? `1. Unpack \`${sharpBuildSource}\` and \`${windowsBuildSource}\`. The latter contains the`
+      : `1. Unpack \`${sharpBuildSource}\`. It contains the`,
+    hasWindowsBuildSource
+      ? "   MXE cross-build definitions and every patch applied to the Windows payload."
+      : "   POSIX build scripts; externally fetched patches are included beside it in `sources/`.",
+    "2. Unpack the matching upstream archives from `sources/` into the build tree, keeping",
+    "   the versions recorded below and in `NATIVE-COMPONENTS.json`.",
+    "3. Run the packaging build for this platform and architecture as documented by the",
+    "   unpacked scripts.",
+    `4. Copy the rebuilt libraries over the files listed above under \`${nativeLocation}\`,`,
+    "   keeping the same file names, then start Skill Recorder normally.",
     "",
     `For Electron FFmpeg, start from \`${ffmpegSource}\`, apply \`${ffmpegPatch}\`,`,
     `and use the Electron build integration in \`${electronSource}\`. Replace the`,

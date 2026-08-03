@@ -67,6 +67,13 @@ jobs:
           architecture: ${{ matrix.arch }}
           cache: npm
 
+      - name: Cache compliance source downloads
+        uses: actions/cache@v4
+        with:
+          path: .compliance-cache
+          key: compliance-windows-${{ matrix.arch }}-${{ hashFiles('third_party/compliance-policy.json') }}
+          restore-keys: compliance-windows-${{ matrix.arch }}-
+
       - name: Install native dependencies
         shell: pwsh
         run: |

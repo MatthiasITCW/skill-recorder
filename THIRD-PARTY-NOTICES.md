@@ -49,7 +49,8 @@ Those components remain under their own terms; the generated
   codec library whose bundled notice identifies FFmpeg as **LGPL-2.1-or-later**.
   GPL portions require an explicit non-default FFmpeg build configuration.
 - Electron's `LICENSE.electron.txt` and `LICENSES.chromium.html` are retained in
-  every packaged application.
+  every packaged application. Chromium's notice file differs per platform, so it
+  is reviewed separately for each release target.
 - The currently pinned source is Electron
   [`v43.1.1`](https://github.com/electron/electron/tree/v43.1.1), Chromium
   [`150.0.7871.114`](https://chromium.googlesource.com/chromium/src/+/150.0.7871.114),

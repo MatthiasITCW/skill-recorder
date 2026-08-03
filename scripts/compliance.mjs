@@ -757,8 +757,16 @@ export async function verifyComplianceDirectory(
     }
     for (const notice of electron.notices ?? []) {
       const noticeName = path.posix.basename(notice.file);
-      if (notice.sha256 !== policy.electron?.notices?.[noticeName]) {
-        throw new Error(`Electron notice ${noticeName} does not match its reviewed SHA-256.`);
+      const reviewed = reviewedMaterialHash(
+        noticeName,
+        policy.electron?.notices?.[distributionKey],
+        `Electron ${distributionKey} notice`,
+      );
+      if (notice.sha256 !== reviewed) {
+        throw new Error(
+          `Electron notice ${noticeName} does not match its reviewed SHA-256 for ` +
+            `${distributionKey}.`,
+        );
       }
       await verifyManifestFile(directory, notice);
     }
@@ -1463,6 +1471,13 @@ async function prepareElectronNotices({ outputDir, rootDir, policy, fetchImpl })
   );
 
   const archive = new AdmZip(cache);
+  const reviewedNotices = policy.electron.notices?.[distributionKey];
+  if (!reviewedNotices) {
+    throw new Error(
+      `Electron notices for ${distributionKey} have not been reviewed. Chromium's notice file ` +
+        "differs per platform, so add the entry to third_party/compliance-policy.json.",
+    );
+  }
   const noticeDirectory = path.join(outputDir, "electron");
   await mkdir(noticeDirectory, { recursive: true });
   const notices = [];
@@ -1481,10 +1496,15 @@ async function prepareElectronNotices({ outputDir, rootDir, policy, fetchImpl })
     const target = path.join(noticeDirectory, targetName);
     await writeFile(target, content);
     const sha256 = await sha256File(target);
-    if (sha256 !== policy.electron.notices?.[targetName]) {
+    const reviewed = reviewedMaterialHash(
+      targetName,
+      reviewedNotices,
+      `Electron ${distributionKey} notice`,
+    );
+    if (sha256 !== reviewed) {
       throw new Error(
         `Electron distribution notice ${targetName} has SHA-256 ${sha256}, ` +
-          `expected ${policy.electron.notices?.[targetName] ?? "(unreviewed)"}.`,
+          `expected ${reviewed} for ${distributionKey}.`,
       );
     }
     notices.push({

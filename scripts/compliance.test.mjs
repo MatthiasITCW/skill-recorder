@@ -489,7 +489,8 @@ test("exactly one architecture-matched native payload is packaged", async () => 
 
   assert.equal(detectLinuxLibc({ getReport: () => ({ header: { glibcVersionRuntime: "2.39" } }) }), "glibc");
   assert.equal(detectLinuxLibc({ getReport: () => ({ header: {} }) }), "musl");
-  assert.equal(detectLinuxLibc(undefined), "musl");
+  assert.equal(detectLinuxLibc({ getReport: () => ({}) }), "musl");
+  assert.ok(["glibc", "musl"].includes(detectLinuxLibc()));
 
   assert.deepEqual(Object.keys(nativePayloadCandidates).sort(), [
     "darwin-arm64",
@@ -529,6 +530,25 @@ test("the lockfile resolves every dependency npm ci needs on other platforms", a
     /<root> -> a/,
   );
   assert.throws(() => assertLockfileClosure({}), /must declare a packages map/);
+});
+
+test("Electron notices are reviewed per release target", async () => {
+  const policy = JSON.parse(
+    await readFile(path.join(repoRoot, "third_party", "compliance-policy.json"), "utf8"),
+  );
+  // Chromium's notice file differs per platform, so a single reviewed hash would either
+  // fail macOS or wave through an unreviewed Windows notice.
+  assert.deepEqual(Object.keys(policy.electron.notices).sort(), [...releaseTargets].sort());
+  const chromium = new Set(
+    releaseTargets.map((target) => policy.electron.notices[target]["LICENSES.chromium.html"]),
+  );
+  assert.equal(chromium.size, 2, "Windows and macOS ship different Chromium notices");
+  for (const target of releaseTargets) {
+    assert.ok(policy.electron.distributions[target], `${target} needs a reviewed distribution`);
+    for (const notice of ["LICENSE.electron.txt", "LICENSES.chromium.html"]) {
+      assert.match(policy.electron.notices[target][notice], /^[a-f0-9]{64}$/);
+    }
+  }
 });
 
 test("the WASM payload is excluded from every Electron artifact", () => {

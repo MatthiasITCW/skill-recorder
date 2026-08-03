@@ -14,8 +14,18 @@
       "win32-x64": "b4e9995cd3f65785eb8818276aa9020f3165ab11da41b3c762616d4a0ad8c7ad"
     },
     "notices": {
-      "LICENSE.electron.txt": "5154e165bd6c2cc0cfbcd8916498c7abab0497923bafcd5cb07673fe8480087d",
-      "LICENSES.chromium.html": "b911161e6594ec76b872498b423c54406168f2974e0d407a847f7de1e5ff94dd"
+      "win32-x64": {
+        "LICENSE.electron.txt": "5154e165bd6c2cc0cfbcd8916498c7abab0497923bafcd5cb07673fe8480087d",
+        "LICENSES.chromium.html": "b911161e6594ec76b872498b423c54406168f2974e0d407a847f7de1e5ff94dd"
+      },
+      "win32-arm64": {
+        "LICENSE.electron.txt": "5154e165bd6c2cc0cfbcd8916498c7abab0497923bafcd5cb07673fe8480087d",
+        "LICENSES.chromium.html": "b911161e6594ec76b872498b423c54406168f2974e0d407a847f7de1e5ff94dd"
+      },
+      "darwin-arm64": {
+        "LICENSE.electron.txt": "5154e165bd6c2cc0cfbcd8916498c7abab0497923bafcd5cb07673fe8480087d",
+        "LICENSES.chromium.html": "4fc0507a046b9ecd0738b2dd64119b5ec8bc29ac0221b63edb693fd5fd497c87"
+      }
     }
   },
   "sharp": "0.35.3",

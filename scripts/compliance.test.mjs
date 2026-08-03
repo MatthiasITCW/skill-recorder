@@ -7,6 +7,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import {
+  assertLockfileClosure,
   assertReviewedCopilotCliVersions,
   assertWasmExcludedFromPackaging,
   buildNativeSourceSpecs,
@@ -501,11 +502,41 @@ test("exactly one architecture-matched native payload is packaged", async () => 
   assert.deepEqual(releaseTargets, ["win32-x64", "win32-arm64", "darwin-arm64"]);
 });
 
+test("the lockfile resolves every dependency npm ci needs on other platforms", async () => {
+  const lock = JSON.parse(await readFile(path.join(repoRoot, "package-lock.json"), "utf8"));
+  assert.doesNotThrow(() => assertLockfileClosure(lock));
+
+  // npm on Windows drops entries that only Linux and macOS install, which breaks the
+  // documented `npm ci` source-install path.
+  const pruned = structuredClone(lock);
+  delete pruned.packages["node_modules/@emnapi/runtime"];
+  assert.throws(
+    () => assertLockfileClosure(pruned),
+    /@img\/sharp-wasm32 -> @emnapi\/runtime/,
+  );
+
+  assert.doesNotThrow(() =>
+    assertLockfileClosure({
+      packages: {
+        "": { dependencies: { a: "^1.0.0" } },
+        "node_modules/a": { version: "1.0.0", dependencies: { b: "^1.0.0" } },
+        "node_modules/a/node_modules/b": { version: "1.0.0" },
+      },
+    }),
+  );
+  assert.throws(
+    () => assertLockfileClosure({ packages: { "": { dependencies: { a: "^1.0.0" } } } }),
+    /<root> -> a/,
+  );
+  assert.throws(() => assertLockfileClosure({}), /must declare a packages map/);
+});
+
 test("the WASM payload is excluded from every Electron artifact", () => {
   assert.deepEqual(excludedWasmPackages, [
     "@img/sharp-wasm32",
     "@img/sharp-freebsd-wasm32",
     "@img/sharp-webcontainers-wasm32",
+    "@emnapi/runtime",
   ]);
   assert.doesNotThrow(() => assertWasmExcludedFromPackaging(repoManifest.build));
   for (const list of ["files", "win"]) {

@@ -78,7 +78,8 @@
       "THIRD-PARTY-NOTICES.md",
       "!node_modules/@img/sharp-wasm32/**",
       "!node_modules/@img/sharp-freebsd-wasm32/**",
-      "!node_modules/@img/sharp-webcontainers-wasm32/**"
+      "!node_modules/@img/sharp-webcontainers-wasm32/**",
+      "!node_modules/@emnapi/runtime/**"
     ],
     "extraResources": [
       {
@@ -120,7 +121,8 @@
         "!node_modules/get-windows/**",
         "!node_modules/@img/sharp-wasm32/**",
         "!node_modules/@img/sharp-freebsd-wasm32/**",
-        "!node_modules/@img/sharp-webcontainers-wasm32/**"
+        "!node_modules/@img/sharp-webcontainers-wasm32/**",
+        "!node_modules/@emnapi/runtime/**"
       ],
       "target": "nsis",
       "artifactName": "${productName}-${version}-windows-${arch}.${ext}"

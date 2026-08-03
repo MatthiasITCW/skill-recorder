@@ -93,13 +93,15 @@ export const legalTextSpecs = [
 /**
  * Sharp ships a WebAssembly build that npm installs on every platform because
  * `@img/sharp-wasm32` itself declares no `os`/`cpu`; only its `freebsd`/`webcontainers`
- * wrappers do. It is never loaded by the packaged application, so it is excluded from
- * every Electron artifact instead of receiving static-LGPL treatment.
+ * wrappers do. It is never loaded by the packaged application, so it and its
+ * WASM-only runtime dependency are excluded from every Electron artifact instead of
+ * receiving static-LGPL treatment.
  */
 export const excludedWasmPackages = [
   "@img/sharp-wasm32",
   "@img/sharp-freebsd-wasm32",
   "@img/sharp-webcontainers-wasm32",
+  "@emnapi/runtime",
 ];
 
 /**
@@ -550,6 +552,7 @@ export async function prepareCompliance({
   const manifest = readJson(path.join(rootDir, "package.json"));
   const target = `${process.platform}-${process.arch}`;
   assertWasmExcludedFromPackaging(manifest.build);
+  assertLockfileClosure(lock);
   if (includeSources && !releaseTargets.includes(target)) {
     throw new Error(
       `${target} is not a supported release target (${releaseTargets.join(", ")}). Run ` +
@@ -1204,6 +1207,52 @@ export function assertWasmExcludedFromPackaging(buildConfig) {
         );
       }
     }
+  }
+}
+
+/**
+ * `npm install` on Windows can silently drop entries that only other platforms need,
+ * which leaves a lockfile that fails `npm ci` on Linux and macOS. The documented
+ * source-install path depends on `npm ci`, so an incomplete lockfile is a release
+ * blocker rather than an inconvenience.
+ */
+export function assertLockfileClosure(lock) {
+  const packages = lock?.packages;
+  if (!packages || typeof packages !== "object") {
+    throw new Error("package-lock.json must declare a packages map.");
+  }
+
+  const resolveFrom = (from, dependency) => {
+    let current = from;
+    for (;;) {
+      const candidate =
+        current === "" ? `node_modules/${dependency}` : `${current}/node_modules/${dependency}`;
+      if (candidate in packages) return candidate;
+      const boundary = current.lastIndexOf("/node_modules/");
+      if (boundary === -1) {
+        if (current === "") return null;
+        current = "";
+      } else {
+        current = current.slice(0, boundary);
+      }
+    }
+  };
+
+  const gaps = [];
+  for (const [from, entry] of Object.entries(packages)) {
+    const required = { ...entry?.dependencies, ...entry?.optionalDependencies };
+    for (const dependency of Object.keys(required)) {
+      if (!resolveFrom(from, dependency)) {
+        gaps.push(`${from || "<root>"} -> ${dependency}`);
+      }
+    }
+  }
+
+  if (gaps.length > 0) {
+    throw new Error(
+      "package-lock.json is missing entries that npm ci needs on other platforms: " +
+        `${gaps.join(", ")}. Regenerate it with an empty node_modules directory.`,
+    );
   }
 }
 

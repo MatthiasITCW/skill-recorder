@@ -78,7 +78,8 @@ Those components remain under their own terms; the generated
 - Sharp also publishes a WebAssembly build, `@img/sharp-wasm32`, which npm
   installs on every platform because its FreeBSD and WebContainers wrappers
   declare the platform constraints. Skill Recorder never loads it and excludes it
-  from every packaged artifact, so it is not distributed.
+  and its WASM-only runtime dependency `@emnapi/runtime` from every packaged
+  artifact, so neither is distributed.
 - The native payload also contains libraries under MPL-2.0, MIT, BSD, ISC,
   fontconfig, FreeType, libpng, libtiff, zlib, and related permissive terms.
   The exact upstream table is distributed as

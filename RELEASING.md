@@ -35,7 +35,9 @@ below before updating any compliance policy hash.
 Run:
 
 ```sh
-npm ci
+npm run fix:lockfile-registry
+npm run check:lockfile
+npm ci --ignore-scripts=false --dangerously-allow-all-scripts=false --strict-allow-scripts
 npm run compliance:licenses
 ```
 
@@ -45,8 +47,15 @@ Inspect:
 - `.compliance/THIRD-PARTY-LICENSES.txt`;
 - `THIRD-PARTY-NOTICES.md`;
 - changes to `package-lock.json`;
+- the exact-version approvals and explicit denials in `package.json#allowScripts`;
 - every new or changed image, font, model, native library, executable, and
   copied source file.
+
+The committed lockfile must use canonical `registry.npmjs.org` resolved URLs.
+Microsoft contributors may fetch through a configured internal mirror, but
+internal feed URLs must never be committed. Review every new dependency install
+script before adding an exact-version approval; explicitly deny scripts that
+are not required.
 
 The compliance scripts intentionally reject unreviewed component versions and
 materials. Do not fix such a failure by blindly replacing a version or hash.

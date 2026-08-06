@@ -152,10 +152,13 @@ the inspect-first alternative, manual developer setup, updates, uninstallation,
 and the licensing boundary between local source builds and redistributable
 packages.
 
-For development after checking out an exact revision:
+Requires **Node.js 24.19+ within the Node.js 24 release line**, including
+**npm 11.17+**. For development after checking out an exact revision:
 
 ```bash
-npm ci
+npm run check:lockfile
+npm ci --ignore-scripts=false --dangerously-allow-all-scripts=false --strict-allow-scripts
+npm run electron:install-reviewed
 npm run compliance:licenses
 npm run dev
 ```

@@ -121,6 +121,92 @@ function Remove-CachedDownload {
   }
 }
 
+function ConvertTo-ExtendedLengthPath {
+  param([Parameter(Mandatory)][string]$Path)
+
+  $fullPath = [IO.Path]::GetFullPath($Path)
+  if ($fullPath.StartsWith("\\?\")) {
+    return $fullPath
+  }
+  if ($fullPath.StartsWith("\\")) {
+    return "\\?\UNC\" + $fullPath.Substring(2)
+  }
+  return "\\?\" + $fullPath
+}
+
+function Move-DirectoryTree {
+  param(
+    [Parameter(Mandatory)][string]$Source,
+    [Parameter(Mandatory)][string]$Destination,
+    [ValidateRange(1, 20)][int]$MaxAttempts = 6,
+    [ValidateRange(0, 5000)][int]$RetryDelayMilliseconds = 250
+  )
+
+  $extendedSource = ConvertTo-ExtendedLengthPath -Path $Source
+  $extendedDestination = ConvertTo-ExtendedLengthPath -Path $Destination
+  if (-not [IO.Directory]::Exists($extendedSource)) {
+    throw "Directory to move does not exist: $Source"
+  }
+  if (
+    [IO.Directory]::Exists($extendedDestination) -or
+    [IO.File]::Exists($extendedDestination)
+  ) {
+    throw "Refusing to overwrite an existing path: $Destination"
+  }
+
+  for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
+    try {
+      [IO.Directory]::Move($extendedSource, $extendedDestination)
+      return
+    } catch {
+      $exception = $_.Exception
+      $isIoFailure = (
+        $exception -is [IO.IOException] -or
+        $exception.InnerException -is [IO.IOException]
+      )
+      if (-not $isIoFailure -or $attempt -eq $MaxAttempts) {
+        throw
+      }
+      if (
+        -not [IO.Directory]::Exists($extendedSource) -or
+        [IO.Directory]::Exists($extendedDestination) -or
+        [IO.File]::Exists($extendedDestination)
+      ) {
+        throw
+      }
+      if ($attempt -eq 1) {
+        Write-Warning "The installation directory is temporarily locked; retrying the move."
+      }
+      Start-Sleep -Milliseconds ($RetryDelayMilliseconds * $attempt)
+    }
+  }
+}
+
+function Remove-DirectoryTree {
+  param([Parameter(Mandatory)][string]$Path)
+
+  $extendedPath = ConvertTo-ExtendedLengthPath -Path $Path
+  if (-not [IO.Directory]::Exists($extendedPath)) {
+    return
+  }
+
+  $attributes = [IO.File]::GetAttributes($extendedPath)
+  if (($attributes -band [IO.FileAttributes]::ReparsePoint) -eq 0) {
+    foreach ($entry in [IO.Directory]::EnumerateFileSystemEntries($extendedPath)) {
+      $entryAttributes = [IO.File]::GetAttributes($entry)
+      if (($entryAttributes -band [IO.FileAttributes]::Directory) -ne 0) {
+        Remove-DirectoryTree -Path $entry
+      } else {
+        [IO.File]::SetAttributes($entry, [IO.FileAttributes]::Normal)
+        [IO.File]::Delete($entry)
+      }
+    }
+  }
+
+  [IO.File]::SetAttributes($extendedPath, [IO.FileAttributes]::Normal)
+  [IO.Directory]::Delete($extendedPath, $false)
+}
+
 function Assert-ZipArchive {
   param([Parameter(Mandatory)][string]$Path)
 
@@ -282,6 +368,12 @@ function Assert-ReviewedElectronDistribution {
   if ($manifestHash -ne $reviewedHash) {
     throw "Electron's checksum manifest does not match the reviewed distribution hash."
   }
+
+  return [pscustomobject]@{
+    Version = [string]$electronPackage.version
+    ArchiveName = $archiveName
+    Sha256 = $reviewedHash
+  }
 }
 
 function Get-NodeRuntime {
@@ -352,7 +444,7 @@ function Get-NodeRuntime {
     Assert-RequiredPaths -Root $expandedDirectory -RelativePaths @("LICENSE", "npm.cmd")
 
     New-Item -ItemType Directory -Path $RuntimeRoot -Force | Out-Null
-    Move-Item -LiteralPath $expandedDirectory -Destination $runtimeDirectory
+    Move-DirectoryTree -Source $expandedDirectory -Destination $runtimeDirectory
     Remove-CachedDownload -CachePath $archivePath
   } else {
     Write-Step "Reusing the verified Node.js $version runtime already installed at $runtimeDirectory."
@@ -505,25 +597,15 @@ if (Test-Path -LiteralPath $sourceDirectory -PathType Container) {
       "THIRD-PARTY-NOTICES.md",
       "CONTRIBUTING.md",
       "package.json",
-      "package-lock.json"
+      "package-lock.json",
+      "scripts\check-lockfile-portability.mjs",
+      "scripts\install-reviewed-electron.mjs",
+      "scripts\run-reviewed-electron.mjs"
     )
 
-    Write-Step "Installing lockfile-pinned dependencies from their publishers."
     $environmentOverrides = [ordered]@{
       PATH = "$($runtime.Root);$env:PATH"
-      NPM_CONFIG_REGISTRY = "https://registry.npmjs.org/"
-      NPM_CONFIG_REPLACE_REGISTRY_HOST = "never"
-      NPM_CONFIG_PLATFORM = "win32"
-      NPM_CONFIG_ARCH = $architecture
-      ELECTRON_MIRROR = "https://github.com/electron/electron/releases/download/"
-      NPM_CONFIG_ELECTRON_MIRROR = "https://github.com/electron/electron/releases/download/"
-      ELECTRON_INSTALL_PLATFORM = "win32"
-      ELECTRON_INSTALL_ARCH = $architecture
-      ELECTRON_USE_REMOTE_CHECKSUMS = $null
-      NPM_CONFIG_ELECTRON_USE_REMOTE_CHECKSUMS = $null
-      ELECTRON_OVERRIDE_DIST_PATH = $null
-      ELECTRON_CUSTOM_DIR = $null
-      ELECTRON_CUSTOM_FILENAME = $null
+      NPM_CONFIG_ALLOW_SCRIPTS = $null
     }
     $originalEnvironment = @{}
     foreach ($entry in $environmentOverrides.GetEnumerator()) {
@@ -540,20 +622,62 @@ if (Test-Path -LiteralPath $sourceDirectory -PathType Container) {
 
     Push-Location $buildDirectory
     try {
+      $npmVersionOutput = @(& $runtime.Npm --version)
+      if ($LASTEXITCODE -ne 0 -or $npmVersionOutput.Count -eq 0) {
+        throw "Could not determine the bundled npm version."
+      }
+      $npmVersion = ([string]$npmVersionOutput[0]).Trim()
+
+      Write-Step "Validating portable dependency policy."
+      Invoke-CheckedCommand `
+        -FilePath $runtime.Node `
+        -Arguments @(
+          "scripts\check-lockfile-portability.mjs",
+          "--npm-version",
+          $npmVersion
+        ) `
+        -Description "lockfile portability validation"
+
+      Write-Step "Installing lockfile-pinned dependencies through the configured npm registry."
       Invoke-CheckedCommand `
         -FilePath $runtime.Npm `
-        -Arguments @("ci", "--no-audit", "--no-fund") `
+        -Arguments @(
+          "ci",
+          "--no-audit",
+          "--no-fund",
+          "--ignore-scripts=false",
+          "--dangerously-allow-all-scripts=false",
+          "--strict-allow-scripts"
+        ) `
         -Description "npm ci"
 
-      Assert-ReviewedElectronDistribution `
+      $electronDistribution = Assert-ReviewedElectronDistribution `
         -SourceDirectory $buildDirectory `
         -Architecture $architecture
 
       Write-Step "Downloading the checksummed Electron runtime from GitHub."
+      $electronArchive = Join-Path $cacheRoot $electronDistribution.ArchiveName
+      $null = Get-CachedDownload `
+        -Uri (
+          "https://github.com/electron/electron/releases/download/" +
+          "v$($electronDistribution.Version)/$($electronDistribution.ArchiveName)"
+        ) `
+        -CachePath $electronArchive `
+        -ExpectedSha256 $electronDistribution.Sha256
+      Assert-ZipArchive -Path $electronArchive
       Invoke-CheckedCommand `
         -FilePath $runtime.Node `
-        -Arguments @("node_modules\electron\install.js") `
-        -Description "Electron runtime download"
+        -Arguments @(
+          "scripts\install-reviewed-electron.mjs",
+          "--archive",
+          $electronArchive,
+          "--platform",
+          "win32",
+          "--arch",
+          $architecture
+        ) `
+        -Description "reviewed Electron runtime installation"
+      Remove-CachedDownload -CachePath $electronArchive
 
       Write-Step "Validating dependency licenses and notices."
       Invoke-CheckedCommand `
@@ -614,11 +738,13 @@ if (Test-Path -LiteralPath $sourceDirectory -PathType Container) {
     if (Test-Path -LiteralPath $sourceDirectory) {
       throw "Refusing to overwrite an existing source installation: $sourceDirectory"
     }
-    Move-Item -LiteralPath $buildDirectory -Destination $sourceDirectory
+    Move-DirectoryTree -Source $buildDirectory -Destination $sourceDirectory
     Remove-CachedDownload -CachePath $sourceArchive
   } finally {
-    if (Test-Path -LiteralPath $stagingDirectory) {
-      Remove-Item -LiteralPath $stagingDirectory -Recurse -Force
+    try {
+      Remove-DirectoryTree -Path $stagingDirectory
+    } catch {
+      Write-Warning "Could not remove temporary installation files at ${stagingDirectory}: $($_.Exception.Message)"
     }
   }
 }

@@ -31,18 +31,8 @@ jobs:
       - name: Validate source installer guardrails
         shell: pwsh
         run: |
-          $tokens = $null
-          $parseErrors = $null
           $path = (Resolve-Path "install.ps1").Path
-          [void][System.Management.Automation.Language.Parser]::ParseFile(
-            $path,
-            [ref]$tokens,
-            [ref]$parseErrors
-          )
-          if ($parseErrors.Count -ne 0) {
-            $parseErrors | ForEach-Object { Write-Error $_.Message }
-            throw "install.ps1 contains PowerShell syntax errors"
-          }
+          & .\scripts\install-windows.test.ps1 -InstallerPath $path
           $beforeErrorPreference = $ErrorActionPreference
           $beforeProgressPreference = $ProgressPreference
           $env:SKILL_RECORDER_COMMIT = "master"
@@ -73,9 +63,12 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: 24.19.0
           architecture: ${{ matrix.arch }}
           cache: npm
+
+      - name: Validate lockfile portability
+        run: npm run check:lockfile
 
       - name: Install native dependencies
         shell: pwsh
@@ -83,7 +76,7 @@ jobs:
           if ((node -p "process.arch") -ne "${{ matrix.arch }}") {
             throw "Expected Node ${{ matrix.arch }}"
           }
-          npm ci
+          npm ci --ignore-scripts=false --dangerously-allow-all-scripts=false --strict-allow-scripts
           node -e "require('sharp'); require('onnxruntime-node'); require('koffi')"
           if (Select-String -Path package-lock.json -Pattern 'ffmpeg-static' -Quiet) {
             throw "ffmpeg-static remains in the lockfile"

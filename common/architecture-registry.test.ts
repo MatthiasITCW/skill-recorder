@@ -20,6 +20,7 @@ test("the manifest derives architecture validation and target availability", () 
   assert.deepEqual(SkillArchitecture.options, [
     "scout",
     "cowork",
+    "agent-skill",
     "copilot-studio",
   ]);
   assert.equal(SkillArchitecture.safeParse("generic").success, false);
@@ -29,6 +30,7 @@ test("the manifest derives architecture validation and target availability", () 
     [
       ["scout", true],
       ["cowork", true],
+      ["agent-skill", true],
       ["copilot-studio", false],
     ],
   );
@@ -46,6 +48,7 @@ test("the manifest derives architecture validation and target availability", () 
       ["scout", "skill", true, ["install", "export"], "Scout"],
       ["scout", "automation", true, ["install"], "Scout"],
       ["cowork", "skill", true, ["export"], "Microsoft 365 Copilot"],
+      ["agent-skill", "skill", true, ["export"], "your agent"],
       ["copilot-studio", "skill", false, ["export"], "Copilot Studio"],
     ],
   );
@@ -56,7 +59,11 @@ test("the manifest derives architecture validation and target availability", () 
     "Scout",
   );
 
-  assert.deepEqual(enabledArchitectureLabels("skill"), ["Scout", "Cowork"]);
+  assert.deepEqual(enabledArchitectureLabels("skill"), [
+    "Scout",
+    "Cowork",
+    "Agent skill",
+  ]);
   assert.deepEqual(enabledArchitectureLabels("automation"), ["Scout"]);
 });
 

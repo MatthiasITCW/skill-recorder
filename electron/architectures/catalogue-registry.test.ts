@@ -11,6 +11,7 @@ import {
   defineCatalogueProvider,
   providersFromModules,
 } from "./catalogue-provider";
+import agentSkillCatalogueProvider from "./catalogues/agent-skill-catalogue";
 import coworkCatalogueProvider from "./catalogues/cowork-catalogue";
 import scoutCatalogueProvider from "./catalogues/scout-catalogue";
 
@@ -26,6 +27,11 @@ const scoutProvider = defineCatalogueProvider({
 const coworkProvider = defineCatalogueProvider({
   architecture: "cowork",
   skill: { version: "cowork-skill-v1", content: "Cowork skill catalogue" },
+});
+
+const agentSkillProvider = defineCatalogueProvider({
+  architecture: "agent-skill",
+  skill: { version: "agent-skill-v1", content: "Agent Skill catalogue" },
 });
 
 function sha256(content: string): string {
@@ -44,7 +50,11 @@ function providersWithScoutSkill(skill: unknown): readonly unknown[] {
 }
 
 test("the registry resolves enabled catalogues and derives unavailable errors", () => {
-  const registry = createCatalogueRegistry([scoutProvider, coworkProvider]);
+  const registry = createCatalogueRegistry([
+    scoutProvider,
+    coworkProvider,
+    agentSkillProvider,
+  ]);
 
   assert.deepEqual(registry.catalogueFor("scout", "skill"), scoutProvider.skill);
   assert.deepEqual(
@@ -70,13 +80,14 @@ test("disabled targets stay unavailable even when catalogue content is staged", 
   const registry = createCatalogueRegistry([
     scoutProvider,
     coworkProvider,
+    agentSkillProvider,
     stagedCopilotStudioProvider,
   ]);
 
   assert.equal(registry.catalogueFor("copilot-studio", "skill"), null);
   assert.throws(
     () => registry.requireCatalogue("copilot-studio", "skill"),
-    /That target architecture isn't available yet\. Choose Scout or Cowork\./,
+    /That target architecture isn't available yet\. Choose Scout, Cowork, or Agent skill\./,
   );
 });
 
@@ -166,6 +177,7 @@ test("real providers preserve versions, content, and the support matrix", () => 
   const registry = createCatalogueRegistry([
     scoutCatalogueProvider,
     coworkCatalogueProvider,
+    agentSkillCatalogueProvider,
   ]);
 
   // These hashes prove catalogue moves are byte-for-byte. Intentional catalogue
@@ -188,5 +200,12 @@ test("real providers preserve versions, content, and the support matrix", () => 
   assert.equal(
     sha256(coworkSkill.content),
     "39ffbdf3225ce47eecd735252558cffe860eb6a207782a2f604a8a57fb9a0f68",
+  );
+
+  const agentSkillSkill = registry.requireCatalogue("agent-skill", "skill");
+  assert.equal(agentSkillSkill.version, "2026-08-06");
+  assert.equal(
+    sha256(agentSkillSkill.content),
+    "27cb863efb3fe973d3b7d4e24359cf5297c1b30fdbc29c073878b57a6d5d8810",
   );
 });

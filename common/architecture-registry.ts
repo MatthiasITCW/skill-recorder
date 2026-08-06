@@ -119,6 +119,24 @@ export const ARCHITECTURE_MANIFEST = defineArchitectures([
     ],
   },
   {
+    id: "agent-skill",
+    label: "Agent skill",
+    // Export-only, so this label is never surfaced; kept non-blank for the manifest
+    // invariant and as a sensible fallback if the target ever gains an install path.
+    installTargetLabel: "your agent",
+    note: "Any skill-capable agent. Not tuned to specific tools. You verify it can perform the tasks.",
+    targets: [
+      {
+        kind: "skill",
+        label: "Agent skill",
+        enabled: true,
+        note:
+          "Any skill-capable agent. Not tuned to specific tools. You verify it can perform the tasks.",
+        placements: ["export"],
+      },
+    ],
+  },
+  {
     id: "copilot-studio",
     label: "Copilot Studio",
     installTargetLabel: "Copilot Studio",

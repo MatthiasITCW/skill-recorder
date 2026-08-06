@@ -2,6 +2,7 @@ import type { Analysis, AnalysisFeedback, AnalysisStep, Confidence } from "./ana
 import type { AutomationPlan, BuiltAutomation } from "./automation";
 import type { MicrophoneDevice } from "./microphone";
 import type { NarrationLanguage } from "./narration";
+import type { SensitiveReport } from "./sensitive";
 import type {
   BuiltSkill,
   SkillArchitecture,
@@ -9,6 +10,14 @@ import type {
   TargetPlacement,
 } from "./skill";
 import type { RecorderState } from "./types";
+
+export type {
+  SensitiveCategory,
+  SensitiveFinding,
+  SensitiveReport,
+  SensitiveSeverity,
+  SensitiveSource,
+} from "./sensitive";
 
 /** The last completed session — the one that can be analyzed. */
 export interface LastSession {
@@ -104,6 +113,40 @@ export interface AnalyzeProgress {
 export interface AnalyzeResult {
   ok: boolean;
   analysis?: Analysis;
+  error?: string;
+  /**
+   * Present when the on-device pre-send scan redacted potentially sensitive
+   * details before the session was sent to GitHub Copilot — masked values in the
+   * captured text, plus a count of on-screen regions blurred in frames. This is
+   * purely informational — the analysis still ran and `ok` is unaffected. The
+   * report carries only masked values + short redacted context, never raw values,
+   * so the renderer can show a non-blocking "Redacted N details" summary.
+   */
+  review?: SensitiveReport;
+}
+
+/** The on-device model asset behind "Advanced protection". */
+export type SensitiveModelState = "missing" | "downloading" | "ready" | "error";
+
+/**
+ * Status of the "Advanced protection" layer (on-device frame OCR). The persisted
+ * `enabled` opt-out is independent of whether the model file is downloaded: a user
+ * can turn it off while keeping the cache, or have it on while a download is still
+ * in flight (in which case scans still mask the outgoing text and the frame-blur
+ * layer joins once the model is ready).
+ */
+export interface SensitiveModelStatus {
+  /** Persisted user opt-in. */
+  enabled: boolean;
+  /** Tesseract OCR language data (for frame text detection). */
+  ocr: SensitiveModelState;
+  /** Download progress 0–100 while the OCR asset is downloading. */
+  progress: number | null;
+  error: string | null;
+}
+
+export interface SensitiveModelActionResult {
+  ok: boolean;
   error?: string;
 }
 
@@ -375,6 +418,11 @@ export const IPC = {
   narrationDownload: "narration:download",
   narrationTranscribe: "narration:transcribe",
   narrationStatusChanged: "narration:status-changed",
+  sensitiveModelStatus: "sensitive:status",
+  sensitiveSetAdvanced: "sensitive:set-advanced",
+  sensitiveDownloadModels: "sensitive:download-models",
+  sensitiveStatusChanged: "sensitive:status-changed",
+  sensitiveGetReport: "sensitive:get-report",
   analyze: "analyze:start",
   analyzeFeedback: "analyze:feedback",
   getAnalysis: "analyze:get",
@@ -399,6 +447,7 @@ export const IPC = {
   openLibrary: "ui:open-library",
   closeLibrary: "ui:close-library",
   recordingControlsExpanded: "ui:recording-controls-expanded",
+  fitRecorderHeight: "ui:fit-recorder-height",
 } as const;
 
 /** Shape exposed on `window.skillRecorder` by the preload bridge. */
@@ -432,7 +481,25 @@ export interface SkillRecorderApi {
   downloadNarrationModel(): Promise<NarrationActionResult>;
   transcribeNarration(sessionId: string): Promise<NarrationActionResult>;
   onNarrationStatusChanged(cb: (status: NarrationStatus) => void): () => void;
-  /** Run the Copilot describer on a session (defaults to the last completed one). */
+  /** Current status of the "Advanced protection" model (on-device frame OCR). */
+  sensitiveModelStatus(): Promise<SensitiveModelStatus>;
+  /** Toggle "Advanced protection". Enabling persists the opt-in and provisions the
+   *  model (warming from cache when present, else fetching it in the background);
+   *  disabling stops applying the model but keeps the cache. */
+  setAdvancedProtection(enabled: boolean): Promise<SensitiveModelActionResult>;
+  /** Download the on-device OCR data the Advanced layer needs and warm the engine.
+   *  The deliberate "download" action, mirroring the voice model — safe to call
+   *  repeatedly. */
+  downloadSensitiveModels(): Promise<SensitiveModelActionResult>;
+  onSensitiveModelStatusChanged(cb: (status: SensitiveModelStatus) => void): () => void;
+  /** Load the persisted redaction summary for a session, if any. Lets the review
+   *  panel rehydrate when an already-analyzed session is reopened (the live `review`
+   *  from {@link analyze} is transient). Contains only masked values + counts. */
+  getSensitiveReport(sessionId: string): Promise<SensitiveReport | null>;
+  /** Run the Copilot describer on a session (defaults to the last completed one).
+   *  Runs an on-device sensitive-detail scan first and redacts any flagged values
+   *  from the text before it is sent — non-blocking; the analysis always proceeds
+   *  and any redaction is reported back in `review`. */
   analyze(sessionId?: string): Promise<AnalyzeResult>;
   /** Send NL feedback and re-analyze in the same multi-turn session. */
   analyzeFeedback(input: AnalysisFeedbackInput): Promise<AnalyzeResult>;
@@ -495,4 +562,7 @@ export interface SkillRecorderApi {
   closeLibrary(): Promise<void>;
   /** Resize the recording-controls window while an overlay panel is visible. */
   setRecordingControlsExpanded(expanded: boolean): Promise<void>;
+  /** Fit the compact recorder window to its rendered content height (fire-and-forget)
+   *  so the fixed-width HUD never shows dead space or clips a revealed row. */
+  fitRecorderHeight(height: number): void;
 }

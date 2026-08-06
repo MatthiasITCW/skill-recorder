@@ -19,7 +19,13 @@ import {
 } from "./run-reviewed-electron.mjs";
 import {
   assertReviewedCopilotCliVersions,
+  assertReviewedTessdataPins,
+  buildArtisticSourceSpecs,
+  buildComplianceSourceSpecs,
   buildNativeSourceSpecs,
+  buildStaticRemoteMaterialSpecs,
+  buildTesseractNoticeSpecs,
+  buildTesseractSourceSpecs,
   deterministicGitConfigArgs,
   findPackageLicenseFiles,
   hasExpectedFileHeader,
@@ -67,6 +73,12 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."
 const repoManifest = JSON.parse(
   await readFile(path.join(repoRoot, "package.json"), "utf8"),
 );
+const repoLock = JSON.parse(
+  await readFile(path.join(repoRoot, "package-lock.json"), "utf8"),
+);
+const repoPolicy = JSON.parse(
+  await readFile(path.join(repoRoot, "third_party", "compliance-policy.json"), "utf8"),
+);
 
 test("license filenames include common suffixed forms", () => {
   assert.equal(isLicenseFileName("LICENSE"), true);
@@ -105,6 +117,81 @@ test("nested package legal files are discovered", async () => {
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test("Tesseract WebAssembly source and notices are pinned to the reviewed build", () => {
+  const sources = buildTesseractSourceSpecs(repoPolicy.tesseract);
+  assert.equal(sources.length, 10);
+  assert.deepEqual(
+    new Set(sources.map(({ id }) => id)),
+    new Set([
+      "tesseract-js-core@7.0.0",
+      ...Object.entries(repoPolicy.tesseract.sourceRevisions)
+        .filter(([name]) => name !== "core")
+        .map(([name, revision]) => `tesseract-core-${name}@${revision}`),
+    ]),
+  );
+  for (const source of sources) {
+    assert.match(source.gitRevision, /^[a-f0-9]{40}$/);
+    assert.match(source.url, new RegExp(`${source.gitRevision}$`));
+    assert.match(source.fileName, /\.tar$/);
+  }
+
+  const notices = buildTesseractNoticeSpecs(repoPolicy.tesseract);
+  assert.equal(notices.length, 10);
+  assert(notices.some(({ id }) => id === "tessdata-fast-license"));
+  for (const notice of notices) {
+    assert.doesNotMatch(notice.url, /\/(?:master|main|HEAD)(?:\/|$)/);
+    assert.match(notice.outputPath, /^tesseract-core\//);
+    assert.match(repoPolicy.remoteMaterials[notice.id], /^[a-f0-9]{64}$/);
+  }
+});
+
+test("runtime tessdata pins match the reviewed model policy", async () => {
+  const source = await readFile(
+    path.join(repoRoot, "electron", "sensitive", "tessdata-source.ts"),
+    "utf8",
+  );
+  assert.doesNotThrow(() =>
+    assertReviewedTessdataPins(source, repoPolicy.tesseract.tessdata),
+  );
+  assert.throws(
+    () =>
+      assertReviewedTessdataPins(
+        source.replace(repoPolicy.tesseract.tessdata.revision, "f".repeat(40)),
+        repoPolicy.tesseract.tessdata,
+      ),
+    /has not been reviewed/,
+  );
+});
+
+test("Artistic-2.0 packages retain exact Standard Version source", () => {
+  const sources = buildArtisticSourceSpecs(repoLock, repoPolicy.artisticPackages);
+  assert.equal(sources.length, 5);
+  for (const source of sources) {
+    assert.match(source.url, /^https:\/\/registry\.npmjs\.org\/[^/]+\/-\/[^/]+\.tgz$/);
+    assert.match(source.reason, /Standard Version source/);
+  }
+
+  const changed = structuredClone(repoLock);
+  changed.packages["node_modules/editions"].version = "99.0.0";
+  assert.throws(
+    () => buildArtisticSourceSpecs(changed, repoPolicy.artisticPackages),
+    /have not been reviewed/,
+  );
+});
+
+test("every reviewed source hash is referenced by the release manifest", () => {
+  const expected = buildComplianceSourceSpecs(
+    nativeVersions,
+    repoLock,
+    repoPolicy,
+    "win32",
+  ).map(({ id }) => id);
+  assert.deepEqual(
+    new Set(Object.keys(repoPolicy.sourceMaterials)),
+    new Set(expected),
+  );
 });
 
 test("native source manifest covers dependencies, build scripts, and patches", () => {
@@ -214,11 +301,8 @@ test("platform Sharp/libvips packages use the reviewed LGPL text", () => {
 });
 
 test("the lockfile is registry-portable and install scripts are reviewed", async () => {
-  const lock = JSON.parse(
-    await readFile(path.join(repoRoot, "package-lock.json"), "utf8"),
-  );
-  assert.doesNotThrow(() => assertPortableLockfileRegistries(lock));
-  assert.doesNotThrow(() => assertReviewedInstallScripts(lock, repoManifest));
+  assert.doesNotThrow(() => assertPortableLockfileRegistries(repoLock));
+  assert.doesNotThrow(() => assertReviewedInstallScripts(repoLock, repoManifest));
 
   const internal = {
     packages: {
@@ -582,6 +666,8 @@ test("source and release instructions remain compliance-preserving", async () =>
   assert.match(releasing, /not working-tree\s+files/i);
   assert.match(releasing, /SHA-256 values for `install\.ps1` and `install\.sh`/i);
   assert.match(releasing, /complete, version-matched\s+compliance bundle/i);
+  assert.match(releasing, /Tesseract\.js-core/);
+  assert.match(instructions, /Tesseract WebAssembly component notices/);
   assert.match(releasing, /Never silently replace an asset or move a release tag/i);
   assert.match(
     windowsWorkflow,

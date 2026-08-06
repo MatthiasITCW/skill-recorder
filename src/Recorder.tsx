@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import type {
   DoctorReport,
   MicrophoneSettingsStatus,
   NarrationStatus,
   RecorderStatus,
+  SensitiveModelStatus,
 } from "../common/ipc";
 import {
   DEFAULT_NARRATION_LANGUAGE,
@@ -23,6 +24,26 @@ const IS_MAC = typeof navigator !== "undefined" && /Mac/i.test(navigator.userAge
 const TOGGLE_SHORTCUT = IS_MAC ? "⌘⇧R" : "Ctrl+Shift+R";
 type PrivacyReviewOrigin = "home" | "warning";
 
+/** The HUD fills the window (`height:100vh`), so its own box can't reveal how tall the
+ *  content actually is. Sum the in-flow children (skipping absolute/fixed overlays like
+ *  scrims, popovers and the privacy sheet) to get the natural content height the window
+ *  should shrink/grow to. */
+function measureHudHeight(hud: HTMLElement): number {
+  const style = getComputedStyle(hud);
+  const gap = parseFloat(style.rowGap || style.gap) || 0;
+  let total = (parseFloat(style.paddingTop) || 0) + (parseFloat(style.paddingBottom) || 0);
+  let inFlow = 0;
+  for (const child of Array.from(hud.children)) {
+    if (!(child instanceof HTMLElement)) continue;
+    const cs = getComputedStyle(child);
+    if (cs.position === "absolute" || cs.position === "fixed" || cs.display === "none") continue;
+    total += child.getBoundingClientRect().height;
+    inFlow += 1;
+  }
+  if (inFlow > 1) total += gap * (inFlow - 1);
+  return Math.ceil(total);
+}
+
 export function Recorder() {
   const [status, setStatus] = useState<RecorderStatus | null>(null);
   const [doctor, setDoctor] = useState<DoctorReport | null>(null);
@@ -36,12 +57,15 @@ export function Recorder() {
   const [showNarrationSettings, setShowNarrationSettings] = useState(false);
   const [narrationLanguage, setSelectedNarrationLanguage] =
     useState<NarrationLanguage>(DEFAULT_NARRATION_LANGUAGE);
+  const [sensitive, setSensitive] = useState<SensitiveModelStatus | null>(null);
+  const [advancedPending, setAdvancedPending] = useState(false);
   const [microphonePending, setMicrophonePending] = useState(false);
   const [microphoneActionError, setMicrophoneActionError] = useState<string | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [sessionCount, setSessionCount] = useState(0);
   const [pendingCount, setPendingCount] = useState(0);
   const narrationSettingsRef = useRef<HTMLElement>(null);
+  const hudRef = useRef<HTMLDivElement>(null);
 
   const refreshCount = useCallback(async () => {
     const list = await window.skillRecorder.listSessions();
@@ -59,15 +83,18 @@ export function Recorder() {
     void window.skillRecorder.doctor().then(setDoctor);
     void window.skillRecorder.narrationStatus().then(setNarrationStatus);
     void window.skillRecorder.microphoneSettings().then(setMicrophoneSettings);
+    void window.skillRecorder.sensitiveModelStatus().then(setSensitive);
     void refreshCount();
     const offRecorder = window.skillRecorder.onStatusChanged(applyRecorderStatus);
     const offNarration = window.skillRecorder.onNarrationStatusChanged(setNarrationStatus);
     const offMicrophones =
       window.skillRecorder.onMicrophoneSettingsChanged(setMicrophoneSettings);
+    const offSensitive = window.skillRecorder.onSensitiveModelStatusChanged(setSensitive);
     return () => {
       offRecorder();
       offNarration();
       offMicrophones();
+      offSensitive();
     };
   }, [applyRecorderStatus, refreshCount]);
 
@@ -93,9 +120,12 @@ export function Recorder() {
   const justDiscarded = !recording && status?.lastFinish?.outcome === "discarded";
   const narrate = microphoneSettings?.narrationEnabled ?? false;
   const narrationLanguageName = narrationLanguageLabel(narrationLanguage);
+  const advancedOn = sensitive?.enabled ?? true;
 
   useEffect(() => {
-    if (recording) setShowNarrationSettings(false);
+    if (recording) {
+      setShowNarrationSettings(false);
+    }
   }, [recording]);
 
   useEffect(() => {
@@ -115,6 +145,40 @@ export function Recorder() {
       window.removeEventListener("mousedown", onMouseDown);
     };
   }, [showNarrationSettings]);
+
+  // Keep the fixed-width HUD window sized to its content: no dead space in short
+  // states, no clipping when the doctor reveals an extra model row. Observers catch
+  // both row add/remove (MutationObserver) and reflow/size changes (ResizeObserver).
+  useLayoutEffect(() => {
+    const hud = hudRef.current;
+    if (!hud) return;
+    let frame = 0;
+    const report = () => {
+      frame = 0;
+      window.skillRecorder.fitRecorderHeight?.(measureHudHeight(hud));
+    };
+    const schedule = () => {
+      if (frame) return;
+      frame = requestAnimationFrame(report);
+    };
+    const ro = new ResizeObserver(schedule);
+    const observeChildren = () => {
+      ro.disconnect();
+      for (const child of Array.from(hud.children)) ro.observe(child);
+    };
+    const mo = new MutationObserver(() => {
+      observeChildren();
+      schedule();
+    });
+    observeChildren();
+    mo.observe(hud, { childList: true });
+    schedule();
+    return () => {
+      if (frame) cancelAnimationFrame(frame);
+      ro.disconnect();
+      mo.disconnect();
+    };
+  }, []);
 
   // Refresh the library count whenever a recording finishes.
   useEffect(() => {
@@ -230,8 +294,26 @@ export function Recorder() {
     if (!res.ok) window.alert(res.error ?? "Could not download the voice transcription model.");
   }, []);
 
+  const toggleAdvanced = useCallback(async () => {
+    if (!sensitive) return;
+    const next = !sensitive.enabled;
+    setAdvancedPending(true);
+    setSensitive((s) => (s ? { ...s, enabled: next } : s)); // optimistic; real state follows
+    const res = await window.skillRecorder.setAdvancedProtection(next);
+    if (!res.ok) {
+      void window.skillRecorder.sensitiveModelStatus().then(setSensitive);
+      window.alert(res.error ?? "Could not update advanced protection.");
+    }
+    setAdvancedPending(false);
+  }, [sensitive]);
+
+  const downloadSensitiveModels = useCallback(async () => {
+    const res = await window.skillRecorder.downloadSensitiveModels();
+    if (!res.ok) window.alert(res.error ?? "Could not download the protection models.");
+  }, []);
+
   return (
-    <div className="hud">
+    <div className="hud" ref={hudRef}>
       <div className="transport">
         <button
           className={`record ${recording ? "on" : ""}`}
@@ -311,9 +393,6 @@ export function Recorder() {
                         : "Explain out loud (optional)"}
               </span>
             </span>
-            <span className={`narrate-switch ${narrate ? "on" : ""}`} aria-hidden>
-              <span className="narrate-knob" />
-            </span>
           </button>
           <button
             className={`narrate-settings-toggle ${showNarrationSettings ? "open" : ""}`}
@@ -333,6 +412,23 @@ export function Recorder() {
                 d="M19.43 12.98c.04-.32.07-.65.07-.98s-.03-.66-.07-.98l2.11-1.65a.5.5 0 0 0 .12-.64l-2-3.46a.5.5 0 0 0-.6-.22l-2.49 1a7.2 7.2 0 0 0-1.69-.98l-.38-2.65A.5.5 0 0 0 14 2h-4a.5.5 0 0 0-.5.42l-.38 2.65c-.61.25-1.17.58-1.69.98l-2.49-1a.5.5 0 0 0-.6.22l-2 3.46a.5.5 0 0 0 .12.64l2.11 1.65a7.7 7.7 0 0 0 0 1.96l-2.11 1.65a.5.5 0 0 0-.12.64l2 3.46a.5.5 0 0 0 .6.22l2.49-1c.52.4 1.08.73 1.69.98l.38 2.65A.5.5 0 0 0 10 22h4a.5.5 0 0 0 .5-.42l.38-2.65c.61-.25 1.17-.58 1.69-.98l2.49 1a.5.5 0 0 0 .6-.22l2-3.46a.5.5 0 0 0-.12-.64zM12 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7Z"
               />
             </svg>
+          </button>
+          <button
+            type="button"
+            className="narrate-switch-btn"
+            aria-hidden
+            tabIndex={-1}
+            disabled={
+              !microphoneSettings ||
+              microphonePending ||
+              recording ||
+              transitioning
+            }
+            onClick={() => void toggleNarration()}
+          >
+            <span className={`narrate-switch ${narrate ? "on" : ""}`}>
+              <span className="narrate-knob" />
+            </span>
           </button>
         </div>
 
@@ -437,6 +533,9 @@ export function Recorder() {
           <span className="privacy-note-title">Records your screen and activity</span>
           <span className="privacy-note-sub">See exactly what's captured</span>
         </span>
+        {!advancedOn ? (
+          <span className="privacy-note-badge is-off">Protection off</span>
+        ) : null}
         <span className="privacy-note-chevron" aria-hidden>
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
             <path
@@ -518,11 +617,18 @@ export function Recorder() {
             status={doctor.copilotCli.ok ? "good" : "bad"}
             note={doctor.copilotCli.ok ? "found" : "missing"}
           />
-          {narrationStatus && (
+          {narrate && narrationStatus && (
             <VoiceModelRow
               status={narrationStatus}
               recording={recording}
               onDownload={downloadNarrationModel}
+            />
+          )}
+          {sensitive && (
+            <SensitiveModelRow
+              status={sensitive}
+              recording={recording}
+              onDownload={downloadSensitiveModels}
             />
           )}
         </div>
@@ -542,6 +648,10 @@ export function Recorder() {
         <WhatsRecorded
           onClose={closePrivacyReview}
           onReviewed={() => void completePrivacyReview()}
+          sensitive={sensitive}
+          advancedPending={advancedPending}
+          onToggleAdvanced={() => void toggleAdvanced()}
+          onDownload={downloadSensitiveModels}
         />
       )}
     </div>
@@ -593,7 +703,7 @@ function VoiceModelRow({
     return <Row label="voice transcription" status="warn" note="preparing" />;
   }
   if (status.model === "ready") {
-    return <Row label="voice transcription" status="good" note="offline · multilingual" />;
+    return <Row label="voice transcription" status="good" note="on-device · multilingual" />;
   }
   return (
     <Row
@@ -609,6 +719,37 @@ function VoiceModelRow({
         disabled: recording,
         onClick: onDownload,
       }}
+    />
+  );
+}
+
+/** Single doctor row for the opt-out Advanced-protection model, shown while enabled.
+ *  Goes red whenever the on-device screen-text model isn't downloaded, with one
+ *  action that fetches it. */
+function SensitiveModelRow({
+  status,
+  recording,
+  onDownload,
+}: {
+  status: SensitiveModelStatus;
+  recording: boolean;
+  onDownload: () => void;
+}) {
+  if (!status.enabled) return null;
+  if (status.ocr === "downloading") {
+    const note = status.progress == null ? "downloading" : `${Math.round(status.progress)}%`;
+    return <Row label="advanced protection" status="warn" note={note} />;
+  }
+  if (status.ocr === "ready") {
+    return <Row label="advanced protection" status="good" note="on-device · multilingual" />;
+  }
+  const failed = status.ocr === "error";
+  return (
+    <Row
+      label="advanced protection"
+      status="bad"
+      note={failed ? "download failed" : "not downloaded"}
+      action={{ label: failed ? "retry" : "download", disabled: recording, onClick: onDownload }}
     />
   );
 }

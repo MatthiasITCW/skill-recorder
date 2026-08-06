@@ -9,6 +9,7 @@ import { processSession } from "./pipeline";
 import { registerIpc } from "./ipc";
 import { createLogger } from "./logger";
 import { NarrationManager } from "./narration/manager";
+import { SensitiveModelManager } from "./sensitive/model-manager";
 import { RecorderController } from "./recorder/controller";
 import { RecordingPrivacySession } from "./recording-privacy";
 import { deleteSession } from "./sessions";
@@ -23,6 +24,7 @@ import {
   createLibraryWindow,
   createRecorderWindow,
   createRecordingControlsWindow,
+  fitRecorderHeight,
   redockLibrary,
   setRecordingControlsExpanded,
 } from "./window";
@@ -46,6 +48,9 @@ let quitTask: Promise<void> | null = null;
 const recordingPrivacy = new RecordingPrivacySession();
 const narration = new NarrationManager((status) =>
   broadcast(IPC.narrationStatusChanged, status),
+);
+const sensitiveModels = new SensitiveModelManager((status) =>
+  broadcast(IPC.sensitiveStatusChanged, status),
 );
 const microphones = new AudioRecorder((status) =>
   broadcast(IPC.microphoneSettingsChanged, status),
@@ -222,7 +227,9 @@ app.whenReady().then(async () => {
     automationBuilder,
     narration,
     microphones,
+    sensitiveModels,
   );
+  sensitiveModels.initialize();
   ipcMain.handle(IPC.start, () => requestStartRecording());
   ipcMain.handle(IPC.startConfirmed, () => startRecording());
   ipcMain.handle(IPC.recordingPrivacyReviewed, () => recordingPrivacy.markReviewed());
@@ -245,6 +252,18 @@ app.whenReady().then(async () => {
     }
     controlsExpanded = expanded;
     setRecordingControlsExpanded(win, expanded);
+  });
+  ipcMain.on(IPC.fitRecorderHeight, (event, height: unknown) => {
+    const win = recorderWindow;
+    if (
+      !win ||
+      win.isDestroyed() ||
+      event.sender !== win.webContents ||
+      typeof height !== "number"
+    ) {
+      return;
+    }
+    fitRecorderHeight(win, height);
   });
 
   recorder.onStatusChanged((status) => {
@@ -316,4 +335,5 @@ app.on("will-quit", () => {
   void builder.dispose();
   void automationBuilder.dispose();
   microphones.dispose();
+  void sensitiveModels.dispose();
 });

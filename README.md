@@ -122,6 +122,17 @@ does Skill Recorder send the event timeline (window/document titles, URLs, and c
 previews), extracted screen images, narration text, and anything else you provide to
 GitHub's cloud service for Copilot to process.
 
+**Before anything is sent, a pre-send scan runs on your computer.** Skill Recorder
+inspects the text that Analyze would upload — window/document titles, URLs, clipboard
+previews, terminal commands, markers, and transcribed narration — for likely secrets and
+personal details (private keys, API tokens, credentials, JWTs, emails, and payment-card
+and Social Security numbers). Anything it finds is masked before it leaves your machine,
+and Analyze shows you a redacted summary of what was hidden (values are masked; raw
+secrets are never stored or displayed). **Advanced protection** (on by default) extends
+the same scan to your screen images: frames are read on-device and matching regions are
+blurred before any image is uploaded. This is a safety net, not a guarantee — no detector
+catches everything, so keeping secrets out of the recording is still the best protection.
+
 > ⚠️ **Please don't capture secrets.** Passwords, access tokens, API keys, credentials, and
 > other confidential information should never be recorded, typed, pasted, shown, copied,
 > or narrated during a session.

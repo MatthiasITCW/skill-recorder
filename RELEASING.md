@@ -68,6 +68,8 @@ requirements, and upstream provenance first.
 | Electron or Chromium | Review the Electron archive and checksums, Chromium notices, FFmpeg revision/source/patches, and every supported platform hash. |
 | Sharp or sharp-libvips | Review package licenses, native dependency versions, build repositories, patches, source archives, and relinking instructions. |
 | ONNX Runtime | Review the exact release/development revision, license, notices, native packages, and source reference. |
+| Tesseract.js, Tesseract.js-core, or tessdata | Review the exact npm versions, WASM build commit and submodules, embedded-library notices, language-data commit/hash, and fixed source archives. |
+| Artistic-2.0 package | Retain the package notice and complete Artistic-2.0 text; include valid source instructions or the exact Standard Version source. |
 | New native or copyleft component | Add exact notices, canonical license text, complete corresponding source, build scripts/patches, and relinking instructions where required. |
 | Font, image, model, recording, or other asset | Record its provenance and written redistribution authorization; do not assume application code licenses cover assets. |
 

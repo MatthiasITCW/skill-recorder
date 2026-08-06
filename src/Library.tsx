@@ -6,6 +6,7 @@ import type {
   AutomationBuildProgress,
   CopilotSignInResult,
   NarrationStatus,
+  SensitiveReport,
   SessionSummary,
   SkillBuildProgress,
   SkillPlacement,
@@ -38,6 +39,7 @@ import {
 } from "./plan-edit";
 import { formatBytes, formatDur, formatWhen, shortLabel } from "./format";
 import { skillPlacementModel, skillTargetFor } from "./skill-placement";
+import { SensitiveReview } from "./SensitiveReview";
 
 export function Library() {
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
@@ -478,6 +480,9 @@ function AnalysisWorkspace({
   const [analyzing, setAnalyzing] = useState(false);
   const [statusLine, setStatusLine] = useState("");
   const [error, setError] = useState<string | null>(null);
+  // Informational summary of what the on-device scan redacted before sending;
+  // set alongside a successful analysis, cleared at the start of the next run.
+  const [review, setReview] = useState<SensitiveReport | null>(null);
   const [editing, setEditing] = useState(false);
   const [draftTitle, setDraftTitle] = useState("");
   const [draftIntent, setDraftIntent] = useState("");
@@ -506,11 +511,17 @@ function AnalysisWorkspace({
 
   useEffect(() => {
     let live = true;
-    void window.skillRecorder.getAnalysis(sessionId).then((a) => {
+    void Promise.all([
+      window.skillRecorder.getAnalysis(sessionId),
+      window.skillRecorder.getSensitiveReport(sessionId),
+    ]).then(([a, r]) => {
       if (!live) return;
       setAnalysis(a);
       setSteps(a?.steps ?? []);
       stepsDirty.current = false;
+      // Rehydrate the redaction summary so it survives reopen (only when the session
+      // is actually analyzed — never surface a stale report on an un-analyzed one).
+      setReview(a ? r : null);
     });
     return () => {
       live = false;
@@ -554,23 +565,30 @@ function AnalysisWorkspace({
     });
   }, [sessionId]);
 
-  const run = useCallback(async () => {
-    canceled.current = false;
-    setEditing(false);
-    setDraftTitle("");
-    setDraftIntent("");
-    setAnalyzing(true);
-    setError(null);
-    setStatusLine("Starting…");
-    const res = await window.skillRecorder.analyze(sessionId);
-    if (res.ok && res.analysis) {
-      setAnalysis(res.analysis);
-      setSteps(res.analysis.steps);
-      stepsDirty.current = false;
-    } else if (!canceled.current) setError(res.error ?? "Analysis failed");
-    setAnalyzing(false);
-    void onChanged();
-  }, [sessionId, onChanged]);
+  const run = useCallback(
+    async () => {
+      canceled.current = false;
+      setEditing(false);
+      setDraftTitle("");
+      setDraftIntent("");
+      setReview(null);
+      setError(null);
+      setAnalyzing(true);
+      setStatusLine("Starting…");
+      const res = await window.skillRecorder.analyze(sessionId);
+      if (res.ok && res.analysis) {
+        setAnalysis(res.analysis);
+        setSteps(res.analysis.steps);
+        stepsDirty.current = false;
+        // Non-blocking: analysis already ran. If anything was redacted before it
+        // was sent, show an informational summary alongside the result.
+        setReview(res.review ?? null);
+      } else if (!canceled.current) setError(res.error ?? "Analysis failed");
+      setAnalyzing(false);
+      void onChanged();
+    },
+    [sessionId, onChanged],
+  );
 
   const cancel = useCallback(async () => {
     canceled.current = true;
@@ -699,19 +717,23 @@ function AnalysisWorkspace({
         {summary.processed && !analysis && !analyzing && (
           <div className="ws-empty">
             <p className="ws-empty-lead">See what you did in this recording, step by step.</p>
-            <button className="record-cta" onClick={run}>
+            <button className="record-cta" onClick={() => void run()}>
               Analyze recording
             </button>
             <details className="analyze-disclosure">
               <summary>What gets sent to GitHub Copilot</summary>
               <p>
-                Analyze sends the event timeline—including window and document titles, URLs,
-                and clipboard previews—plus extracted screen images, narration text, and other
-                content you provide to GitHub&apos;s cloud service for processing by GitHub Copilot.{" "}
+                When you choose Analyze, the event timeline (window and document titles, URLs, and
+                clipboard previews), plus screen images, narration text, and other content you
+                provide, are sent to GitHub&apos;s cloud service for processing by GitHub Copilot.{" "}
                 <span className="cloud-analysis-caution">
                   Do not analyze a recording that may contain passwords, access tokens, API keys,
                   credentials, secrets, or other sensitive or confidential information.
-                </span>
+                </span>{" "}
+                By default, before anything is sent, this computer hides sensitive details like
+                passwords, keys, emails, and card or ID numbers from the text and your screen
+                images. You can turn this off in What&apos;s recorded for more accurate analysis. It
+                can miss things, so it is a safety net, not a guarantee.
               </p>
             </details>
             {voicePending && (
@@ -722,6 +744,10 @@ function AnalysisWorkspace({
               </p>
             )}
           </div>
+        )}
+
+        {summary.processed && review && !analyzing && (
+          <SensitiveReview report={review} onDismiss={() => setReview(null)} />
         )}
 
         {analyzing && (

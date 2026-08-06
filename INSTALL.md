@@ -244,8 +244,8 @@ dependency legal files.
 ## Licensing boundary
 
 The source channels distribute this repository's MIT-licensed source. The
-user's package manager obtains Sharp/libvips, ONNX Runtime, the unmodified
-GitHub Copilot CLI, and other npm dependencies through its configured registry;
+user's package manager obtains Sharp/libvips, ONNX Runtime, Tesseract.js, the
+unmodified GitHub Copilot CLI, and other npm dependencies through its configured registry;
 the installer obtains the reviewed Electron runtime from GitHub. Canonical
 registry URLs and integrity hashes keep the lockfile portable across direct
 npmjs access and compatible corporate mirrors. The local build is not a
@@ -257,8 +257,9 @@ Each platform's compliance check retains:
 - complete license files installed with npm packages, including the Copilot CLI
   license;
 - Electron and Chromium runtime notices;
-- canonical GPL, LGPL, and MPL texts under `.compliance/licenses`;
+- canonical GPL, LGPL, MPL, and Artistic-2.0 texts under `.compliance/licenses`;
 - platform-specific Sharp/libvips and ONNX Runtime notices under `.compliance`;
+- Tesseract WebAssembly component notices under `.compliance/tesseract-core`;
 - an inventory with no unresolved dependency-license entries.
 
 Anyone redistributing a generated application must instead use the supported

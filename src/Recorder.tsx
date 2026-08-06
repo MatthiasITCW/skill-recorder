@@ -741,7 +741,7 @@ function SensitiveModelRow({
     return <Row label="advanced protection" status="warn" note={note} />;
   }
   if (status.ocr === "ready") {
-    return <Row label="advanced protection" status="good" note="on-device · multilingual" />;
+    return <Row label="advanced protection" status="good" note="on-device" />;
   }
   const failed = status.ocr === "error";
   return (

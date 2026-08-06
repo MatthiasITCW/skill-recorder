@@ -176,6 +176,10 @@ export class VideoRecorder {
       this.frameWrites.clear();
       await mkdir(this.frameDir, { recursive: true });
       this.stream = createWriteStream(this.file);
+      this.stream.on("error", (err) => {
+        this.failed = true;
+        log.warn("video stream write failed:", err instanceof Error ? err.message : err);
+      });
 
       ipcMain.on("video:chunk", this.onChunk);
       ipcMain.on("video:frame", this.onFrame);

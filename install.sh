@@ -186,6 +186,9 @@ required_install_files() {
   local files="
 LICENSE
 THIRD-PARTY-NOTICES.md
+scripts/check-lockfile-portability.mjs
+scripts/install-reviewed-electron.mjs
+scripts/run-reviewed-electron.mjs
 third_party/compliance-policy.json
 node_modules/@github/copilot/LICENSE.md
 node_modules/$copilot_package/LICENSE.md
@@ -260,15 +263,21 @@ build_source_install() {
   tar -xzf "$archive" --strip-components=1 -C "$STAGING_DIR"
 
   cd "$STAGING_DIR"
-  export NPM_CONFIG_REGISTRY="https://registry.npmjs.org/"
   export NPM_CONFIG_CACHE="$INSTALL_ROOT/npm-cache"
-  export ELECTRON_MIRROR="https://github.com/electron/electron/releases/download/"
+  unset NPM_CONFIG_ALLOW_SCRIPTS npm_config_allow_scripts
 
-  info "Installing lockfile-pinned dependencies from their publishers."
-  "$NPM" ci --no-audit --no-fund
+  info "Validating portable dependency policy."
+  local npm_version
+  npm_version="$("$NPM" --version)" || die "Could not determine the bundled npm version."
+  "$NODE" "scripts/check-lockfile-portability.mjs" --npm-version "$npm_version"
 
-  info "Installing the reviewed Electron runtime."
-  "$NODE" "node_modules/electron/install.js"
+  info "Installing lockfile-pinned dependencies through the configured npm registry."
+  "$NPM" ci \
+    --no-audit \
+    --no-fund \
+    --ignore-scripts=false \
+    --dangerously-allow-all-scripts=false \
+    --strict-allow-scripts
 
   local policy_key="$PLATFORM-$ARCHITECTURE"
   local electron_version reviewed_hash
@@ -303,6 +312,19 @@ build_source_install() {
   )"
   [ "$bundled_hash" = "$reviewed_hash" ] ||
     die "Electron's installed checksum manifest differs from the reviewed compliance policy."
+
+  info "Downloading the checksummed Electron runtime from GitHub."
+  local electron_download="$WORK_DIR/$electron_archive"
+  download \
+    "https://github.com/electron/electron/releases/download/v${electron_version}/${electron_archive}" \
+    "$electron_download"
+  [ "$(sha256_file "$electron_download")" = "$reviewed_hash" ] ||
+    die "Electron archive SHA-256 does not match the reviewed distribution hash."
+  "$NODE" "scripts/install-reviewed-electron.mjs" \
+    --archive "$electron_download" \
+    --platform "$PLATFORM" \
+    --arch "$ARCHITECTURE"
+
   [ "$(cat node_modules/electron/dist/version)" = "$electron_version" ] ||
     die "The installed Electron runtime version is not $electron_version."
 

@@ -92,8 +92,63 @@ try {
   if ([IO.Directory]::Exists((ConvertTo-ExtendedLengthPath -Path $destinationDirectory))) {
     throw "Remove-DirectoryTree left the destination directory behind."
   }
+  $lockedSourceDirectory = Join-Path $testRoot "locked-source"
+  $lockedDestinationDirectory = Join-Path $testRoot "locked-destination"
+  $lockedFile = Join-Path $lockedSourceDirectory "scanned.exe"
+  $readyFile = Join-Path $testRoot "locker-ready"
+  [IO.Directory]::CreateDirectory($lockedSourceDirectory) | Out-Null
+  [IO.File]::WriteAllText($lockedFile, "endpoint scanner simulation")
+
+  $escapedLockedFile = $lockedFile.Replace("'", "''")
+  $escapedReadyFile = $readyFile.Replace("'", "''")
+  $lockerSource = @"
+`$stream = [IO.File]::Open(
+  '$escapedLockedFile',
+  [IO.FileMode]::Open,
+  [IO.FileAccess]::Read,
+  [IO.FileShare]::Read
+)
+try {
+  [IO.File]::WriteAllText('$escapedReadyFile', 'ready')
+  Start-Sleep -Milliseconds 500
+} finally {
+  `$stream.Dispose()
+}
+"@
+  $encodedLockerSource = [Convert]::ToBase64String(
+    [Text.Encoding]::Unicode.GetBytes($lockerSource)
+  )
+  $powerShellExecutable = [Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
+  $locker = Start-Process `
+    -FilePath $powerShellExecutable `
+    -ArgumentList @("-NoProfile", "-NonInteractive", "-EncodedCommand", $encodedLockerSource) `
+    -PassThru
+  try {
+    $readyDeadline = (Get-Date).AddSeconds(10)
+    while (-not [IO.File]::Exists($readyFile)) {
+      if ((Get-Date) -ge $readyDeadline -or $locker.HasExited) {
+        throw "The directory-lock test helper did not become ready."
+      }
+      Start-Sleep -Milliseconds 25
+    }
+
+    Move-DirectoryTree `
+      -Source $lockedSourceDirectory `
+      -Destination $lockedDestinationDirectory `
+      -MaxAttempts 6 `
+      -RetryDelayMilliseconds 100
+    if (-not [IO.Directory]::Exists($lockedDestinationDirectory)) {
+      throw "Move-DirectoryTree did not recover from a transient file lock."
+    }
+  } finally {
+    if (-not $locker.HasExited) {
+      Stop-Process -Id $locker.Id -Force
+      $locker.WaitForExit()
+    }
+    $locker.Dispose()
+  }
 } finally {
   Remove-DirectoryTree -Path $testRoot
 }
 
-Write-Host "Windows installer long-path tests passed."
+Write-Host "Windows installer filesystem tests passed."

@@ -24,6 +24,11 @@ const IPC = {
   narrationDownload: "narration:download",
   narrationTranscribe: "narration:transcribe",
   narrationStatusChanged: "narration:status-changed",
+  sensitiveModelStatus: "sensitive:status",
+  sensitiveSetAdvanced: "sensitive:set-advanced",
+  sensitiveDownloadModels: "sensitive:download-models",
+  sensitiveStatusChanged: "sensitive:status-changed",
+  sensitiveGetReport: "sensitive:get-report",
   analyze: "analyze:start",
   analyzeFeedback: "analyze:feedback",
   getAnalysis: "analyze:get",
@@ -48,6 +53,7 @@ const IPC = {
   openLibrary: "ui:open-library",
   closeLibrary: "ui:close-library",
   recordingControlsExpanded: "ui:recording-controls-expanded",
+  fitRecorderHeight: "ui:fit-recorder-height",
 };
 
 let recordingPrivacyWarningPending = false;
@@ -103,6 +109,15 @@ contextBridge.exposeInMainWorld("skillRecorder", {
     ipcRenderer.on(IPC.narrationStatusChanged, listener);
     return () => ipcRenderer.removeListener(IPC.narrationStatusChanged, listener);
   },
+  sensitiveModelStatus: () => ipcRenderer.invoke(IPC.sensitiveModelStatus),
+  setAdvancedProtection: (enabled) => ipcRenderer.invoke(IPC.sensitiveSetAdvanced, enabled),
+  downloadSensitiveModels: () => ipcRenderer.invoke(IPC.sensitiveDownloadModels),
+  onSensitiveModelStatusChanged: (cb) => {
+    const listener = (_event, status) => cb(status);
+    ipcRenderer.on(IPC.sensitiveStatusChanged, listener);
+    return () => ipcRenderer.removeListener(IPC.sensitiveStatusChanged, listener);
+  },
+  getSensitiveReport: (sessionId) => ipcRenderer.invoke(IPC.sensitiveGetReport, sessionId),
   analyze: (sessionId) => ipcRenderer.invoke(IPC.analyze, sessionId),
   analyzeFeedback: (input) => ipcRenderer.invoke(IPC.analyzeFeedback, input),
   getAnalysis: (sessionId) => ipcRenderer.invoke(IPC.getAnalysis, sessionId),
@@ -140,4 +155,5 @@ contextBridge.exposeInMainWorld("skillRecorder", {
   closeLibrary: () => ipcRenderer.invoke(IPC.closeLibrary),
   setRecordingControlsExpanded: (expanded) =>
     ipcRenderer.invoke(IPC.recordingControlsExpanded, expanded),
+  fitRecorderHeight: (height) => ipcRenderer.send(IPC.fitRecorderHeight, height),
 });

@@ -676,33 +676,15 @@ if (Test-Path -LiteralPath $sourceDirectory -PathType Container) {
       "scripts\run-reviewed-electron.mjs"
     )
 
-    $registryOverride = $env:SKILL_RECORDER_NPM_REGISTRY
-    if (-not [string]::IsNullOrWhiteSpace($registryOverride)) {
-      $registryOverride = $registryOverride.Trim()
-      $parsedRegistry = $null
-      if (
-        -not [Uri]::TryCreate($registryOverride, [UriKind]::Absolute, [ref]$parsedRegistry) -or
-        $parsedRegistry.Scheme -ne "https"
-      ) {
-        throw "SKILL_RECORDER_NPM_REGISTRY must be an absolute HTTPS URL: $registryOverride"
-      }
-    } else {
-      $registryOverride = $null
-    }
+    $machineNpmConfig = Get-MachineNpmConfigPath
 
     $environmentOverrides = [ordered]@{
       PATH = "$($runtime.Root);$env:PATH"
       NPM_CONFIG_ALLOW_SCRIPTS = $null
     }
-    if ($registryOverride) {
-      Write-Step "Using the npm registry requested by SKILL_RECORDER_NPM_REGISTRY."
-      $environmentOverrides["NPM_CONFIG_REGISTRY"] = $registryOverride
-    } else {
-      $machineNpmConfig = Get-MachineNpmConfigPath
-      if ($machineNpmConfig) {
-        Write-Step "Applying this machine's npm configuration from $machineNpmConfig."
-        $environmentOverrides["NPM_CONFIG_GLOBALCONFIG"] = $machineNpmConfig
-      }
+    if ($machineNpmConfig) {
+      Write-Step "Applying this machine's npm configuration from $machineNpmConfig."
+      $environmentOverrides["NPM_CONFIG_GLOBALCONFIG"] = $machineNpmConfig
     }
 
     $originalEnvironment = @{}
@@ -760,10 +742,10 @@ if (Test-Path -LiteralPath $sourceDirectory -PathType Container) {
       } catch {
         throw (
           "$($_.Exception.Message) Dependencies were requested from $effectiveRegistry. " +
-          "If your network blocks that registry, configure a compatible mirror with " +
-          "'npm config set registry <url> --location=global', or set " +
-          "SKILL_RECORDER_NPM_REGISTRY=<url> before running the installer again. " +
-          "The lockfile's integrity hashes are verified whichever registry serves the packages."
+          "If your network blocks that registry, configure a compatible mirror for this " +
+          "machine with 'npm config set registry <url> --location=global' and run the " +
+          "installer again. The lockfile's integrity hashes are verified whichever " +
+          "registry serves the packages."
         )
       }
 

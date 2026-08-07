@@ -258,10 +258,10 @@ Configure a mirror once with:
 npm config set registry <url> --location=global
 ```
 
-To point a single installation at a specific registry without changing any npm
-configuration, set `SKILL_RECORDER_NPM_REGISTRY` to an HTTPS registry URL before
-running the installer. The lockfile's integrity hashes are verified whichever
-registry serves the packages, so a mirror cannot substitute different content.
+The installers never pin or override the registry themselves; they only make the
+machine's existing npm configuration visible to the portable runtime. The
+lockfile's integrity hashes are verified whichever registry serves the packages,
+so a mirror cannot substitute different content.
 
 ## Licensing boundary
 

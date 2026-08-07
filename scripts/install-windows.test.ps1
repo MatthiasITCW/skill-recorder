@@ -23,7 +23,8 @@ if ($parseErrors.Count -ne 0) {
 $helperNames = @(
   "ConvertTo-ExtendedLengthPath",
   "Move-DirectoryTree",
-  "Remove-DirectoryTree"
+  "Remove-DirectoryTree",
+  "Resolve-MachineNpmConfigPath"
 )
 $functionDefinitions = @(
   $installerAst.FindAll(
@@ -48,6 +49,40 @@ $helperSource = @(
 $uncPath = ConvertTo-ExtendedLengthPath -Path "\\server\share\folder"
 if ($uncPath -ne "\\?\UNC\server\share\folder") {
   throw "Extended-length UNC conversion returned an unexpected path: $uncPath"
+}
+
+$npmConfigRoot = Join-Path (
+  [IO.Path]::GetTempPath()
+) ("skill-recorder-npmrc-" + [guid]::NewGuid().ToString("N"))
+New-Item -ItemType Directory -Path $npmConfigRoot -Force | Out-Null
+try {
+  $machineNpmrc = Join-Path $npmConfigRoot "npmrc"
+  Set-Content -LiteralPath $machineNpmrc -Value "registry=https://example.invalid/npm/" -Encoding ASCII
+  $missingNpmrc = Join-Path $npmConfigRoot "missing\npmrc"
+
+  $resolved = Resolve-MachineNpmConfigPath -CandidatePaths @($missingNpmrc, $machineNpmrc)
+  if ($resolved -ne [IO.Path]::GetFullPath($machineNpmrc)) {
+    throw "Resolve-MachineNpmConfigPath skipped the existing npmrc: $resolved"
+  }
+
+  # npm prints "undefined" when no global config is configured; it is not a path.
+  $placeholders = Resolve-MachineNpmConfigPath -CandidatePaths @("undefined", "null", "", $null)
+  if ($null -ne $placeholders) {
+    throw "Resolve-MachineNpmConfigPath accepted a placeholder value: $placeholders"
+  }
+
+  # Installs on machines without any npm configuration must stay on the default registry.
+  $absent = Resolve-MachineNpmConfigPath -CandidatePaths @($missingNpmrc)
+  if ($null -ne $absent) {
+    throw "Resolve-MachineNpmConfigPath returned a nonexistent npmrc: $absent"
+  }
+
+  $quoted = Resolve-MachineNpmConfigPath -CandidatePaths @(('"' + $machineNpmrc + '" '))
+  if ($quoted -ne [IO.Path]::GetFullPath($machineNpmrc)) {
+    throw "Resolve-MachineNpmConfigPath did not normalize a quoted npm path: $quoted"
+  }
+} finally {
+  Remove-Item -LiteralPath $npmConfigRoot -Recurse -Force
 }
 
 $testRoot = Join-Path (

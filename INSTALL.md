@@ -241,6 +241,28 @@ corporate registry. Use `npm ci`, not `npm install`, and do not regenerate the
 lockfile during installation. Keep the entire checkout, `.compliance`, and
 dependency legal files.
 
+### Networks that block registry.npmjs.org
+
+The installers run a portable Node.js runtime that is unpacked into the
+installation root. Because Node.js's portable archives ship no builtin npmrc,
+npm would resolve its global configuration inside that throwaway runtime
+directory and ignore the registry configured for the machine. The installers
+therefore locate the machine's real global npmrc and pass it to the portable npm
+so that `replace-registry-host` maps the lockfile's canonical npmjs URLs onto the
+configured mirror. Machines with no npm configuration are unaffected and continue
+to use `registry.npmjs.org`.
+
+Configure a mirror once with:
+
+```sh
+npm config set registry <url> --location=global
+```
+
+To point a single installation at a specific registry without changing any npm
+configuration, set `SKILL_RECORDER_NPM_REGISTRY` to an HTTPS registry URL before
+running the installer. The lockfile's integrity hashes are verified whichever
+registry serves the packages, so a mirror cannot substitute different content.
+
 ## Licensing boundary
 
 The source channels distribute this repository's MIT-licensed source. The

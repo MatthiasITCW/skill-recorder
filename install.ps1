@@ -276,6 +276,76 @@ function Invoke-CheckedCommand {
   }
 }
 
+function Resolve-MachineNpmConfigPath {
+  param([string[]]$CandidatePaths)
+
+  foreach ($candidate in $CandidatePaths) {
+    if ([string]::IsNullOrWhiteSpace($candidate)) {
+      continue
+    }
+    $trimmed = $candidate.Trim().Trim('"')
+    if ($trimmed -in @("undefined", "null")) {
+      continue
+    }
+    # A malformed npm configuration must never block a portable installation.
+    try {
+      if (Test-Path -LiteralPath $trimmed -PathType Leaf) {
+        return [IO.Path]::GetFullPath($trimmed)
+      }
+    } catch {
+      continue
+    }
+  }
+  return $null
+}
+
+function Get-SystemNpmGlobalConfigPath {
+  $npmCommand = @(
+    Get-Command npm -CommandType Application -ErrorAction SilentlyContinue
+  ) | Select-Object -First 1
+  if (-not $npmCommand) {
+    return $null
+  }
+
+  $previousPreference = $ErrorActionPreference
+  $output = @()
+  $exitCode = 1
+  try {
+    $ErrorActionPreference = "Continue"
+    $output = @(& $npmCommand.Source "config" "get" "globalconfig" 2>$null)
+    $exitCode = $LASTEXITCODE
+  } catch {
+    $output = @()
+    $exitCode = 1
+  } finally {
+    $ErrorActionPreference = $previousPreference
+    $global:LASTEXITCODE = 0
+  }
+
+  if ($exitCode -ne 0 -or $output.Count -eq 0) {
+    return $null
+  }
+  return ([string]$output[-1]).Trim()
+}
+
+function Get-MachineNpmConfigPath {
+  # The portable Node.js archive ships no builtin npmrc, so npm resolves its
+  # global config inside the throwaway runtime directory and silently ignores a
+  # registry configured for this machine. Point npm back at the real file so
+  # networks that block registry.npmjs.org still install through their mirror.
+  $candidates = New-Object System.Collections.Generic.List[string]
+
+  $reported = Get-SystemNpmGlobalConfigPath
+  if (-not [string]::IsNullOrWhiteSpace($reported)) {
+    $candidates.Add($reported)
+  }
+  if (-not [string]::IsNullOrWhiteSpace($env:APPDATA)) {
+    $candidates.Add((Join-Path $env:APPDATA "npm\etc\npmrc"))
+  }
+
+  return Resolve-MachineNpmConfigPath -CandidatePaths $candidates.ToArray()
+}
+
 function Get-WindowsArchitecture {
   $architecture = [Environment]::GetEnvironmentVariable(
     "PROCESSOR_ARCHITECTURE",
@@ -606,10 +676,35 @@ if (Test-Path -LiteralPath $sourceDirectory -PathType Container) {
       "scripts\run-reviewed-electron.mjs"
     )
 
+    $registryOverride = $env:SKILL_RECORDER_NPM_REGISTRY
+    if (-not [string]::IsNullOrWhiteSpace($registryOverride)) {
+      $registryOverride = $registryOverride.Trim()
+      $parsedRegistry = $null
+      if (
+        -not [Uri]::TryCreate($registryOverride, [UriKind]::Absolute, [ref]$parsedRegistry) -or
+        $parsedRegistry.Scheme -ne "https"
+      ) {
+        throw "SKILL_RECORDER_NPM_REGISTRY must be an absolute HTTPS URL: $registryOverride"
+      }
+    } else {
+      $registryOverride = $null
+    }
+
     $environmentOverrides = [ordered]@{
       PATH = "$($runtime.Root);$env:PATH"
       NPM_CONFIG_ALLOW_SCRIPTS = $null
     }
+    if ($registryOverride) {
+      Write-Step "Using the npm registry requested by SKILL_RECORDER_NPM_REGISTRY."
+      $environmentOverrides["NPM_CONFIG_REGISTRY"] = $registryOverride
+    } else {
+      $machineNpmConfig = Get-MachineNpmConfigPath
+      if ($machineNpmConfig) {
+        Write-Step "Applying this machine's npm configuration from $machineNpmConfig."
+        $environmentOverrides["NPM_CONFIG_GLOBALCONFIG"] = $machineNpmConfig
+      }
+    }
+
     $originalEnvironment = @{}
     foreach ($entry in $environmentOverrides.GetEnumerator()) {
       $originalEnvironment[$entry.Key] = [Environment]::GetEnvironmentVariable(
@@ -642,17 +737,35 @@ if (Test-Path -LiteralPath $sourceDirectory -PathType Container) {
         -Description "lockfile portability validation"
 
       Write-Step "Installing lockfile-pinned dependencies through the configured npm registry."
-      Invoke-CheckedCommand `
-        -FilePath $runtime.Npm `
-        -Arguments @(
-          "ci",
-          "--no-audit",
-          "--no-fund",
-          "--ignore-scripts=false",
-          "--dangerously-allow-all-scripts=false",
-          "--strict-allow-scripts"
-        ) `
-        -Description "npm ci"
+      $registryOutput = @(& $runtime.Npm config get registry)
+      $effectiveRegistry = "the configured npm registry"
+      if ($LASTEXITCODE -eq 0 -and $registryOutput.Count -gt 0) {
+        $effectiveRegistry = ([string]$registryOutput[-1]).Trim()
+        Write-Step "Dependencies will be downloaded from $effectiveRegistry."
+      }
+      $global:LASTEXITCODE = 0
+
+      try {
+        Invoke-CheckedCommand `
+          -FilePath $runtime.Npm `
+          -Arguments @(
+            "ci",
+            "--no-audit",
+            "--no-fund",
+            "--ignore-scripts=false",
+            "--dangerously-allow-all-scripts=false",
+            "--strict-allow-scripts"
+          ) `
+          -Description "npm ci"
+      } catch {
+        throw (
+          "$($_.Exception.Message) Dependencies were requested from $effectiveRegistry. " +
+          "If your network blocks that registry, configure a compatible mirror with " +
+          "'npm config set registry <url> --location=global', or set " +
+          "SKILL_RECORDER_NPM_REGISTRY=<url> before running the installer again. " +
+          "The lockfile's integrity hashes are verified whichever registry serves the packages."
+        )
+      }
 
       $electronDistribution = Assert-ReviewedElectronDistribution `
         -SourceDirectory $buildDirectory `

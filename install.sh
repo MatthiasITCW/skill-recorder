@@ -282,16 +282,7 @@ build_source_install() {
   export NPM_CONFIG_CACHE="$INSTALL_ROOT/npm-cache"
   unset NPM_CONFIG_ALLOW_SCRIPTS npm_config_allow_scripts
 
-  if [ -n "${SKILL_RECORDER_NPM_REGISTRY:-}" ]; then
-    case "$SKILL_RECORDER_NPM_REGISTRY" in
-      https://*) ;;
-      *)
-        die "SKILL_RECORDER_NPM_REGISTRY must be an absolute HTTPS URL: $SKILL_RECORDER_NPM_REGISTRY."
-        ;;
-    esac
-    info "Using the npm registry requested by SKILL_RECORDER_NPM_REGISTRY."
-    export NPM_CONFIG_REGISTRY="$SKILL_RECORDER_NPM_REGISTRY"
-  elif [ -n "${MACHINE_NPM_CONFIG:-}" ]; then
+  if [ -n "${MACHINE_NPM_CONFIG:-}" ]; then
     info "Applying this machine's npm configuration from $MACHINE_NPM_CONFIG."
     export NPM_CONFIG_GLOBALCONFIG="$MACHINE_NPM_CONFIG"
   fi
@@ -317,10 +308,10 @@ build_source_install() {
     die "$(
       printf '%s' \
         "npm ci failed. Dependencies were requested from $effective_registry. " \
-        "If your network blocks that registry, configure a compatible mirror with " \
-        "'npm config set registry <url> --location=global', or set " \
-        "SKILL_RECORDER_NPM_REGISTRY=<url> before running the installer again. " \
-        "The lockfile's integrity hashes are verified whichever registry serves the packages."
+        "If your network blocks that registry, configure a compatible mirror for this " \
+        "machine with 'npm config set registry <url> --location=global' and run the " \
+        "installer again. The lockfile's integrity hashes are verified whichever " \
+        "registry serves the packages."
     )"
 
   local policy_key="$PLATFORM-$ARCHITECTURE"
